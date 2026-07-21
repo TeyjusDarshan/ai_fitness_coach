@@ -1,0 +1,357 @@
+/* ------------------------------------------------------------------
+   Apple.com design tokens, verbatim:
+   type stack   SF Pro Display / SF Pro Text via -apple-system
+   ink          #1d1d1f   secondary #86868b   footnote #6e6e73
+   surfaces     #ffffff / #f5f5f7   hairline #d2d2d7
+   accent       #0071e3   hover #0077ed   link #0066cc
+   nav          rgba(251,251,253,.8) + saturate(180%) blur(20px)
+   buttons      980px radius
+   body type    17px / 1.47059 / -0.022em
+   ------------------------------------------------------------------ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Icons",
+               "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 17px;
+  line-height: 1.47059;
+  font-weight: 400;
+  letter-spacing: -0.022em;
+  color: #1d1d1f;
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Global nav ---------- */
+
+.globalnav {
+  position: sticky;
+  top: 0;
+  z-index: 9999;
+  height: 44px;
+  background: rgba(251, 251, 253, 0.8);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.globalnav-content {
+  max-width: 980px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.globalnav-brand {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: rgba(0, 0, 0, 0.8);
+}
+
+.globalnav-link {
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  opacity: 0.8;
+  transition: opacity 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.globalnav-link:hover { opacity: 1; color: #0066cc; }
+
+/* ---------- Hero ---------- */
+
+.section-hero {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 96px 22px 40px;
+  text-align: center;
+}
+
+.hero-headline {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+               "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: clamp(48px, 7vw, 80px);
+  line-height: 1.05;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #1d1d1f;
+}
+
+.hero-intro {
+  font-size: 21px;
+  line-height: 1.381;
+  letter-spacing: 0.011em;
+  font-weight: 400;
+  color: #86868b;
+  max-width: 600px;
+  margin: 22px auto 0;
+}
+
+/* ---------- Input ---------- */
+
+.section-input {
+  max-width: 692px;
+  margin: 0 auto;
+  padding: 12px 22px 96px;
+}
+
+#raw-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1.47059;
+  letter-spacing: -0.022em;
+  color: #1d1d1f;
+  background: #fff;
+  border: 1px solid #d2d2d7;
+  border-radius: 12px;
+  padding: 16px 18px;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+#raw-input::placeholder { color: #86868b; }
+#raw-input:focus {
+  border-color: #0071e3;
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+}
+
+.button-primary {
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1.17648;
+  letter-spacing: -0.022em;
+  font-weight: 400;
+  color: #fff;
+  background: #0071e3;
+  border: none;
+  border-radius: 980px;
+  padding: 12px 22px;
+  cursor: pointer;
+  transition: background 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+.button-primary:hover { background: #0077ed; }
+.button-primary:disabled { background: #0071e3; opacity: 0.4; cursor: default; }
+
+.link-more {
+  font-size: 17px;
+  letter-spacing: -0.022em;
+  color: #0066cc;
+  cursor: pointer;
+}
+.link-more:hover { text-decoration: underline; }
+.link-more .chevron { margin-left: 5px; font-size: 19px; line-height: 1; vertical-align: -1px; }
+
+/* ---------- Status ---------- */
+
+.section-status {
+  padding: 0 22px 96px;
+  text-align: center;
+}
+
+.spinner {
+  width: 28px;
+  height: 28px;
+  margin: 0 auto 18px;
+  border: 3px solid #d2d2d7;
+  border-top-color: #1d1d1f;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.status-text {
+  font-size: 17px;
+  color: #86868b;
+}
+
+/* ---------- Results ---------- */
+
+.section-results {
+  background: #f5f5f7;
+  padding: 96px 0 110px;
+}
+
+.results-wrap {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 22px;
+}
+
+.results-eyebrow {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6e6e73;
+  margin-bottom: 10px;
+}
+
+.results-headline {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+               "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: clamp(32px, 4.5vw, 48px);
+  line-height: 1.08349;
+  font-weight: 600;
+  letter-spacing: -0.003em;
+  color: #1d1d1f;
+}
+
+.results-notes {
+  font-size: 17px;
+  line-height: 1.47059;
+  color: #6e6e73;
+  max-width: 72ch;
+  margin-top: 14px;
+}
+
+.clearance-warning {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 14px;
+  line-height: 1.42859;
+  color: #1d1d1f;
+  background: #fff;
+  border: 1px solid #d2d2d7;
+  border-left: 4px solid #ff9f0a;
+  border-radius: 12px;
+  padding: 12px 16px;
+  max-width: 72ch;
+}
+
+/* ---------- Week grid ---------- */
+
+.week-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 14px;
+  margin-top: 44px;
+}
+@media (max-width: 1180px) { .week-grid { grid-template-columns: repeat(4, 1fr); } }
+@media (max-width: 780px)  { .week-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px)  { .week-grid { grid-template-columns: 1fr; } }
+
+.day-card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px 18px 22px;
+  min-height: 210px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s cubic-bezier(0, 0, 0.5, 1),
+              box-shadow 0.3s cubic-bezier(0, 0, 0.5, 1);
+}
+.day-card:hover {
+  transform: scale(1.016);
+  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.16);
+}
+.day-card.rest { box-shadow: none; background: transparent; border: 1px solid #d2d2d7; }
+.day-card.rest:hover { transform: none; box-shadow: none; }
+
+.day-weekday {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #86868b;
+}
+
+.day-split {
+  font-size: 19px;
+  line-height: 1.21053;
+  font-weight: 600;
+  letter-spacing: 0.012em;
+  color: #1d1d1f;
+  margin: 6px 0 16px;
+}
+.day-card.rest .day-split { color: #86868b; font-weight: 500; }
+
+.day-rest-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: #86868b;
+}
+
+.exercise { padding: 10px 0; border-top: 1px solid #f5f5f7; }
+.exercise:first-of-type { border-top: none; padding-top: 0; }
+
+.exercise-name {
+  font-size: 14px;
+  line-height: 1.42859;
+  font-weight: 500;
+  letter-spacing: -0.016em;
+  color: #1d1d1f;
+}
+
+.exercise-load {
+  font-size: 12px;
+  line-height: 1.33337;
+  color: #86868b;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.exercise-none {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #86868b;
+  font-style: italic;
+}
+
+.superset-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0071e3;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  padding: 1px 6px;
+  margin-bottom: 7px;
+}
+
+/* ---------- Footer ---------- */
+
+.globalfooter {
+  background: #f5f5f7;
+  border-top: 1px solid #d2d2d7;
+}
+.section-results + .globalfooter { border-top: none; }
+
+.globalfooter-content {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 26px 22px 40px;
+  font-size: 12px;
+  line-height: 1.33337;
+  letter-spacing: -0.01em;
+  color: #6e6e73;
+}
+
+.footer-rule {
+  height: 1px;
+  background: #d2d2d7;
+  margin: 16px 0;
+}
+
+[hidden] { display: none !important; }
