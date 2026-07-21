@@ -1,0 +1,111 @@
+id,from_exercise_id,to_exercise_id,type,reason
+1,1,2,regression,Lack of strength
+2,2,1,progression,RIR > 3 and hit rep ceiling
+3,1,5,progression,RIR > 3 and hit rep ceiling
+4,5,3,regression,Lack of form
+5,3,5,progression,RIR > 3 and hit rep ceiling
+6,3,1,regression,Lack of strength
+7,5,4,regression,Lack of strength
+8,4,5,progression,RIR > 3 and hit rep ceiling
+9,5,7,progression,RIR > 3 and hit rep ceiling
+10,7,6,regression,Lack of form
+11,6,5,regression,Lack of strength
+12,6,7,progression,RIR > 3 and hit rep ceiling
+13,7,11,progression,RIR > 3 and hit rep ceiling
+14,7,8,regression,Lack of form
+15,8,7,progression,RIR > 3 and hit rep ceiling
+16,11,10,regression,Lack of strength
+17,10,11,progression,RIR > 3 and hit rep ceiling
+18,9,11,progression,RIR > 3 and hit rep ceiling
+19,11,9,regression,Lack of form
+20,9,7,regression,Lack of strength
+21,11,14,progression,RIR > 3 and hit rep ceiling
+22,14,13,regression,Lack of strength
+23,13,14,progression,RIR > 3 and hit rep ceiling
+24,14,12,regression,Lack of form
+25,12,14,progression,RIR > 3 and hit rep ceiling
+26,12,11,regression,Lack of strength
+27,14,15,progression,RIR > 3 and hit rep ceiling
+28,15,14,regression,Lack of strength
+29,17,16,regression,Lack of strength
+30,16,17,progression,RIR > 3 and hit rep ceiling
+31,17,19,progression,RIR > 3 and hit rep ceiling
+32,19,18,regression,Lack of form
+33,18,19,progression,RIR > 3 and hit rep ceiling
+34,18,17,regression,Lack of strength
+35,19,21,progression,RIR > 3 and hit rep ceiling
+36,21,20,regression,Lack of form
+37,20,21,progression,RIR > 3 and hit rep ceiling
+38,20,19,regression,Lack of strength
+39,21,23,progression,RIR > 3 and hit rep ceiling
+40,23,22,regression,Lack of form
+41,22,23,progression,RIR > 3 and hit rep ceiling
+42,22,21,regression,Lack of strength
+43,23,25,progression,RIR > 3 and hit rep ceiling
+44,25,27,progression,RIR > 3 and hit rep ceiling
+45,25,24,regression,Lack of form
+46,24,25,progression,RIR > 3 and hit rep ceiling
+47,24,23,regression,Lack of strength
+48,27,26,regression,Lack of form
+49,26,27,progression,RIR > 3 and hit rep ceiling
+50,26,25,regression,Lack of strength
+51,29,31,progression,RIR > 3 and hit rep ceiling
+52,31,33,progression,RIR > 3 and hit rep ceiling
+53,33,35,progression,RIR > 3 and hit rep ceiling
+54,29,28,regression,Lack of strength
+55,28,29,progression,RIR > 3 and hit rep ceiling
+56,31,30,regression,Lack of form
+57,30,31,progression,RIR > 3 and hit rep ceiling
+58,30,29,regression,Lack of strength
+59,33,32,regression,Lack of form
+60,32,33,progression,RIR > 3 and hit rep ceiling
+61,32,31,regression,Lack of strength
+62,35,34,regression,Lack of form
+63,34,35,progression,RIR > 3 and hit rep ceiling
+64,34,33,regression,Lack of strength
+65,36,37,progression,RIR > 3 and hit rep ceiling
+66,37,38,progression,RIR > 3 and hit rep ceiling
+67,38,37,regression,Lack of form;Lack of strength
+68,37,36,regression,Lack of form;Lack of strength
+69,39,40,progression,RIR > 3 and hit rep ceiling
+70,40,39,regression,Lack of form;Lack of strength
+71,41,42,progression,RIR > 3 and hit rep ceiling
+72,42,43,progression,RIR > 3 and hit rep ceiling
+73,43,44,progression,RIR > 3 and hit rep ceiling
+74,44,43,regression,Lack of form;Lack of strength
+75,43,42,regression,Lack of form;Lack of strength
+76,42,41,regression,Lack of form;Lack of strength
+77,45,46,progression,RIR > 3 and hit rep ceiling
+78,46,47,progression,RIR > 3 and hit rep ceiling
+79,47,46,regression,Lack of form;Lack of strength
+80,46,45,regression,Lack of form;Lack of strength
+81,48,49,progression,RIR > 3 and hit rep ceiling
+82,49,50,progression,RIR > 3 and hit rep ceiling
+83,50,51,progression,RIR > 3 and hit rep ceiling
+84,51,52,progression,RIR > 3 and hit rep ceiling
+85,49,53,regression,Lack of strength
+86,53,49,progression,RIR > 3 and hit rep ceiling
+87,50,54,regression,Lack of strength
+88,54,50,progression,RIR > 3 and hit rep ceiling
+89,50,49,regression,Lack of form
+90,49,48,regression,Lack of form
+91,51,50,regression,Lack of form;Lack of strength
+92,52,51,regression,Lack of form;Lack of strength
+93,55,56,progression,RIR > 3 and hit rep ceiling
+94,56,57,progression,RIR > 3 and hit rep ceiling
+95,57,56,regression,Lack of form;Lack of strength
+96,56,55,regression,Lack of form;Lack of strength
+97,58,59,progression,RIR > 3 and hit rep ceiling
+98,59,60,progression,RIR > 3 and hit rep ceiling
+99,60,61,progression,RIR > 3 and hit rep ceiling
+100,61,62,progression,RIR > 3 and hit rep ceiling
+101,62,61,regression,Lack of form;Lack of strength
+102,61,60,regression,Lack of form;Lack of strength
+103,60,59,regression,Lack of form;Lack of strength
+104,59,58,regression,Lack of form;Lack of strength
+105,63,64,progression,RIR > 3 and hit rep ceiling
+106,64,65,progression,RIR > 3 and hit rep ceiling
+107,65,66,progression,RIR > 3 and hit rep ceiling
+108,66,65,regression,Lack of form;Lack of strength
+109,65,64,regression,Lack of form;Lack of strength
+110,64,63,regression,Lack of form;Lack of strength

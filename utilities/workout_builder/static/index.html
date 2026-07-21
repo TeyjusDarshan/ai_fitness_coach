@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workout Builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Workout Builder</h1>
+  <nav>
+    <button id="tab-exercises" class="tab active">1 · Create Exercises</button>
+    <button id="tab-board" class="tab">2 · Relationship Board</button>
+  </nav>
+  <span id="save-status" title="Auto-saved to CSV">Saved ✓</span>
+</header>
+
+<!-- ===================== Screen 1: exercise creator ===================== -->
+<main id="screen-exercises">
+  <form id="exercise-form" autocomplete="off">
+    <h2 id="exercise-form-heading">New exercise</h2>
+
+    <label>Name
+      <input type="text" name="name" required placeholder="e.g. Goblet Squat">
+    </label>
+
+    <label>Movement type
+      <select name="movement_type" id="movement-type-select" required>
+        <option value="squat">Squat</option>
+        <option value="hinge">Hinge</option>
+        <option value="lunge">Lunge</option>
+        <option value="push">Push</option>
+        <option value="pull">Pull</option>
+        <option value="carry">Carry</option>
+        <option value="rotation">Rotation</option>
+      </select>
+    </label>
+
+    <fieldset id="orientation-fieldset" class="hidden">
+      <legend>Orientation</legend>
+      <label class="check-row"><input type="radio" name="orientation" value="horizontal"> Horizontal</label>
+      <label class="check-row"><input type="radio" name="orientation" value="vertical"> Vertical</label>
+    </fieldset>
+
+    <label class="check-row">
+      <input type="checkbox" name="dominant">
+      Dominant <span class="hint">(unchecked = Light)</span>
+    </label>
+
+    <fieldset>
+      <legend>Equipment needed</legend>
+      <label class="check-row"><input type="checkbox" name="eq_bodyweight" checked> Bodyweight</label>
+      <label class="check-row"><input type="checkbox" name="eq_bands"> Resistance bands</label>
+      <label class="check-row">
+        <input type="checkbox" name="eq_other" id="eq-other-check"> Other:
+        <input type="text" name="eq_other_text" id="eq-other-text" placeholder="e.g. kettlebell" disabled>
+      </label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Loaded joints</legend>
+      <div class="joint-grid" id="joint-grid">
+        <label class="check-row"><input type="checkbox" value="ankle"> Ankle</label>
+        <label class="check-row"><input type="checkbox" value="knee"> Knee</label>
+        <label class="check-row"><input type="checkbox" value="hip"> Hip</label>
+        <label class="check-row"><input type="checkbox" value="spine"> Spine</label>
+        <label class="check-row"><input type="checkbox" value="shoulder"> Shoulder</label>
+        <label class="check-row"><input type="checkbox" value="elbow"> Elbow</label>
+        <label class="check-row"><input type="checkbox" value="wrist"> Wrist</label>
+      </div>
+    </fieldset>
+
+    <div class="rep-row">
+      <label>Min reps <input type="number" name="min_reps" min="1" required value="6"></label>
+      <label>Max reps <input type="number" name="max_reps" min="1" required value="12"></label>
+    </div>
+
+    <label>Who should completely avoid this exercise
+      <textarea name="avoid_if" rows="3" placeholder="e.g. Anyone with acute knee injury or recent ACL surgery"></textarea>
+    </label>
+
+    <button type="submit" class="primary" id="exercise-submit-btn">Add exercise</button>
+    <button type="button" class="secondary hidden" id="exercise-cancel-btn">Cancel edit</button>
+  </form>
+
+  <section id="exercise-list-panel">
+    <h2>Created exercises <span id="exercise-count"></span></h2>
+    <div id="exercise-table"></div>
+  </section>
+</main>
+
+<!-- ===================== Screen 2: relationship board ===================== -->
+<main id="screen-board" class="hidden">
+  <aside id="palette">
+    <h2>Exercises</h2>
+    <label>Movement type
+      <select id="filter-movement">
+        <option value="">All</option>
+        <option value="squat">Squat</option>
+        <option value="hinge">Hinge</option>
+        <option value="lunge">Lunge</option>
+        <option value="push">Push</option>
+        <option value="pull">Pull</option>
+        <option value="carry">Carry</option>
+        <option value="rotation">Rotation</option>
+      </select>
+    </label>
+    <label>Dominant / Light
+      <select id="filter-dominance">
+        <option value="">All</option>
+        <option value="dominant">Dominant</option>
+        <option value="light">Light</option>
+      </select>
+    </label>
+    <fieldset id="filter-orientation-fieldset">
+      <legend>Orientation <span class="hint">(push/pull)</span></legend>
+      <label class="check-row"><input type="checkbox" class="filter-orientation" value="horizontal"> Horizontal</label>
+      <label class="check-row"><input type="checkbox" class="filter-orientation" value="vertical"> Vertical</label>
+    </fieldset>
+    <p class="hint">Drag onto the board. Drag from a card's ● handle to another card to connect.</p>
+    <div id="palette-list"></div>
+  </aside>
+
+  <div id="board-wrap">
+    <div id="canvas">
+      <svg id="wires" width="3000" height="2000"></svg>
+    </div>
+  </div>
+</main>
+
+<!-- Arrow editor popup -->
+<div id="arrow-popup" class="hidden">
+  <div class="popup-header">
+    <strong>Connection</strong>
+    <button id="popup-close" title="Close">×</button>
+  </div>
+  <div id="popup-endpoints" class="hint"></div>
+  <div class="popup-types">
+    <label class="check-row"><input type="radio" name="rel-type" value="alternatives"> Alternatives</label>
+    <label class="check-row"><input type="radio" name="rel-type" value="progression"> Progression</label>
+    <label class="check-row"><input type="radio" name="rel-type" value="regression"> Regression</label>
+  </div>
+  <div id="popup-reason"></div>
+  <button id="popup-delete" class="danger">Delete connection</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
