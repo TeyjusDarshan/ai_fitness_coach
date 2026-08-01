@@ -1,5 +1,4 @@
 SAMPLE_USER_PROFILE_V1 = {
-    "user_id": "usr_10234",
     "demographics": {
         "age": 52,
         "sex": "female",

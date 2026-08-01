@@ -8,8 +8,16 @@ from supabase import create_client, Client
 load_dotenv()
 
 
+def _to_str(value) -> str:
+    return value if value is not None else ""
+
+
 class WorkoutRepository:
-    """Queries the exercise library tables in Supabase."""
+    """Queries the exercise library tables in Supabase.
+
+    Exposes the same interface as ExerciseCsvRepository so callers can swap
+    between the CSV-backed and Supabase-backed repositories interchangeably.
+    """
 
     def __init__(self, client: Optional[Client] = None):
         if client is not None:
@@ -19,87 +27,89 @@ class WorkoutRepository:
             key = os.environ.get("SUPABASE_KEY")
             self.client = create_client(url, key)
 
-    def search_exercises(
-        self,
-        movement_pattern_ids: Optional[list[int]] = None,
-        equipment_ids: Optional[list[int]] = None,
-        body_part_ids: Optional[list[int]] = None,
-        exercise_type_ids: Optional[list[int]] = None,
-        muscle_group_ids: Optional[list[int]] = None,
+    def get_exercises_by_movement(
+        self, movement_type: str, dominant: bool, orientation: Optional[str] = None
     ) -> list[dict]:
-        """Search active exercises, filtered by any combination of the given lookup id lists.
+        """Return every exercise whose movement_type and dominant flag match the given values.
 
-        Params left as None/empty are not applied as filters. movement_pattern_ids,
-        equipment_ids, exercise_type_ids and muscle_group_ids each match an exercise
-        that has ANY of the given ids. body_part_ids is a negative filter: it
-        excludes exercises that load ANY of the given body parts.
-
-        Each result includes the exercise's own columns plus its related movement
-        pattern, equipment, body parts, muscle groups and exercise types.
+        orientation, if given, must be "vertical" or "horizontal" and further
+        restricts the results to exercises with that orientation.
         """
-        # A join table only needs `!inner` when we filter on one of its columns,
-        # otherwise it stays a left join so exercises without a match still appear.
-        equipment_join = "exercise_equipment!inner" if equipment_ids else "exercise_equipment"
-        muscle_group_join = "exercise_muscle_groups!inner" if muscle_group_ids else "exercise_muscle_groups"
-        exercise_type_join = "exercise_exercise_types!inner" if exercise_type_ids else "exercise_exercise_types"
+        if orientation is not None and orientation not in ("vertical", "horizontal"):
+            raise ValueError('orientation must be "vertical" or "horizontal"')
 
-        select_str = f"""
-            *,
-            movement_patterns(*),
-            {equipment_join}(is_required, equipment(*)),
-            exercise_body_part_load(load_level, body_parts(*)),
-            {muscle_group_join}(role, muscle_groups(*)),
-            {exercise_type_join}(is_primary, exercise_types(*))
+        query = (
+            self.client.table("exercises")
+            .select("*, movement_types!inner(name), equipment(name), exercise_loaded_joints(joints(name))")
+            .eq("movement_types.name", movement_type)
+            .eq("dominant", dominant)
+        )
+        if orientation is not None:
+            query = query.eq("orientation", orientation)
+
+        rows = query.execute().data
+        return [self._normalize_exercise(row) for row in rows]
+
+    def get_progressions_or_regressions(self, exercise_id: int, direction: str) -> Optional[list[dict]]:
+        """Return the progression/regression exercises linked to exercise_id.
+
+        direction must be "progression" or "regression". Returns None if this
+        exercise has no relationships of that direction.
         """
+        if direction not in ("progression", "regression"):
+            raise ValueError('direction must be "progression" or "regression"')
 
-        query = self.client.table("exercises").select(select_str).eq("active", True)
-
-        if movement_pattern_ids:
-            query = query.in_("movement_pattern_id", movement_pattern_ids)
-        if equipment_ids:
-            query = query.in_("exercise_equipment.equipment_id", equipment_ids)
-        if muscle_group_ids:
-            query = query.in_("exercise_muscle_groups.muscle_group_id", muscle_group_ids)
-        if exercise_type_ids:
-            query = query.in_("exercise_exercise_types.exercise_type_id", exercise_type_ids)
-        if body_part_ids:
-            # PostgREST embedded filters can only require a related row, not
-            # exclude one, so exclusion needs its own lookup of matching ids.
-            loaded = (
-                self.client.table("exercise_body_part_load")
-                .select("exercise_id")
-                .in_("body_part_id", body_part_ids)
-                .execute()
+        rows = (
+            self.client.table("exercise_relationships")
+            .select(
+                "reason, "
+                "exercises!exercise_relationships_to_exercise_id_fkey"
+                "(*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name)))"
             )
-            excluded_ids = [row["exercise_id"] for row in loaded.data]
-            if excluded_ids:
-                query = query.not_.in_("id", excluded_ids)
+            .eq("from_exercise_id", exercise_id)
+            .eq("type", direction)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
 
-        res =  query.execute().data
-        return res
+        results = []
+        for row in rows:
+            exercise = row.get("exercises")
+            if exercise is not None:
+                normalized = self._normalize_exercise(exercise)
+                normalized["reason"] = _to_str(row.get("reason"))
+                results.append(normalized)
+        return results or None
 
-    def get_all_movement_patterns(self) -> list[dict]:
-        return self.client.table("movement_patterns").select("*").execute().data
-
-    def get_all_muscle_groups(self) -> list[dict]:
-        return self.client.table("muscle_groups").select("*").execute().data
-
-    def get_all_equipment(self) -> list[dict]:
-        return self.client.table("equipment").select("*").execute().data
-
-    def get_all_exercise_types(self) -> list[dict]:
-        return self.client.table("exercise_types").select("*").execute().data
-
-    def get_all_body_parts(self) -> list[dict]:
-        return self.client.table("body_parts").select("*").execute().data
+    @staticmethod
+    def _normalize_exercise(row: dict) -> dict:
+        """Reshape a raw Supabase exercise row into ExerciseCsvRepository's flat shape."""
+        movement_type = row.get("movement_types")
+        equipment = row.get("equipment")
+        joints = [
+            link["joints"]["name"]
+            for link in (row.get("exercise_loaded_joints") or [])
+            if link.get("joints")
+        ]
+        return {
+            "id": row["id"],
+            "name": _to_str(row.get("name")),
+            "movement_type": _to_str(movement_type["name"] if movement_type else None),
+            "orientation": _to_str(row.get("orientation")),
+            "dominant": bool(row.get("dominant")),
+            "equipment": [equipment["name"]] if equipment else [],
+            "loaded_joints": joints,
+            "min_reps": row.get("min_reps"),
+            "max_reps": row.get("max_reps"),
+            "avoid_if": _to_str(row.get("avoid_if")),
+        }
 
 
 if __name__ == "__main__":
     repo = WorkoutRepository()
-    results = repo.search_exercises(
-        movement_pattern_ids=[1, 2, 10, 8],
-        equipment_ids=[2, 4, 5],
-        # body_part_ids=[2],
-        exercise_type_ids=[1],
-    )
-    print(json.dumps(results, indent=2))
+    print(json.dumps(repo.get_exercises_by_movement("squat", True), indent=2))
+    print(json.dumps(repo.get_exercises_by_movement("push", True, orientation="horizontal"), indent=2))
+    print(json.dumps(repo.get_progressions_or_regressions(1, "progression"), indent=2))
+    print(json.dumps(repo.get_progressions_or_regressions(1, "regression"), indent=2))

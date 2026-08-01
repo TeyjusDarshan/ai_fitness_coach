@@ -378,7 +378,6 @@ Output ONLY valid JSON matching this exact structure. Do not wrap it in markdown
 not include any conversational text before or after it.
 
 {
-  "user_id": "[echo client_profile.user_id]",
   "plan_type": "3_day" | "4_day",
   "plan_selection_reason": "[one sentence citing availability.days_per_week and the rule applied]",
   "medical_clearance_warning": "[non-empty string if health.medical_clearance_obtained is false, else null]",

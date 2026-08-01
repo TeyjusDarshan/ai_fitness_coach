@@ -11,7 +11,7 @@ from langchain_mistralai import ChatMistralAI
 
 from agents.mock_data_v1 import SAMPLE_USER_PROFILE_V1
 from agents.prompts_preprocessor import PREPROCESSOR_SYSTEM_PROMPT_TEMPLATE
-from agents.workout_agent_v1 import generate_workout_plan_v1
+from agents.workout_agent import generate_workout_plan_v1
 
 load_dotenv()
 

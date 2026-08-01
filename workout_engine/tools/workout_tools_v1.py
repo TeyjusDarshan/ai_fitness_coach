@@ -2,9 +2,9 @@ from typing import Optional
 
 from langchain_core.tools import tool
 
-from repository.exercise_csv_repository import ExerciseCsvRepository
+from repository.workout_repository import WorkoutRepository
 
-repo = ExerciseCsvRepository()
+repo = WorkoutRepository()
 
 
 @tool
