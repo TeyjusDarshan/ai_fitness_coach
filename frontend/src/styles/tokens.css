@@ -1,0 +1,145 @@
+/* Apple-inspired design tokens, extended with the mobile card/checkmark/
+   timer-ring language from the product mockup. */
+
+:root {
+  --ink: #1d1d1f;
+  --ink-secondary: #86868b;
+  --footnote: #6e6e73;
+  --surface: #ffffff;
+  --surface-alt: #f5f5f7;
+  --hairline: #d2d2d7;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --success: #34c759;
+  --warning: #ff9f0a;
+
+  --radius-lg: 20px;
+  --radius-md: 14px;
+  --radius-pill: 980px;
+
+  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial,
+    sans-serif;
+  background: var(--surface-alt);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  /* iOS PWA safe-area support */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.screen {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 20px calc(32px + env(safe-area-inset-bottom));
+}
+
+.screen-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0 0 20px;
+}
+
+button {
+  font-family: inherit;
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 14px 22px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  width: 100%;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--ink);
+  background: #fff;
+  border: 1.5px solid var(--hairline);
+  border-radius: var(--radius-pill);
+  padding: 12px 20px;
+  cursor: pointer;
+  width: 100%;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--ink-secondary);
+  font-size: 15px;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+}
+
+.error-banner {
+  background: #fff4f2;
+  border: 1px solid #ffcdc2;
+  color: #b3261e;
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--hairline);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+  margin: 40px auto;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

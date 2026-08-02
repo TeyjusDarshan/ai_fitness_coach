@@ -1,0 +1,302 @@
+/* ---------- Login ---------- */
+
+.login-screen {
+  justify-content: center;
+  text-align: center;
+}
+
+.login-screen__logo {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.login-screen__subtitle {
+  color: var(--ink-secondary);
+  margin: 8px 0 32px;
+}
+
+.login-screen__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.login-screen__input {
+  font-size: 17px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  outline: none;
+}
+.login-screen__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
+}
+
+/* ---------- Dashboard / weekly calendar ---------- */
+
+.day-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 20px;
+}
+
+.day-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--surface-alt);
+  gap: 12px;
+}
+.day-row:last-child {
+  border-bottom: none;
+}
+
+.day-row__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 16px;
+}
+
+.day-row__heading {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.day-row__weekday {
+  font-weight: 600;
+}
+
+.day-row__split {
+  color: var(--ink);
+}
+
+.day-row__timer {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+.day-row--completed .day-row__weekday,
+.day-row--completed .day-row__split {
+  color: var(--success);
+}
+
+.day-row--rest .day-row__weekday {
+  color: var(--ink-secondary);
+  font-weight: 500;
+}
+
+.day-row__check {
+  color: var(--success);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.day-row__start {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 8px 16px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.dashboard-coach-notes {
+  margin-top: 20px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+
+/* ---------- Active exercise ---------- */
+
+.video-placeholder {
+  position: relative;
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-card);
+  aspect-ratio: 4 / 3;
+}
+.video-placeholder img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.video-placeholder__controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+  color: #fff;
+  font-size: 14px;
+}
+.video-placeholder__bar {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+}
+
+.exercise-name {
+  font-size: 22px;
+  margin-bottom: 16px;
+}
+
+.set-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 20px;
+  margin-bottom: 16px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--surface-alt);
+  font-size: 16px;
+  cursor: pointer;
+}
+.set-row:last-child {
+  border-bottom: none;
+}
+.set-row input[type='checkbox'] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
+}
+
+.voice-note-btn {
+  margin-bottom: 12px;
+}
+.voice-note-btn__dot--active {
+  color: #ff3b30;
+}
+
+.begin-next-btn {
+  margin-top: 8px;
+}
+
+/* ---------- Rest timer ---------- */
+
+.rest-screen {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 1;
+  gap: 32px;
+}
+
+.rest-screen__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.rest-screen__label {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ink-secondary);
+  text-transform: uppercase;
+}
+
+.countdown-ring__number {
+  font-size: 48px;
+  font-weight: 700;
+  fill: var(--ink);
+}
+
+/* ---------- Session summary ---------- */
+
+.summary-screen {
+  justify-content: center;
+  gap: 20px;
+}
+
+.summary-card {
+  text-align: center;
+}
+
+.summary-card__confetti {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.summary-card__title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+
+.summary-card__plan-complete {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.summary-card__name {
+  display: inline-block;
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 4px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.summary-card__avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: var(--surface-alt);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  margin: 0 auto 20px;
+}
+
+.summary-card__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+  margin: 0;
+}
+
+.summary-card__stat {
+  display: flex;
+  justify-content: space-between;
+  font-size: 15px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--surface-alt);
+}
+.summary-card__stat:last-child {
+  border-bottom: none;
+}
+.summary-card__stat dt {
+  color: var(--ink-secondary);
+}
+.summary-card__stat dd {
+  margin: 0;
+  font-weight: 600;
+}
