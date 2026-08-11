@@ -58,7 +58,7 @@ There's no auth layer; `user_id` is a plain caller-supplied string (e.g. `"usr_1
 |---|---|
 | `POST /workout-plan` | Generate (or fetch the in-progress) plan for a user |
 | `PATCH /workout-plan/<session_id>/complete` | Force-mark a session completed |
-| `POST /api/users/<user_id>/progress-plan` | Generate the *next* week's plan from the last completed one |
+| `POST /api/users/<user_id>/progress-plan` | Generate the *next* week's plan from the last completed one (usually already generated automatically — see below) |
 | `GET /api/users/<user_id>/dashboard` | Weekly calendar view — day statuses for the PWA home screen |
 | `POST /api/sessions/<id>/days/<n>/start` | Mark a day as started |
 | `PATCH /api/sessions/<id>/exercises/<id>/sets/<n>` | Log reps for one completed set |
@@ -79,12 +79,19 @@ Errors: `400` missing fields · `502` profile extraction failed · `500` plan ge
 **`PATCH /workout-plan/<session_id>/complete`**
 Directly flips `sessions.completed = true`. A manual/administrative shortcut — the PWA's real
 completion path is the per-day `.../complete` route below, which completes the session
-automatically once every day is done. `404` if the session doesn't exist.
+automatically once every day is done. `404` if the session doesn't exist. Like any session
+completion, this also auto-generates the next progressed session — see below.
 
 **`POST /api/users/<user_id>/progress-plan`**
 1. If an unfinished session already exists, return it (idempotent).
 2. Else look up the user's last *completed* session — `404` if there isn't one.
 3. Clone/advance it into a new session (`create_progressed_session`) and return the new plan.
+
+In practice this endpoint rarely needs to be called directly: completing a session (whether via
+the last day auto-completing it, or the manual admin endpoint) already triggers step 3
+automatically — see below. It exists mainly as an idempotent fetch/retry path, and as a manual
+trigger if auto-progression ever fails (it's best-effort and logs rather than blocking the
+completion request that triggered it).
 
 Per-exercise rep targets and exercise selection for the new session are computed by the
 autoregulation algorithm — see [Exercise progression](#exercise-progression) below.
@@ -114,18 +121,26 @@ exercise.
 1. Sets `session_day_logs.completed_at` and computes summary stats (time, exercises/sets
    completed vs. total).
 2. If every non-rest day in the plan template now has `completed_at`, also marks the whole
-   `sessions` row completed and returns `plan_completed: true`.
+   `sessions` row completed and returns `plan_completed: true` — which, per below, also
+   auto-generates next week's session.
 
 Powers `SummaryScreen`; `plan_completed` triggers the "You've completed your whole plan!" message.
 
 ## Exercise progression
 
-When `POST /api/users/<user_id>/progress-plan` builds the next session, it doesn't re-run the
-workout agent — it carries forward the *same* exercise slots from the last completed session
-(same `day_number`/`category`/`slot_label`/`sets`/`note`) and recalculates each slot's `reps`
-autoregulated off how that exercise actually went. This is entirely deterministic code
-(`_compute_progressed_reps` + `create_progressed_session` in `backend/repository/workout_plan_repository.py`) —
-no LLM call is involved. Runs once per exercise slot, independently.
+**Triggered automatically.** Any time a session is marked completed —
+`mark_session_completed` in `backend/repository/workout_plan_repository.py`, called both by
+`complete_day` once the last day is done and by the manual `PATCH /workout-plan/<id>/complete`
+endpoint — it immediately builds next week's session via `create_progressed_session`. This is
+best-effort: it runs after the completion itself is already committed, so a failure here is
+logged and swallowed rather than failing the request that completed the session (the user simply
+falls back to `POST /api/users/<user_id>/progress-plan`, which does the same thing on demand).
+
+The new session doesn't re-run the workout agent — it carries forward the *same* exercise slots
+from the just-completed session (same `day_number`/`category`/`slot_label`/`sets`/`note`) and
+recalculates each slot's `reps` autoregulated off how that exercise actually went. This is
+entirely deterministic code (`_compute_progressed_reps` + `create_progressed_session`) — no LLM
+call is involved. Runs once per exercise slot, independently.
 
 ### Step 1 — did they hit the target?
 

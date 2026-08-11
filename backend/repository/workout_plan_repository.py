@@ -1,3 +1,4 @@
+import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -10,6 +11,8 @@ from agents.prompts_v1 import DAY_TEMPLATES
 from backend.repository.workout_repository import WorkoutRepository
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SESSION_EXERCISE_JOIN = (
     "*, exercises(*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name))), "
@@ -355,7 +358,40 @@ class WorkoutPlanRepository:
             .execute()
             .data
         )
-        return result[0] if result else None
+        if not result:
+            return None
+        completed_session = result[0]
+        self._auto_progress(completed_session)
+        return completed_session
+
+    def _auto_progress(self, completed_session: dict) -> None:
+        """Generate the next week's session as soon as this one is marked
+        completed, so the user always has a next plan waiting without having
+        to call POST /api/users/<user_id>/progress-plan themselves.
+
+        Best-effort: the session is already committed as completed regardless
+        of whether this succeeds, so a failure here is logged and swallowed
+        rather than surfaced as a failure of whatever request triggered the
+        completion (day-completion or the manual admin endpoint).
+        """
+        try:
+            exercise_rows = (
+                self.client.table("session_exercises")
+                .select(PROGRESSION_EXERCISE_SELECT)
+                .eq("session_id", completed_session["id"])
+                .execute()
+                .data
+            )
+            if exercise_rows:
+                self.create_progressed_session(
+                    completed_session["user_id"], completed_session, exercise_rows
+                )
+        except Exception:
+            logger.exception(
+                "Failed to auto-generate progressed session for user_id=%s after session_id=%s completed",
+                completed_session.get("user_id"),
+                completed_session.get("id"),
+            )
 
     def list_day_logs(self, session_id: int) -> Dict[int, dict]:
         rows = (
