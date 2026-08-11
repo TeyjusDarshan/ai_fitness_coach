@@ -8,16 +8,22 @@ import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
 
 function RequireAuth({ children }: { children: ReactNode }) {
-  const { username, dashboard, loading, refreshDashboard } = useAppState()
+  const { username, dashboard, loading, dashboardStatus, refreshDashboard } = useAppState()
 
   useEffect(() => {
-    if (username && !dashboard) {
+    // Only fetch on the first mount for this session. Gating on
+    // `dashboardStatus === 'idle'` (rather than `!dashboard`) means a
+    // definitive failure (e.g. 404) is remembered and won't be re-fetched
+    // on every subsequent remount — route navigation remounts RequireAuth
+    // separately per route, which previously turned a single 404 into a
+    // fetch on every screen change.
+    if (username && dashboardStatus === 'idle') {
       refreshDashboard().catch(() => {
         // surfaced via useAppState().error, handled by DashboardScreen
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username])
+  }, [username, dashboardStatus])
 
   if (!username) {
     return <Navigate to="/login" replace />

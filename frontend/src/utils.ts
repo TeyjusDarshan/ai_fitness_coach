@@ -5,7 +5,14 @@ export function flattenExercises(day: DashboardDay): ExerciseEntry[] {
 }
 
 export function isExerciseComplete(exercise: ExerciseEntry): boolean {
-  return exercise.completed_sets.length > 0 && exercise.completed_sets.every(Boolean)
+  return Boolean(exercise.sets) && exercise.set_logs.length >= (exercise.sets ?? 0)
+}
+
+// exercise.reps is a plain numeric target (e.g. "10") set by the workout
+// agent — falls back to 8 for the rare case it's missing or non-numeric.
+export function targetReps(exercise: ExerciseEntry): number {
+  const parsed = Number(exercise.reps)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8
 }
 
 export function firstIncompleteIndex(day: DashboardDay): number {
@@ -40,20 +47,42 @@ function mapExercise(
   }
 }
 
-// Flips a single set index against whatever the array currently is in
-// `dashboard` — safe to use for optimistic updates/reverts issued from a
-// stale closure, since it never clobbers a sibling index's concurrent change.
-export function withSetToggled(
+// Upserts one set's logged rep count against whatever `dashboard` currently
+// holds — safe for optimistic updates/reverts issued from a stale closure,
+// since it never clobbers a sibling set_number's concurrent change.
+export function withSetLogged(
   dashboard: Dashboard,
   dayNumber: number,
   exerciseId: number,
-  setIndex: number,
-  value: boolean,
+  setNumber: number,
+  completedReps: number,
 ): Dashboard {
   return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({
     ...ex,
-    completed_sets: ex.completed_sets.map((v, i) => (i === setIndex ? value : v)),
+    set_logs: [...ex.set_logs.filter((log) => log.set_number !== setNumber), { set_number: setNumber, completed_reps: completedReps }],
   }))
+}
+
+// Reverts an optimistic log that was never actually confirmed by the server.
+export function withSetLogRemoved(
+  dashboard: Dashboard,
+  dayNumber: number,
+  exerciseId: number,
+  setNumber: number,
+): Dashboard {
+  return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({
+    ...ex,
+    set_logs: ex.set_logs.filter((log) => log.set_number !== setNumber),
+  }))
+}
+
+export function withRpeLogged(
+  dashboard: Dashboard,
+  dayNumber: number,
+  exerciseId: number,
+  rpe: number | null,
+): Dashboard {
+  return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({ ...ex, rpe }))
 }
 
 export function capitalize(name: string): string {

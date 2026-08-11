@@ -168,25 +168,101 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 0;
   border-bottom: 1px solid var(--surface-alt);
   font-size: 16px;
-  cursor: pointer;
 }
 .set-row:last-child {
   border-bottom: none;
 }
-.set-row input[type='checkbox'] {
-  width: 22px;
-  height: 22px;
-  accent-color: var(--accent);
+.set-row__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.set-row__target {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.set-row__controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.voice-note-btn {
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 4px;
+}
+.stepper__btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink);
+  cursor: pointer;
+}
+.stepper__btn:active {
+  background: var(--surface-alt);
+}
+.stepper__value {
+  min-width: 28px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.set-row__confirm {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1.5px solid var(--hairline);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--hairline);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.set-row__confirm--active {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.effort-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 12px;
 }
-.voice-note-btn__dot--active {
-  color: #ff3b30;
+.effort-slider__title {
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.effort-slider__input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.effort-slider__labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.effort-slider__label--active {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .begin-next-btn {

@@ -4,20 +4,22 @@
 
 Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northeast-1`, Postgres 17.6).
 
-> ⚠️ **RLS is disabled on every table below.** All 10 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, and `session_day_logs` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress) and are still exposed with no RLS. This is a known, accepted gap pending an auth layer, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+> ⚠️ **RLS is disabled on every table below.** All 12 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, and `session_exercise_rpe` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE) and are still exposed with no RLS. This is a known, accepted gap pending an auth layer, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
 
 > The exercise-library schema (`movement_types`, `equipment`, `joints`, `exercises`, `exercise_loaded_joints`, `exercise_relationships`) is sourced from `utilities/workout_builder/data/exercises.csv` and `relationships.csv`, migrated via `utilities/scripts/migrate_exercises_to_supabase.py` (idempotent — safe to re-run after editing the CSVs). Populated as of this writing: 66 exercises, 203 joint links, 110 relationships.
 
 ### Entity overview
 
-`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot, plus per-set completion progress; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan.
+`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan.
 
 ```
 movement_types ─┐
                 ├─< exercises >─┬─< exercise_loaded_joints >─ joints
 equipment ──────┘               └─< exercise_relationships >─ exercises (self-referential: from/to)
                                  └─< session_exercises >─ sessions >─ user_profiles
-                                                             └─< session_day_logs >─ sessions
+                                       ├─< session_exercise_set_logs
+                                       └─< session_exercise_rpe
+                                                             sessions ─< session_day_logs
 ```
 
 ### Lookup tables
@@ -118,9 +120,35 @@ One row per prescribed exercise slot within a non-rest day of a session. Deliber
 | `rep_range` | varchar, nullable | |
 | `note` | text, nullable | |
 | `created_at` | timestamptz, default `now()` | |
-| `completed_sets` | jsonb, default `[]` | boolean array sized to that row's `sets` (e.g. `[false, false, true]`); one entry per prescribed set, toggled independently as the user checks sets off during a workout |
 
-`completed_sets` is written to through the `set_session_exercise_set(p_session_exercise_id, p_set_index, p_completed)` Postgres function (a single atomic `jsonb_set` update), not a client-side read-modify-write — two rapid toggles on different indices of the same row would otherwise race and silently lose one of the updates.
+Per-set completion and RPE are tracked in the child tables below rather than on this row.
+
+### `session_exercise_set_logs` — per-set completion within a `session_exercises` row
+
+One row per set actually logged, written via `WorkoutPlanRepository.log_set`. Each `set_number` is its own row (keyed by the unique constraint below), so logging two different sets on the same exercise back to back can't race the way a shared jsonb array could — this replaced an earlier `session_exercises.completed_sets` jsonb boolean array design for that reason.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `session_exercise_id` | int4, FK → `session_exercises.id` | `ON DELETE CASCADE` |
+| `set_number` | int2 | 1-indexed, the kth set within that `session_exercises` row (≤ its `sets`) |
+| `completed_reps` | int2 | reps actually performed on that set |
+| `created_at` | timestamptz, default `now()` | |
+
+Unique: (`session_exercise_id`, `set_number`) — one log row per set, and makes `log_set` an idempotent upsert. `complete_day` treats a `session_exercises` row as fully done once it has as many logged sets as its prescribed `sets`.
+
+### `session_exercise_rpe` — perceived exertion per prescribed exercise
+
+One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe` — RPE is logged once per exercise (not per set).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `session_exercise_id` | int4, FK → `session_exercises.id` | `ON DELETE CASCADE` |
+| `rpe` | int2 | check 1–10 |
+| `created_at` | timestamptz, default `now()` | |
+
+Unique: (`session_exercise_id`) — makes `log_rpe` an idempotent upsert.
 
 ### `session_day_logs` — per-day progress within a session
 
@@ -139,4 +167,4 @@ Unique: (`session_id`, `day_number`) — enforces one log row per day per sessio
 
 ### Notes on FK delete behavior
 
-`movement_type_id` and `equipment_id` on `exercises`, and `user_id` on `sessions`, and `exercise_id` on `session_exercises`, have no cascade, so deleting a referenced row is blocked while referenced. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`, `session_exercises` and `session_day_logs` via `session_id`) cascade on delete from their parent (`exercises` / `sessions` respectively). Indexes exist on all FK columns.
+`movement_type_id` and `equipment_id` on `exercises`, and `exercise_id` on `session_exercises`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions` is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions`, which in turn cascades to `session_exercises` and `session_day_logs` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across all five child tables. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. Indexes exist on all FK columns.

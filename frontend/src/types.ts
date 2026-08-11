@@ -1,3 +1,8 @@
+export interface SetLog {
+  set_number: number
+  completed_reps: number
+}
+
 export interface ExerciseEntry {
   id: number
   slot: string | null
@@ -11,7 +16,8 @@ export interface ExerciseEntry {
   rep_range: string | null
   equipment: string[]
   note: string | null
-  completed_sets: boolean[]
+  set_logs: SetLog[]
+  rpe: number | null
 }
 
 export type DayStatus = 'rest' | 'completed' | 'next' | 'upcoming'

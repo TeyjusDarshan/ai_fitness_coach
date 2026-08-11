@@ -1,4 +1,4 @@
-import type { Dashboard, DayCompleteSummary } from './types'
+import type { Dashboard, DayCompleteSummary, SetLog } from './types'
 
 class ApiError extends Error {
   status: number
@@ -34,15 +34,26 @@ export function startDay(sessionId: number, dayNumber: number): Promise<unknown>
   return request(`/sessions/${sessionId}/days/${dayNumber}/start`, { method: 'POST' })
 }
 
-export function toggleSet(
+export function logSet(
   sessionId: number,
   sessionExerciseId: number,
-  setIndex: number,
-  completed: boolean,
-): Promise<{ completed_sets: boolean[] }> {
-  return request(`/sessions/${sessionId}/exercises/${sessionExerciseId}/sets/${setIndex}`, {
+  setNumber: number,
+  completedReps: number,
+): Promise<SetLog> {
+  return request(`/sessions/${sessionId}/exercises/${sessionExerciseId}/sets/${setNumber}`, {
     method: 'PATCH',
-    body: JSON.stringify({ completed }),
+    body: JSON.stringify({ completed_reps: completedReps }),
+  })
+}
+
+export function logRpe(
+  sessionId: number,
+  sessionExerciseId: number,
+  rpe: number,
+): Promise<{ rpe: number }> {
+  return request(`/sessions/${sessionId}/exercises/${sessionExerciseId}/rpe`, {
+    method: 'PATCH',
+    body: JSON.stringify({ rpe }),
   })
 }
 

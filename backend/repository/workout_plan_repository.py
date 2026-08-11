@@ -12,8 +12,79 @@ from backend.repository.workout_repository import WorkoutRepository
 load_dotenv()
 
 SESSION_EXERCISE_JOIN = (
-    "*, exercises(*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name)))"
+    "*, exercises(*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name))), "
+    "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
+
+# Lighter than SESSION_EXERCISE_JOIN: progression only needs exercise_id (not
+# the nested exercises(...) join) since it's carried forward as-is into the
+# next session's session_exercises rows, never rendered.
+PROGRESSION_EXERCISE_SELECT = (
+    "id, exercise_id, day_number, category, slot_label, sets, reps, rep_range, note, "
+    "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
+)
+
+# Autoregulated-progression constants — see _compute_progressed_reps.
+PROGRESSION_TARGET_RPE = 8
+PROGRESSION_FALLBACK_RPE = 10  # goal not met, or met but RPE was never logged
+PROGRESSION_DIVISOR = 3
+PROGRESSION_MIN_REPS = 1
+
+# performance_factor (TARGET_RPE - actual_rpe) -> volume multiplier. Keyed by
+# the 3 performance_factor values the app's RPE inputs actually produce
+# (Easy/Medium/Hard = rpe 6/8/10 -> PF 2/0/-2); a reported rpe outside
+# {6, 8, 10} is possible via direct API use, so _compute_progressed_reps
+# snaps performance_factor to whichever of these keys it's closest to.
+PROGRESSION_PF_MULTIPLIERS = {-2: 0.9, 0: 1.02, 2: 1.1}
+
+# exercise_relationships.reason is semicolon-delimited when an edge has more
+# than one reason (e.g. "Lack of form;Lack of strength") — substring match
+# catches both that and the plain "Lack of strength" case.
+REGRESSION_REASON_FILTER = "lack of strength"
+
+
+def _compute_progressed_reps(exercise_row: Dict[str, Any]) -> int:
+    """Autoregulated next-session reps target for one session_exercises row.
+
+    "Met" requires a logged set for every prescribed `sets` slot, each at or
+    above that row's target `reps`. If met, actual_rpe is the user-reported
+    session_exercise_rpe value; otherwise (goal not met, or met but no RPE
+    was ever logged) it falls back to PROGRESSION_FALLBACK_RPE, same as a
+    missed goal. performance_factor = TARGET_RPE - actual_rpe is mapped to a
+    multiplier via PROGRESSION_PF_MULTIPLIERS and applied to last session's
+    average reps per set (total_volume / PROGRESSION_DIVISOR). Floored at
+    PROGRESSION_MIN_REPS so the result written to the varchar `reps` column
+    is never zero, negative, or fractional.
+    """
+    prescribed_sets = exercise_row.get("sets") or 0
+    try:
+        target_reps = int(exercise_row.get("reps"))
+    except (TypeError, ValueError):
+        target_reps = None
+
+    set_logs = exercise_row.get("session_exercise_set_logs") or []
+    logged_by_set = {log["set_number"]: log["completed_reps"] for log in set_logs}
+
+    met_target = (
+        target_reps is not None
+        and prescribed_sets > 0
+        and len(logged_by_set) >= prescribed_sets
+        and all(logged_by_set.get(n, 0) >= target_reps for n in range(1, prescribed_sets + 1))
+    )
+
+    if met_target:
+        reported_rpe = reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe") or None
+        actual_rpe = reported_rpe if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
+    else:
+        actual_rpe = PROGRESSION_FALLBACK_RPE
+
+    performance_factor = PROGRESSION_TARGET_RPE - actual_rpe
+    nearest_pf = min(PROGRESSION_PF_MULTIPLIERS, key=lambda pf: abs(pf - performance_factor))
+    multiplier = PROGRESSION_PF_MULTIPLIERS[nearest_pf]
+
+    total_volume = sum(logged_by_set.values())
+    next_reps = multiplier * (total_volume / PROGRESSION_DIVISOR)
+    return max(PROGRESSION_MIN_REPS, round(next_reps))
 
 
 class WorkoutPlanRepository:
@@ -80,6 +151,168 @@ class WorkoutPlanRepository:
             "plan": self._reconstruct_plan(session, exercise_rows),
         }
 
+    def get_last_completed_session(self, user_id: str) -> Optional[dict]:
+        sessions = (
+            self.client.table("sessions")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("completed", True)
+            .order("completed_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not sessions:
+            return None
+        session = sessions[0]
+
+        exercise_rows = (
+            self.client.table("session_exercises")
+            .select(PROGRESSION_EXERCISE_SELECT)
+            .eq("session_id", session["id"])
+            .execute()
+            .data
+        )
+        return {"session": session, "exercise_rows": exercise_rows}
+
+    def _fetch_exercise_rep_bounds(self, exercise_ids: List[int]) -> Dict[int, dict]:
+        """id -> {min_reps, max_reps} for the given exercises, batched into one query."""
+        if not exercise_ids:
+            return {}
+        rows = (
+            self.client.table("exercises")
+            .select("id, min_reps, max_reps")
+            .in_("id", list(set(exercise_ids)))
+            .execute()
+            .data
+        )
+        return {row["id"]: row for row in rows}
+
+    def _fetch_regressions(self, exercise_ids: List[int]) -> Dict[int, int]:
+        """from_exercise_id -> to_exercise_id for the "lack of strength" regression edge."""
+        if not exercise_ids:
+            return {}
+        rows = (
+            self.client.table("exercise_relationships")
+            .select("from_exercise_id, to_exercise_id")
+            .eq("type", "regression")
+            .ilike("reason", f"%{REGRESSION_REASON_FILTER}%")
+            .in_("from_exercise_id", list(set(exercise_ids)))
+            .execute()
+            .data
+        )
+        return {row["from_exercise_id"]: row["to_exercise_id"] for row in rows}
+
+    def _fetch_progressions(self, exercise_ids: List[int]) -> Dict[int, int]:
+        """from_exercise_id -> to_exercise_id for the progression edge."""
+        if not exercise_ids:
+            return {}
+        rows = (
+            self.client.table("exercise_relationships")
+            .select("from_exercise_id, to_exercise_id")
+            .eq("type", "progression")
+            .in_("from_exercise_id", list(set(exercise_ids)))
+            .execute()
+            .data
+        )
+        return {row["from_exercise_id"]: row["to_exercise_id"] for row in rows}
+
+    def create_progressed_session(
+        self, user_id: str, source_session: dict, exercise_rows: List[dict]
+    ) -> dict:
+        """Insert the next session by carrying forward source_session's exercises,
+        recalculating each row's `reps` via _compute_progressed_reps.
+
+        If the recalculated reps falls below the exercise's own `min_reps`
+        (from `exercises`), the exercise is swapped for its "lack of
+        strength" regression (`exercise_relationships`) and reps is set to
+        that regression's own `min_reps`. If it exceeds `max_reps`, the
+        exercise is swapped for its progression and reps is set to *that*
+        exercise's `min_reps`. If no matching regression/progression edge
+        exists, the exercise is kept as-is and reps is clamped to its own
+        min_reps/max_reps instead. `rep_range` is refreshed to match a
+        swapped-in exercise's own min-max (per the "matched catalog row's
+        f'{min_reps}-{max_reps}'" convention); everything else
+        (day_number/category/slot_label/sets/note) is carried over unchanged.
+        """
+        completed_at = source_session.get("completed_at")
+        session_row = {
+            "user_id": user_id,
+            "plan_type": source_session.get("plan_type"),
+            "plan_selection_reason": (
+                f"Progressive overload from the session completed on {completed_at}."
+                if completed_at
+                else "Progressive overload from the previous completed session."
+            ),
+            "medical_clearance_warning": source_session.get("medical_clearance_warning"),
+            "coach_notes": source_session.get("coach_notes"),
+            "safety_summary": source_session.get("safety_summary"),
+        }
+        session = self.client.table("sessions").insert(session_row).execute().data[0]
+
+        computed_reps = {row["id"]: _compute_progressed_reps(row) for row in exercise_rows}
+        rep_bounds = self._fetch_exercise_rep_bounds([row["exercise_id"] for row in exercise_rows])
+
+        below_min_ids = [
+            row["exercise_id"]
+            for row in exercise_rows
+            if row["exercise_id"] in rep_bounds
+            and computed_reps[row["id"]] < rep_bounds[row["exercise_id"]]["min_reps"]
+        ]
+        above_max_ids = [
+            row["exercise_id"]
+            for row in exercise_rows
+            if row["exercise_id"] in rep_bounds
+            and computed_reps[row["id"]] > rep_bounds[row["exercise_id"]]["max_reps"]
+        ]
+        regressions = self._fetch_regressions(below_min_ids)
+        progressions = self._fetch_progressions(above_max_ids)
+
+        replacement_ids = set(regressions.values()) | set(progressions.values())
+        replacement_bounds = self._fetch_exercise_rep_bounds(list(replacement_ids))
+
+        new_exercise_rows = []
+        for row in exercise_rows:
+            exercise_id = row["exercise_id"]
+            rep_range = row.get("rep_range")
+            bounds = rep_bounds.get(exercise_id)
+            next_reps = computed_reps[row["id"]]
+
+            if bounds is not None and next_reps < bounds["min_reps"]:
+                target_id = regressions.get(exercise_id)
+                if target_id is not None:
+                    exercise_id = target_id
+                    target_bounds = replacement_bounds[target_id]
+                    next_reps = target_bounds["min_reps"]
+                    rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
+                else:
+                    next_reps = bounds["min_reps"]
+            elif bounds is not None and next_reps > bounds["max_reps"]:
+                target_id = progressions.get(exercise_id)
+                if target_id is not None:
+                    exercise_id = target_id
+                    target_bounds = replacement_bounds[target_id]
+                    next_reps = target_bounds["min_reps"]
+                    rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
+                else:
+                    next_reps = bounds["max_reps"]
+
+            new_exercise_rows.append({
+                "session_id": session["id"],
+                "exercise_id": exercise_id,
+                "day_number": row["day_number"],
+                "category": row["category"],
+                "slot_label": row.get("slot_label"),
+                "sets": row.get("sets"),
+                "reps": str(next_reps),
+                "rep_range": rep_range,
+                "note": row.get("note"),
+            })
+        if new_exercise_rows:
+            self.client.table("session_exercises").insert(new_exercise_rows).execute()
+
+        return session
+
     def create_session(self, user_id: str, plan: Dict[str, Any]) -> dict:
         session_row = {
             "user_id": user_id,
@@ -108,7 +341,6 @@ class WorkoutPlanRepository:
                         "reps": ex.get("reps"),
                         "rep_range": ex.get("rep_range"),
                         "note": ex.get("note"),
-                        "completed_sets": [False] * sets if sets else [],
                     })
         if exercise_rows:
             self.client.table("session_exercises").insert(exercise_rows).execute()
@@ -177,25 +409,23 @@ class WorkoutPlanRepository:
         )
         return existing[0]
 
-    def set_completed(
-        self, session_id: int, session_exercise_id: int, set_index: int, completed: bool
-    ) -> Optional[List[bool]]:
-        """Flip one entry of a session_exercises row's completed_sets.
+    def log_set(
+        self, session_id: int, session_exercise_id: int, set_number: int, completed_reps: int
+    ) -> Optional[dict]:
+        """Upsert the session_exercise_set_logs row for one (exercise, set_number).
 
         Ownership/bounds are validated with a read first (their outcome never
-        changes after row creation, so no race there); the actual flip runs
-        through the set_session_exercise_set() Postgres function, which does
-        the jsonb_set update in a single atomic statement. Two rapid toggles
-        on different indices of the same row (e.g. checking two sets back to
-        back) would otherwise race under a client-side read-modify-write and
-        silently lose one of the updates.
+        changes after row creation, so no race there). Each set_number is its
+        own row keyed by the (session_exercise_id, set_number) unique
+        constraint, so logging two different sets back to back can't race the
+        way a shared jsonb array could.
 
-        Returns the updated array, or None if session_exercise_id doesn't
-        belong to session_id or set_index is out of range.
+        Returns the upserted row, or None if session_exercise_id doesn't
+        belong to session_id or set_number is out of range.
         """
         rows = (
             self.client.table("session_exercises")
-            .select("completed_sets")
+            .select("sets")
             .eq("id", session_exercise_id)
             .eq("session_id", session_id)
             .execute()
@@ -204,19 +434,44 @@ class WorkoutPlanRepository:
         if not rows:
             return None
 
-        current_length = len(rows[0].get("completed_sets") or [])
-        if set_index < 0 or set_index >= current_length:
+        total_sets = rows[0].get("sets") or 0
+        if set_number < 1 or set_number > total_sets:
             return None
 
-        result = self.client.rpc(
-            "set_session_exercise_set",
-            {
-                "p_session_exercise_id": session_exercise_id,
-                "p_set_index": set_index,
-                "p_completed": completed,
-            },
-        ).execute()
-        return result.data
+        row = {
+            "session_exercise_id": session_exercise_id,
+            "set_number": set_number,
+            "completed_reps": completed_reps,
+        }
+        result = (
+            self.client.table("session_exercise_set_logs")
+            .upsert(row, on_conflict="session_exercise_id,set_number")
+            .execute()
+            .data
+        )
+        return result[0] if result else None
+
+    def log_rpe(self, session_id: int, session_exercise_id: int, rpe: int) -> Optional[dict]:
+        """Upsert the session_exercise_rpe row for one exercise (one RPE per exercise per session)."""
+        rows = (
+            self.client.table("session_exercises")
+            .select("id")
+            .eq("id", session_exercise_id)
+            .eq("session_id", session_id)
+            .execute()
+            .data
+        )
+        if not rows:
+            return None
+
+        row = {"session_exercise_id": session_exercise_id, "rpe": rpe}
+        result = (
+            self.client.table("session_exercise_rpe")
+            .upsert(row, on_conflict="session_exercise_id")
+            .execute()
+            .data
+        )
+        return result[0] if result else None
 
     def complete_day(self, session_id: int, day_number: int) -> Optional[dict]:
         sessions = self.client.table("sessions").select("*").eq("id", session_id).execute().data
@@ -248,7 +503,7 @@ class WorkoutPlanRepository:
 
         exercise_rows = (
             self.client.table("session_exercises")
-            .select("completed_sets")
+            .select("sets, session_exercise_set_logs(set_number)")
             .eq("session_id", session_id)
             .eq("day_number", day_number)
             .execute()
@@ -259,11 +514,11 @@ class WorkoutPlanRepository:
         sets_completed = 0
         total_sets = 0
         for row in exercise_rows:
-            completed_sets = row.get("completed_sets") or []
-            total_sets += len(completed_sets)
-            done = sum(1 for s in completed_sets if s)
-            sets_completed += done
-            if completed_sets and done == len(completed_sets):
+            prescribed = row.get("sets") or 0
+            logged = len(row.get("session_exercise_set_logs") or [])
+            total_sets += prescribed
+            sets_completed += logged
+            if prescribed and logged >= prescribed:
                 exercises_completed += 1
 
         total_time_seconds = int((now - datetime.fromisoformat(started_at)).total_seconds())
@@ -308,7 +563,11 @@ class WorkoutPlanRepository:
                 "rep_range": row.get("rep_range"),
                 "equipment": exercise["equipment"],
                 "note": row.get("note"),
-                "completed_sets": row.get("completed_sets") or [],
+                "set_logs": sorted(
+                    (row.get("session_exercise_set_logs") or []),
+                    key=lambda log: log["set_number"],
+                ),
+                "rpe": ((row.get("session_exercise_rpe") or {}).get("rpe")) or 8
             }
             by_day[row["day_number"]][row["category"]].append(entry)
 
