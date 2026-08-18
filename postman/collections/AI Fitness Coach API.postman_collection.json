@@ -1,0 +1,327 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+    "name": "AI Fitness Coach API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Workout Plan",
+      "item": [
+        {
+          "name": "Generate Workout Plan",
+          "id": "761ccefd-6f7f-4549-9a6d-6b9a38c96248",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"userid\": \"usr_10235\",\n  \"raw_user_text\": \"I'm a 30-year-old male, intermediate lifter, 3 days a week, 60 min sessions, goal is muscle gain, no injuries.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/workout-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workout-plan"
+              ]
+            },
+            "description": "Generate (or fetch the in-progress) plan for a user. Idempotent — returns existing unfinished session if one exists. Requires both 'userid' and 'raw_user_text'."
+          },
+          "response": []
+        },
+        {
+          "name": "Force Complete Session",
+          "id": "aff4a3fc-52bc-4dd6-bf39-1aa42c50ae3e",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/workout-plan/:session_id/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "workout-plan",
+                ":session_id",
+                "complete"
+              ],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Admin/manual shortcut to force-mark a session as completed. Also auto-generates the next progressed session. Returns 404 if session not found."
+          },
+          "response": []
+        }
+      ],
+      "id": "f40f9a1e-754e-4db3-b0f8-87c9cb5c3a90"
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Dashboard",
+          "id": "dc0e99d6-7f33-49ba-ba82-057a19cce64f",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/:user_id/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                ":user_id",
+                "dashboard"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "usr_10235"
+                }
+              ]
+            },
+            "description": "Weekly calendar view — returns day statuses (rest/completed/next/upcoming) for the PWA home screen. Returns 404 if no active plan found."
+          },
+          "response": []
+        },
+        {
+          "name": "Progress to Next Week",
+          "id": "9e52bd93-327f-436b-b846-54e972eaaa28",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/:user_id/progress-plan",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                ":user_id",
+                "progress-plan"
+              ],
+              "variable": [
+                {
+                  "key": "user_id",
+                  "value": "usr_10235"
+                }
+              ]
+            },
+            "description": "Generate the next week's plan from the last completed session. Idempotent — returns existing unfinished session if one exists. Usually triggered automatically on session completion."
+          },
+          "response": []
+        }
+      ],
+      "id": "25424065-6ce2-466c-b768-d709d6a6f90c"
+    },
+    {
+      "name": "Sessions — Days",
+      "item": [
+        {
+          "name": "Start Day",
+          "id": "c9c532ab-a58f-4bec-a0ce-fa9651827b26",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/:session_id/days/:day_number/start",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                ":session_id",
+                "days",
+                ":day_number",
+                "start"
+              ],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "1"
+                },
+                {
+                  "key": "day_number",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Mark a day as started. Upserts started_at — set once on first entry, never overwritten by re-entry."
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Day",
+          "id": "f7cd95c3-16aa-4cc4-a106-e32384a41375",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/:session_id/days/:day_number/complete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                ":session_id",
+                "days",
+                ":day_number",
+                "complete"
+              ],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "1"
+                },
+                {
+                  "key": "day_number",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Mark a day as done. Computes summary stats. If every non-rest day is now completed, also marks the whole session completed and returns plan_completed: true — which auto-generates next week's session."
+          },
+          "response": []
+        }
+      ],
+      "id": "7ad211ad-27e8-462c-80dc-a9c1eb1da988"
+    },
+    {
+      "name": "Sessions — Exercises",
+      "item": [
+        {
+          "name": "Log Set",
+          "id": "61f86616-d0b9-4ab8-bc2f-0386327f21e5",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"completed_reps\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/:session_id/exercises/:session_exercise_id/sets/:set_number",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                ":session_id",
+                "exercises",
+                ":session_exercise_id",
+                "sets",
+                ":set_number"
+              ],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "1"
+                },
+                {
+                  "key": "session_exercise_id",
+                  "value": "1"
+                },
+                {
+                  "key": "set_number",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Log reps for one completed set. Upserts a set log row (idempotent per set_number). Returns 404 if exercise not found or set_number out of range."
+          },
+          "response": []
+        },
+        {
+          "name": "Log RPE",
+          "id": "1dc862d3-a1e1-4808-ad89-1fe68ac5f60e",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rpe\": 8\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/:session_id/exercises/:session_exercise_id/rpe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                ":session_id",
+                "exercises",
+                ":session_exercise_id",
+                "rpe"
+              ],
+              "variable": [
+                {
+                  "key": "session_id",
+                  "value": "1"
+                },
+                {
+                  "key": "session_exercise_id",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "Log perceived exertion (1–10) for an exercise. Upserts one row per exercise. Defaults to Medium (8) if never set before moving to next exercise."
+          },
+          "response": []
+        }
+      ],
+      "id": "153a0c79-a674-4ce4-91b0-63184c7c244a"
+    }
+  ],
+  "variable": [
+    {
+      "id": "e20a2824-8374-42c8-a69a-0559a346e9e8",
+      "key": "baseUrl",
+      "value": "http://localhost:8001"
+    }
+  ]
+}
