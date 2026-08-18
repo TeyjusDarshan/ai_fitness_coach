@@ -2,25 +2,19 @@
 
 Run (from the repo root):  python3 -m backend.app   then:
 
-  curl -X POST http://localhost:8001/workout-plan \\
+  curl -X POST http://localhost:8001/api/workout-plan \\
     -H "Content-Type: application/json" \\
     -d '{"userid": "usr_10235", "raw_user_text": "..."}'
 """
-import os
 import time
 
-from flask import Flask, abort, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
 from backend.repository.workout_plan_repository import WorkoutPlanRepository
 
-FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
-
-# static_folder=None: Flask's automatic static route registers at the same
-# "/<path:...>" pattern as our SPA catch-all below and wins by registration
-# order, shadowing it. Serve frontend/dist entirely through the catch-all below.
-app = Flask(__name__, static_folder=None)
+app = Flask(__name__)
 plan_repo = WorkoutPlanRepository()
 
 
@@ -43,7 +37,7 @@ def _persist_generated_session(user_id, profile, plan, max_attempts=2):
     raise last_exc
 
 
-@app.post("/workout-plan")
+@app.post("/api/workout-plan")
 def create_workout_plan():
     body = request.get_json(silent=True) or {}
     user_id = body.get("userid")
@@ -84,7 +78,7 @@ def create_workout_plan():
     return jsonify(response), 200
 
 
-@app.patch("/workout-plan/<int:session_id>/complete")
+@app.patch("/api/workout-plan/<int:session_id>/complete")
 def complete_session(session_id):
     try:
         updated = plan_repo.mark_session_completed(session_id)
@@ -231,17 +225,6 @@ def complete_day(session_id, day_number):
     if summary is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404
     return jsonify(summary), 200
-
-
-@app.get("/", defaults={"path": ""})
-@app.get("/<path:path>")
-def spa(path):
-    if path.startswith("api/"):
-        abort(404)
-    full_path = os.path.join(FRONTEND_DIST, path)
-    if path and os.path.isfile(full_path):
-        return send_from_directory(FRONTEND_DIST, path)
-    return send_from_directory(FRONTEND_DIST, "index.html")
 
 
 if __name__ == "__main__":
