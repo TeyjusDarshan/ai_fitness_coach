@@ -12,7 +12,7 @@ from flask import Flask, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
-from backend.repository.workout_plan_repository import WorkoutPlanRepository
+from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
 
 app = Flask(__name__)
 plan_repo = WorkoutPlanRepository()
@@ -160,6 +160,61 @@ def get_dashboard(user_id):
         "session_duration_minutes": session_duration_minutes,
         "days": days,
     }), 200
+
+
+@app.post("/api/users/<user_id>/joint-pain")
+def update_joint_pain(user_id):
+    if not plan_repo.user_exists(user_id):
+        return jsonify({"error": f"User {user_id} not found."}), 404
+
+    body = request.get_json(silent=True) or {}
+    joints = body.get("joints")
+    if not isinstance(joints, list) or not joints:
+        return jsonify({"error": "'joints' (non-empty list) is required."}), 400
+
+    valid_pain_levels = {level.value for level in PainLevel}
+    parsed = []
+    for entry in joints:
+        joint_id = entry.get("joint_id") if isinstance(entry, dict) else None
+        pain_level = entry.get("pain_level") if isinstance(entry, dict) else None
+        if (
+            not isinstance(joint_id, int)
+            or isinstance(joint_id, bool)
+            or pain_level not in valid_pain_levels
+        ):
+            return jsonify({
+                "error": "Each entry in 'joints' requires an int 'joint_id' and a 'pain_level' "
+                         f"in {sorted(valid_pain_levels)}."
+            }), 400
+        parsed.append({"joint_id": joint_id, "pain_level": pain_level})
+
+    try:
+        updated = plan_repo.upsert_joint_pain(user_id, parsed)
+    except Exception:
+        app.logger.exception("Failed to update joint pain for user_id=%s", user_id)
+        return jsonify({"error": "Failed to update joint pain."}), 500
+
+    return jsonify({"joints": updated}), 200
+
+
+@app.delete("/api/users/<user_id>/joint-pain/<int:joint_id>")
+def delete_joint_pain(user_id, joint_id):
+    if not plan_repo.user_exists(user_id):
+        return jsonify({"error": f"User {user_id} not found."}), 404
+
+    try:
+        deleted = plan_repo.delete_joint_pain(user_id, joint_id)
+    except Exception:
+        app.logger.exception(
+            "Failed to delete joint pain for user_id=%s joint_id=%s", user_id, joint_id
+        )
+        return jsonify({"error": "Failed to delete joint pain."}), 500
+
+    if not deleted:
+        return jsonify({
+            "error": f"No joint pain reported for user_id={user_id}, joint_id={joint_id}."
+        }), 404
+    return jsonify({"user_id": user_id, "joint_id": joint_id, "deleted": True}), 200
 
 
 @app.post("/api/sessions/<int:session_id>/days/<int:day_number>/start")

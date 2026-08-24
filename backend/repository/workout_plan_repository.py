@@ -2,6 +2,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime, timezone
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -46,7 +47,26 @@ PROGRESSION_PF_MULTIPLIERS = {-2: 0.9, 0: 1.02, 2: 1.1}
 REGRESSION_REASON_FILTER = "lack of strength"
 
 
-def _compute_progressed_reps(exercise_row: Dict[str, Any]) -> int:
+class PainLevel(Enum):
+    MILD = "mild"       # 1-3
+    MODERATE = "moderate"  # 4-7
+    SEVERE = "severe"   # 8-10
+
+
+# Corrected Joint Load Factors: (pain_level, exercise_loaded_joints.joint_load)
+# -> injury multiplier. 0.0 means the exercise should be excluded outright
+# for that joint at that pain level, not just down-weighted. "nil" (no load)
+# is always 1.0 since the exercise isn't touching that joint at all.
+JOINT_LOAD_INJURY_MULTIPLIERS: Dict[PainLevel, Dict[str, float]] = {
+    PainLevel.MILD: {"high": 0.4, "mid": 0.7, "low": 1.0, "nil": 1.0},
+    PainLevel.MODERATE: {"high": 0.0, "mid": 0.3, "low": 0.6, "nil": 1.0},
+    PainLevel.SEVERE: {"high": 0.0, "mid": 0.0, "low": 0.3, "nil": 1.0},
+}
+
+
+def _compute_progressed_reps(
+    exercise_row: Dict[str, Any], injury_multiplier: Optional[float] = None
+) -> int:
     """Autoregulated next-session reps target for one session_exercises row.
 
     "Met" requires a logged set for every prescribed `sets` slot, each at or
@@ -58,6 +78,11 @@ def _compute_progressed_reps(exercise_row: Dict[str, Any]) -> int:
     average reps per set (total_volume / PROGRESSION_DIVISOR). Floored at
     PROGRESSION_MIN_REPS so the result written to the varchar `reps` column
     is never zero, negative, or fractional.
+
+    If injury_multiplier is given (the exercise loads a joint the user has
+    reported pain in — see _injury_multiplier_for_exercise), it replaces the
+    RPE-derived multiplier entirely rather than the two being combined, since
+    the injury factor already encodes "back off regardless of performance."
     """
     prescribed_sets = exercise_row.get("sets") or 0
     try:
@@ -68,22 +93,25 @@ def _compute_progressed_reps(exercise_row: Dict[str, Any]) -> int:
     set_logs = exercise_row.get("session_exercise_set_logs") or []
     logged_by_set = {log["set_number"]: log["completed_reps"] for log in set_logs}
 
-    met_target = (
-        target_reps is not None
-        and prescribed_sets > 0
-        and len(logged_by_set) >= prescribed_sets
-        and all(logged_by_set.get(n, 0) >= target_reps for n in range(1, prescribed_sets + 1))
-    )
-
-    if met_target:
-        reported_rpe = reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe") or None
-        actual_rpe = reported_rpe if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
+    if injury_multiplier is not None:
+        multiplier = injury_multiplier
     else:
-        actual_rpe = PROGRESSION_FALLBACK_RPE
+        met_target = (
+            target_reps is not None
+            and prescribed_sets > 0
+            and len(logged_by_set) >= prescribed_sets
+            and all(logged_by_set.get(n, 0) >= target_reps for n in range(1, prescribed_sets + 1))
+        )
 
-    performance_factor = PROGRESSION_TARGET_RPE - actual_rpe
-    nearest_pf = min(PROGRESSION_PF_MULTIPLIERS, key=lambda pf: abs(pf - performance_factor))
-    multiplier = PROGRESSION_PF_MULTIPLIERS[nearest_pf]
+        if met_target:
+            reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe") or None
+            actual_rpe = reported_rpe if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
+        else:
+            actual_rpe = PROGRESSION_FALLBACK_RPE
+
+        performance_factor = PROGRESSION_TARGET_RPE - actual_rpe
+        nearest_pf = min(PROGRESSION_PF_MULTIPLIERS, key=lambda pf: abs(pf - performance_factor))
+        multiplier = PROGRESSION_PF_MULTIPLIERS[nearest_pf]
 
     total_volume = sum(logged_by_set.values())
     next_reps = multiplier * (total_volume / PROGRESSION_DIVISOR)
@@ -124,6 +152,56 @@ class WorkoutPlanRepository:
             .data
         )
         return rows[0]["profile"] if rows else None
+
+    def user_exists(self, user_id: str) -> bool:
+        rows = (
+            self.client.table("user_profiles")
+            .select("user_id")
+            .eq("user_id", user_id)
+            .execute()
+            .data
+        )
+        return bool(rows)
+
+    def upsert_joint_pain(self, user_id: str, joint_pains: List[Dict[str, Any]]) -> List[dict]:
+        """Upsert one or more (user, joint) pain_level rows into user_joint_pain.
+
+        joint_pains is a list of {"joint_id": int, "pain_level": str}. Keyed
+        by the table's (user_id, joint_id) unique constraint, so re-reporting
+        pain for a joint already on file overwrites it rather than
+        duplicating.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        rows = [
+            {
+                "user_id": user_id,
+                "joint_id": jp["joint_id"],
+                "pain_level": jp["pain_level"],
+                "updated_at": now,
+            }
+            for jp in joint_pains
+        ]
+        return (
+            self.client.table("user_joint_pain")
+            .upsert(rows, on_conflict="user_id,joint_id")
+            .execute()
+            .data
+        )
+
+    def delete_joint_pain(self, user_id: str, joint_id: int) -> bool:
+        """Delete the (user, joint) pain row, if one exists.
+
+        Returns whether a row was actually deleted.
+        """
+        result = (
+            self.client.table("user_joint_pain")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("joint_id", joint_id)
+            .execute()
+            .data
+        )
+        return bool(result)
 
     def get_unfinished_session(self, user_id: str) -> Optional[dict]:
         sessions = (
@@ -178,6 +256,77 @@ class WorkoutPlanRepository:
         )
         return {"session": session, "exercise_rows": exercise_rows}
 
+    def get_injury_multiplier(
+        self, exercise_id: int, joint_id: int, pain_level: PainLevel
+    ) -> float:
+        """Injury multiplier for one (exercise, joint) pair at a given pain level.
+
+        Looks up the exercise's joint_load classification (high/mid/low/nil)
+        from exercise_loaded_joints and maps it through
+        JOINT_LOAD_INJURY_MULTIPLIERS (the Corrected Joint Load Factors
+        table). No matching row is treated the same as "nil" (the exercise
+        doesn't load that joint), so it returns 1.0 rather than excluding.
+        """
+        rows = (
+            self.client.table("exercise_loaded_joints")
+            .select("joint_load")
+            .eq("exercise_id", exercise_id)
+            .eq("joint_id", joint_id)
+            .execute()
+            .data
+        )
+        joint_load = rows[0]["joint_load"] if rows else "nil"
+        return JOINT_LOAD_INJURY_MULTIPLIERS[pain_level][joint_load]
+
+    def _fetch_user_joint_pain(self, user_id: str) -> Dict[int, PainLevel]:
+        """joint_id -> reported PainLevel for this user, from user_joint_pain."""
+        rows = (
+            self.client.table("user_joint_pain")
+            .select("joint_id, pain_level")
+            .eq("user_id", user_id)
+            .execute()
+            .data
+        )
+        return {row["joint_id"]: PainLevel(row["pain_level"]) for row in rows}
+
+    def _fetch_loaded_joints(self, exercise_ids: List[int]) -> Dict[int, Dict[int, str]]:
+        """exercise_id -> {joint_id: joint_load}, batched into one query."""
+        if not exercise_ids:
+            return {}
+        rows = (
+            self.client.table("exercise_loaded_joints")
+            .select("exercise_id, joint_id, joint_load")
+            .in_("exercise_id", list(set(exercise_ids)))
+            .execute()
+            .data
+        )
+        loaded: Dict[int, Dict[int, str]] = defaultdict(dict)
+        for row in rows:
+            loaded[row["exercise_id"]][row["joint_id"]] = row["joint_load"]
+        return loaded
+
+    @staticmethod
+    def _injury_multiplier_for_exercise(
+        exercise_id: int,
+        loaded_joints_by_exercise: Dict[int, Dict[int, str]],
+        user_joint_pain: Dict[int, PainLevel],
+    ) -> Optional[float]:
+        """Most conservative Corrected Joint Load Factor across this
+        exercise's loaded joints that the user has reported pain in.
+
+        Returns None (fall back to the RPE-based multiplier) if the exercise
+        loads no joint the user has reported pain in. When it does load more
+        than one, the lowest multiplier wins — an injury in any joint the
+        exercise stresses should cap volume, not average out against joints
+        that are fine.
+        """
+        multipliers = [
+            JOINT_LOAD_INJURY_MULTIPLIERS[user_joint_pain[joint_id]][joint_load]
+            for joint_id, joint_load in loaded_joints_by_exercise.get(exercise_id, {}).items()
+            if joint_load != "nil" and joint_id in user_joint_pain
+        ]
+        return min(multipliers) if multipliers else None
+
     def _fetch_exercise_rep_bounds(self, exercise_ids: List[int]) -> Dict[int, dict]:
         """id -> {min_reps, max_reps} for the given exercises, batched into one query."""
         if not exercise_ids:
@@ -226,6 +375,12 @@ class WorkoutPlanRepository:
         """Insert the next session by carrying forward source_session's exercises,
         recalculating each row's `reps` via _compute_progressed_reps.
 
+        Each exercise's reps target is computed by _compute_progressed_reps,
+        using an injury multiplier (_injury_multiplier_for_exercise) in place
+        of the RPE-based one wherever the exercise loads a joint the user has
+        reported pain in (user_joint_pain), and the ordinary RPE-based
+        multiplier otherwise.
+
         If the recalculated reps falls below the exercise's own `min_reps`
         (from `exercises`), the exercise is swapped for its "lack of
         strength" regression (`exercise_relationships`) and reps is set to
@@ -237,6 +392,10 @@ class WorkoutPlanRepository:
         swapped-in exercise's own min-max (per the "matched catalog row's
         f'{min_reps}-{max_reps}'" convention); everything else
         (day_number/category/slot_label/sets/note) is carried over unchanged.
+
+        This applies uniformly regardless of *why* reps dropped, so an
+        injury-driven low multiplier can swap an exercise to its regression
+        exactly like a poor-performance one would.
         """
         completed_at = source_session.get("completed_at")
         session_row = {
@@ -253,7 +412,19 @@ class WorkoutPlanRepository:
         }
         session = self.client.table("sessions").insert(session_row).execute().data[0]
 
-        computed_reps = {row["id"]: _compute_progressed_reps(row) for row in exercise_rows}
+        user_joint_pain = self._fetch_user_joint_pain(user_id)
+        loaded_joints_by_exercise = self._fetch_loaded_joints(
+            [row["exercise_id"] for row in exercise_rows]
+        )
+        computed_reps = {
+            row["id"]: _compute_progressed_reps(
+                row,
+                self._injury_multiplier_for_exercise(
+                    row["exercise_id"], loaded_joints_by_exercise, user_joint_pain
+                ),
+            )
+            for row in exercise_rows
+        }
         rep_bounds = self._fetch_exercise_rep_bounds([row["exercise_id"] for row in exercise_rows])
 
         below_min_ids = [
