@@ -4,22 +4,23 @@
 
 Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northeast-1`, Postgres 17.6).
 
-> ⚠️ **RLS is disabled on every table below.** All 12 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, and `session_exercise_rpe` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE) and are still exposed with no RLS. This is a known, accepted gap pending an auth layer, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+> ⚠️ **RLS is disabled on every table below.** All 14 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_day_analysis` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap pending an auth layer, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
 
 > The exercise-library schema (`movement_types`, `equipment`, `joints`, `exercises`, `exercise_loaded_joints`, `exercise_relationships`) is sourced from `utilities/workout_builder/data/exercises.csv` and `relationships.csv`, migrated via `utilities/scripts/migrate_exercises_to_supabase.py` (idempotent — safe to re-run after editing the CSVs). Populated as of this writing: 66 exercises, 203 joint links, 110 relationships.
 
 ### Entity overview
 
-`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan.
+`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `user_joint_pain` holds one row per (user, joint) the user has reported pain for; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan; `session_day_analysis` holds one LLM-generated Tanglish summary per (session, day), written by the standalone `workout_analysis_consumer` service (see below).
 
 ```
 movement_types ─┐
                 ├─< exercises >─┬─< exercise_loaded_joints >─ joints
 equipment ──────┘               └─< exercise_relationships >─ exercises (self-referential: from/to)
-                                 └─< session_exercises >─ sessions >─ user_profiles
+                                 └─< session_exercises >─ sessions >─ user_profiles ─< user_joint_pain >─ joints
                                        ├─< session_exercise_set_logs
                                        └─< session_exercise_rpe
                                                              sessions ─< session_day_logs
+                                                             sessions ─< session_day_analysis
 ```
 
 ### Lookup tables
@@ -83,6 +84,21 @@ Populated by the Flask `/workout-plan` endpoint (`backend/app.py`) via `WorkoutP
 | `profile` | jsonb | full generated profile (`demographics`, `goals`, `experience`, `health`, `availability`, etc. — see `agents/mock_data_v1.py` for the shape) |
 | `created_at` | timestamptz, default `now()` | |
 | `updated_at` | timestamptz, default `now()` | bumped on every upsert |
+
+### `user_joint_pain` — reported pain per (user, joint)
+
+Populated by `WorkoutPlanRepository.upsert_joint_pain` / `delete_joint_pain` via `POST /api/users/<user_id>/joint-pain` and `DELETE /api/users/<user_id>/joint-pain/<joint_id>` (`backend/app.py`). Read by `_fetch_user_joint_pain` and fed into `get_injury_multiplier` to reduce load on exercises hitting a painful joint during progression.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `user_id` | text, FK → `user_profiles.user_id` | `ON DELETE CASCADE` |
+| `joint_id` | int4, FK → `joints.id` | no cascade |
+| `pain_level` | varchar | check ∈ `mild, moderate, severe` |
+| `created_at` | timestamptz, default `now()` | |
+| `updated_at` | timestamptz, default `now()` | bumped on every upsert |
+
+Unique: (`user_id`, `joint_id`) — makes `upsert_joint_pain` an idempotent upsert; re-reporting pain for a joint already on file overwrites it rather than duplicating.
 
 ### `sessions` — one row per generated workout plan
 
@@ -165,6 +181,20 @@ Tracks start/completion timestamps for each individual day (`day_number`) of a s
 
 Unique: (`session_id`, `day_number`) — enforces one log row per day per session, and makes `start_day`/`complete_day` idempotent upserts. When every non-rest `day_number` in a session's `DAY_TEMPLATES[plan_type]` has a `completed_at`, `complete_day` automatically calls `mark_session_completed` to close out the whole plan.
 
+### `session_day_analysis` — LLM-generated Tanglish summary per (session, day)
+
+One row per day of a session that's been marked complete. Written by the standalone `workout_analysis_consumer` package (repo root, alongside `backend`/`frontend`) — a Kafka consumer, independent of the Flask app, that listens on the `workout-complete-events` topic (produced by `backend/kafka_producer` when `POST /api/sessions/<session_id>/days/<day_number>/complete` succeeds). On each event it reads that day's `session_exercises` (with `session_exercise_set_logs` and `session_exercise_rpe` joined in), the user's `user_profiles.profile`, and their `user_joint_pain`, then prompts Mistral (`mistral-large-latest`) to write a short coach-style summary in **Tanglish** (Tamil-majority, code-switching into English for gym/fitness terms — see `workout_analysis_consumer/prompts.py`), and upserts the result here.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `session_id` | int4, FK → `sessions.id` | `ON DELETE CASCADE` |
+| `day_number` | int2 | 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
+| `analysis` | text | the generated Tanglish summary |
+| `created_at` | timestamptz, default `now()` | |
+
+Unique: (`session_id`, `day_number`) — makes the consumer's write an idempotent upsert, so redelivering an already-processed Kafka message overwrites rather than duplicates.
+
 ### Notes on FK delete behavior
 
-`movement_type_id` and `equipment_id` on `exercises`, and `exercise_id` on `session_exercises`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions` is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions`, which in turn cascades to `session_exercises` and `session_day_logs` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across all five child tables. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. Indexes exist on all FK columns.
+`movement_type_id` and `equipment_id` on `exercises`, `exercise_id` on `session_exercises`, and `joint_id` on `user_joint_pain`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions` and on `user_joint_pain` is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions` and `user_joint_pain` rows; `sessions` in turn cascades to `session_exercises`, `session_day_logs`, and `session_day_analysis` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across every child table. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. Indexes exist on all FK columns.
