@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any, Dict
 
 from dotenv import load_dotenv
@@ -20,6 +21,7 @@ llm = ChatMistralAI(
     model="mistral-large-latest",
     temperature=0.5,
     max_retries=2,
+    timeout=int(os.getenv("MISTRAL_REQUEST_TIMEOUT_SECONDS", "120")),
     rate_limiter=rate_limiter,
 )
 

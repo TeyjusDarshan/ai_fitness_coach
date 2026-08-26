@@ -15,6 +15,18 @@ SESSION_DAY_EXERCISE_JOIN = (
     "session_exercise_rpe(rpe)"
 )
 
+# The app's RPE input only ever logs one of 3 values, matching
+# backend/repository/workout_plan_repository.py's Easy/Medium/Hard = 6/8/10
+# (PROGRESSION_TARGET_RPE=8 is the intended/ideal effort). Computed here
+# rather than left for the LLM to infer, since a generic RPE scale would
+# read 8 as already hard rather than as this app's target.
+def _effort_flag(rpe):
+    if rpe == 6:
+        return "too_easy"
+    if rpe == 10:
+        return "too_difficult"
+    return None
+
 
 class AnalysisRepository:
     """Reads the Supabase data needed to summarize one workout day, and
@@ -95,6 +107,7 @@ class AnalysisRepository:
                         key=lambda log: log["set_number"],
                     ),
                     "rpe": (row.get("session_exercise_rpe") or {}).get("rpe"),
+                    "effort_flag": _effort_flag((row.get("session_exercise_rpe") or {}).get("rpe")),
                 }
                 for row in exercise_rows
             ],
