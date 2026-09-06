@@ -6,11 +6,15 @@ import json
 import logging
 
 from workout_analysis_consumer.consumer import WORKOUT_COMPLETE_TOPIC, build_consumer
+from workout_analysis_consumer.kafka_producer import KafkaProducerClient
 from workout_analysis_consumer.repository import AnalysisRepository
 from workout_analysis_consumer.summarizer import generate_workout_summary
+from workout_analysis_consumer.voice import generate_voice_note
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+producer = KafkaProducerClient()
 
 
 def _process_message(repo: AnalysisRepository, session_id: int, day_number: int) -> None:
@@ -22,8 +26,31 @@ def _process_message(repo: AnalysisRepository, session_id: int, day_number: int)
         return
 
     analysis = generate_workout_summary(context)
-    repo.save_analysis(session_id, day_number, analysis)
+
+    # Best-effort: a TTS/storage failure shouldn't discard the (costlier)
+    # LLM-generated text analysis, so it's still saved with audio_url unset.
+    try:
+        audio_url = generate_voice_note(analysis, session_id, day_number)
+    except Exception:
+        logger.exception(
+            "Failed to generate voice note for session_id=%s day_number=%s", session_id, day_number
+        )
+        audio_url = None
+
+    repo.save_analysis(session_id, day_number, analysis, audio_url)
     logger.info("Stored analysis for session_id=%s day_number=%s", session_id, day_number)
+
+    # Best-effort: the analysis is already durably saved, so a failure to
+    # publish this notification shouldn't fail the whole message.
+    try:
+        producer.send_workout_analysis_complete_event(
+            context["user_id"], session_id, day_number
+        )
+    except Exception:
+        logger.exception(
+            "Failed to publish workout-analysis-complete event for session_id=%s day_number=%s",
+            session_id, day_number,
+        )
 
 
 def run() -> None:

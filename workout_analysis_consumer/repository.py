@@ -87,6 +87,7 @@ class AnalysisRepository:
         return {
             "session_id": session_id,
             "day_number": day_number,
+            "user_id": user_id,
             "plan_type": sessions[0]["plan_type"],
             "user_profile": profile,
             "joint_pain": [
@@ -113,11 +114,23 @@ class AnalysisRepository:
             ],
         }
 
-    def save_analysis(self, session_id: int, day_number: int, analysis: str) -> dict:
+    def save_analysis(
+        self,
+        session_id: int,
+        day_number: int,
+        analysis: str,
+        audio_url: Optional[str] = None,
+    ) -> dict:
         """Upsert keyed by (session_id, day_number), so redelivering an
         already-processed message overwrites rather than duplicates.
+
+        audio_url is omitted from the payload (rather than sent as None) when
+        not given, so a redelivery whose voice-note generation fails doesn't
+        null out audio_url from an earlier successful attempt.
         """
         row = {"session_id": session_id, "day_number": day_number, "analysis": analysis}
+        if audio_url is not None:
+            row["audio_url"] = audio_url
         result = (
             self.client.table("session_day_analysis")
             .upsert(row, on_conflict="session_id,day_number")

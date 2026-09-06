@@ -16,7 +16,7 @@ raw text ──▶ preprocessor_agent ──▶ profile ──▶ workout_agent 
                                                           frontend/ (React + TS PWA)
 ```
 
-Both agents are LangChain agents backed by Mistral. The workout agent's output follows a fixed
+Both agents are LangChain agents backed by Gemini. The workout agent's output follows a fixed
 per-plan-type day skeleton (`DAY_TEMPLATES` in `agents/prompts_v1.py`) — the DB only stores the
 per-exercise prescriptions, not the day structure, which is reconstructed from that skeleton at
 read time.
@@ -35,7 +35,7 @@ read time.
 
 ## Running it
 
-**Backend** — requires `.env` with `SUPABASE_URL`, `SUPABASE_KEY`, `MISTRAL_API_KEY`:
+**Backend** — requires `.env` with `SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_API_KEY`:
 ```bash
 python3 -m backend.app        # http://localhost:8001
 ```

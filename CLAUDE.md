@@ -183,7 +183,7 @@ Unique: (`session_id`, `day_number`) — enforces one log row per day per sessio
 
 ### `session_day_analysis` — LLM-generated Tanglish summary per (session, day)
 
-One row per day of a session that's been marked complete. Written by the standalone `workout_analysis_consumer` package (repo root, alongside `backend`/`frontend`) — a Kafka consumer, independent of the Flask app, that listens on the `workout-complete-events` topic (produced by `backend/kafka_producer` when `POST /api/sessions/<session_id>/days/<day_number>/complete` succeeds). On each event it reads that day's `session_exercises` (with `session_exercise_set_logs` and `session_exercise_rpe` joined in), the user's `user_profiles.profile`, and their `user_joint_pain`, then prompts Mistral (`mistral-large-latest`) to write a short coach-style summary in **Tanglish** (Tamil-majority, code-switching into English for gym/fitness terms — see `workout_analysis_consumer/prompts.py`), and upserts the result here.
+One row per day of a session that's been marked complete. Written by the standalone `workout_analysis_consumer` package (repo root, alongside `backend`/`frontend`) — a Kafka consumer, independent of the Flask app, that listens on the `workout-complete-events` topic (produced by `backend/kafka_producer` when `POST /api/sessions/<session_id>/days/<day_number>/complete` succeeds). On each event it reads that day's `session_exercises` (with `session_exercise_set_logs` and `session_exercise_rpe` joined in), the user's `user_profiles.profile`, and their `user_joint_pain`, then prompts Gemini (`gemini-3.8-flash`) to write a short coach-style summary in **Tanglish** (Tamil-majority, code-switching into English for gym/fitness terms — see `workout_analysis_consumer/prompts.py`), and upserts the result here.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -191,6 +191,7 @@ One row per day of a session that's been marked complete. Written by the standal
 | `session_id` | int4, FK → `sessions.id` | `ON DELETE CASCADE` |
 | `day_number` | int2 | 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
 | `analysis` | text | the generated Tanglish summary |
+| `audio_url` | text, nullable | URL of the generated voice analysis (TTS audio) for `analysis` |
 | `created_at` | timestamptz, default `now()` | |
 
 Unique: (`session_id`, `day_number`) — makes the consumer's write an idempotent upsert, so redelivering an already-processed Kafka message overwrites rather than duplicates.
