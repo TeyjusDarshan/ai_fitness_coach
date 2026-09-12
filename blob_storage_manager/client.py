@@ -4,6 +4,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
+from storage3.utils import FileOptions  # Import FileOptions
 
 load_dotenv()
 
@@ -33,8 +34,11 @@ class SupabaseBlobStorageManager(BlobStorageManager):
 
     def store(self, data: bytes, name: str) -> str:
         self.client.storage.from_(self._bucket).upload(
-            name,
-            data,
-            {"upsert": "true"},
+            path=name,
+            file=data,
+            file_options=FileOptions(
+                content_type="audio/ogg",
+                upsert=True
+            ),
         )
         return self.client.storage.from_(self._bucket).get_public_url(name)
