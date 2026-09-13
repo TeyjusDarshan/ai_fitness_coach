@@ -1,6 +1,6 @@
 // Simplified 3-point front end for the 1-10 RPE scale the backend stores —
 // each label maps to a representative value rather than exposing all 10.
-const LEVELS = [
+export const LEVELS = [
   { label: 'Easy', rpe: 6 },
   { label: 'Medium', rpe: 8 },
   { label: 'Hard', rpe: 10 },
@@ -8,7 +8,7 @@ const LEVELS = [
 
 export const DEFAULT_RPE = LEVELS[1].rpe
 
-function levelIndexForRpe(rpe: number | null): number {
+export function levelIndexForRpe(rpe: number | null): number {
   if (rpe == null) return 1
   let closest = 0
   for (let i = 1; i < LEVELS.length; i++) {

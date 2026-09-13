@@ -102,6 +102,26 @@ button {
   width: 100%;
 }
 
+.btn-whatsapp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 500;
+  color: #fff;
+  background: #25d366;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 14px 22px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  width: 100%;
+}
+.btn-whatsapp:hover {
+  background: #1ebe5b;
+}
+
 .btn-link {
   background: none;
   border: none;
