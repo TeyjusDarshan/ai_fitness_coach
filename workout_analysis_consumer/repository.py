@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -28,6 +28,30 @@ def _effort_flag(rpe):
     return None
 
 
+def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Shared shaping for session_exercises rows joined via
+    SESSION_DAY_EXERCISE_JOIN, used for both the current day and the
+    matching day from a parent session.
+    """
+    return [
+        {
+            "name": row["exercises"]["name"],
+            "movement_type": (row["exercises"].get("movement_types") or {}).get("name"),
+            "slot": row.get("slot_label"),
+            "prescribed_sets": row.get("sets"),
+            "prescribed_reps": row.get("reps"),
+            "rep_range": row.get("rep_range"),
+            "set_logs": sorted(
+                (row.get("session_exercise_set_logs") or []),
+                key=lambda log: log["set_number"],
+            ),
+            "rpe": (row.get("session_exercise_rpe") or {}).get("rpe"),
+            "effort_flag": _effort_flag((row.get("session_exercise_rpe") or {}).get("rpe")),
+        }
+        for row in rows
+    ]
+
+
 class AnalysisRepository:
     """Reads the Supabase data needed to summarize one workout day, and
     persists the generated summary to session_day_analysis.
@@ -49,7 +73,7 @@ class AnalysisRepository:
         """
         sessions = (
             self.client.table("sessions")
-            .select("id, user_id, plan_type")
+            .select("id, user_id, plan_type, parent_session_id")
             .eq("id", session_id)
             .execute()
             .data
@@ -57,6 +81,7 @@ class AnalysisRepository:
         if not sessions:
             return None
         user_id = sessions[0]["user_id"]
+        parent_session_id = sessions[0].get("parent_session_id")
 
         exercise_rows = (
             self.client.table("session_exercises")
@@ -84,7 +109,7 @@ class AnalysisRepository:
             .data
         )
 
-        return {
+        context = {
             "session_id": session_id,
             "day_number": day_number,
             "user_id": user_id,
@@ -95,23 +120,42 @@ class AnalysisRepository:
                 for row in joint_pain_rows
                 if row.get("joints")
             ],
-            "exercises": [
-                {
-                    "name": row["exercises"]["name"],
-                    "movement_type": (row["exercises"].get("movement_types") or {}).get("name"),
-                    "slot": row.get("slot_label"),
-                    "prescribed_sets": row.get("sets"),
-                    "prescribed_reps": row.get("reps"),
-                    "rep_range": row.get("rep_range"),
-                    "set_logs": sorted(
-                        (row.get("session_exercise_set_logs") or []),
-                        key=lambda log: log["set_number"],
-                    ),
-                    "rpe": (row.get("session_exercise_rpe") or {}).get("rpe"),
-                    "effort_flag": _effort_flag((row.get("session_exercise_rpe") or {}).get("rpe")),
-                }
-                for row in exercise_rows
-            ],
+            "exercises": _shape_exercise_rows(exercise_rows),
+        }
+
+        if parent_session_id is not None:
+            context["previous_session"] = self._fetch_parent_session_context(
+                parent_session_id, day_number
+            )
+
+        return context
+
+    def _fetch_parent_session_context(self, parent_session_id: int, day_number: int) -> Dict[str, Any]:
+        """The parent session's data for the same day_number as the current
+        analysis, so the LLM can compare like for like (same split day).
+        """
+        day_log_rows = (
+            self.client.table("session_day_logs")
+            .select("day_number, started_at, completed_at")
+            .eq("session_id", parent_session_id)
+            .eq("day_number", day_number)
+            .execute()
+            .data
+        )
+
+        exercise_rows = (
+            self.client.table("session_exercises")
+            .select(SESSION_DAY_EXERCISE_JOIN)
+            .eq("session_id", parent_session_id)
+            .eq("day_number", day_number)
+            .execute()
+            .data
+        )
+
+        return {
+            "session_id": parent_session_id,
+            "day_log": day_log_rows[0] if day_log_rows else None,
+            "exercises": _shape_exercise_rows(exercise_rows),
         }
 
     def save_analysis(

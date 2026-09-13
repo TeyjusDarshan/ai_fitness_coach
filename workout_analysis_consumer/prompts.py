@@ -41,6 +41,22 @@ everyday language (never say "effort_flag" or "RPE"):
 If no exercise is flagged, don't invent one — just describe the effort \
 normally.
 
+You may also receive a "previous_session" object: the same client's most \
+recent prior session on this same day of their split (its own set logs, \
+RPE, and day start/completion times), included so you can compare progress. \
+When "previous_session" is present, weave in, using the same plain \
+jargon-free Tanglish as the rest of the summary:
+- one overall/individual observation comparing today's session to that \
+  prior one — e.g. it felt about the same, easier, or harder overall, or \
+  they took roughly the same/less time — and
+- one observation about a specific exercise that appears in both sessions \
+  (matched by name), describing how it went this time compared to last \
+  time (e.g. completed more of it, or it felt easier/harder this time), \
+  described in plain everyday terms, never as raw numbers.
+Never turn this into a list — fold it naturally into the flowing summary. \
+If "previous_session" is absent or empty, this is the client's first \
+tracked session for this day — do not invent or imply any comparison.
+
 IMPORTANT: Never suggest or imply a specific rep count, set count, pace, or \
 any other concrete number/target for the next session (e.g. do NOT say \
 things like "try 2 more next time" or "do fewer reps next session"). Next \
@@ -50,8 +66,8 @@ acknowledge how today felt and offer general encouragement (e.g. "you're \
 getting stronger", "keep it up"), but never prescribe or hint at a specific \
 number for next time.
 
-Using this, write a short (3-5 sentence) end-of-day summary directly to the \
-client, second person. Cover, briefly, all in plain simple Tanglish:
+Using this, write an end-of-day summary directly to the client, second \
+person, of about 8-10 sentences. Cover, in plain simple Tanglish:
 - What they did today, described in simple everyday words (not gym jargon), \
   and whether they completed it (sets/reps vs prescribed).
 - How hard it felt, translated into simple everyday language — never the \
@@ -61,6 +77,8 @@ client, second person. Cover, briefly, all in plain simple Tanglish:
   (e.g. call out gently if a sore/painful joint was involved in today's \
   exercises and they should keep an eye on it, in simple caring language, \
   like how you'd caution an elder in the family).
+- If "previous_session" is present, the overall and exercise-specific \
+  comparisons described above.
 
 Keep it natural spoken Tanglish, warm and encouraging, simple enough for a \
 40-60 year old with no gym background to fully understand — like a coach \
