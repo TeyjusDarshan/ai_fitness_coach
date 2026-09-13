@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import { completeDay } from '../api'
-import { capitalize, formatDuration } from '../utils'
+import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDuration } from '../utils'
 import type { DayCompleteSummary } from '../types'
 
 export function SummaryScreen() {
@@ -55,6 +55,14 @@ export function SummaryScreen() {
     )
   }
 
+  const day = dashboard?.days.find((d) => d.day_number === dayNum)
+
+  function handleShareWithCoach() {
+    if (!day || !summary) return
+    const message = buildCoachShareMessage(day, summary, username)
+    window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
+  }
+
   return (
     <div className="screen summary-screen">
       <div className="card summary-card">
@@ -91,6 +99,12 @@ export function SummaryScreen() {
           </div>
         </dl>
       </div>
+
+      {day && (
+        <button className="btn-whatsapp" onClick={handleShareWithCoach}>
+          Share Session with Coach
+        </button>
+      )}
 
       <button className="btn-primary" onClick={handleBackToDashboard}>
         Back to Dashboard

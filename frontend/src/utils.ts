@@ -1,4 +1,6 @@
-import type { Dashboard, DashboardDay, ExerciseEntry } from './types'
+import { LEVELS, levelIndexForRpe } from './components/EffortSlider'
+import { COACH_WHATSAPP_NUMBER } from './constants'
+import type { Dashboard, DashboardDay, DayCompleteSummary, ExerciseEntry } from './types'
 
 export function flattenExercises(day: DashboardDay): ExerciseEntry[] {
   return [...day.primary, ...day.secondary]
@@ -83,6 +85,48 @@ export function withRpeLogged(
   rpe: number | null,
 ): Dashboard {
   return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({ ...ex, rpe }))
+}
+
+function effortLabel(rpe: number | null): string {
+  return rpe == null ? 'Not logged' : LEVELS[levelIndexForRpe(rpe)].label
+}
+
+// WhatsApp renders *text* as bold and a blank line as a paragraph break, so
+// the message reads as formatted once pasted into a chat.
+export function buildCoachShareMessage(
+  day: DashboardDay,
+  summary: DayCompleteSummary,
+  username: string | null,
+): string {
+  const lines: string[] = [`*Workout Summary — ${day.day_label} (${day.split_name})*`]
+  if (username) lines.push(`Client: ${capitalize(username)}`)
+  lines.push(
+    '',
+    `Total Time: ${formatDuration(summary.total_time_seconds)}`,
+    `Exercises Completed: ${summary.exercises_completed}/${summary.total_exercises}`,
+    `Sets Completed: ${summary.sets_completed}/${summary.total_sets}`,
+    '',
+    '*Exercises:*',
+  )
+
+  flattenExercises(day).forEach((exercise, index) => {
+    const target = exercise.reps ? `${exercise.sets ?? '?'}x${exercise.reps}` : `${exercise.sets ?? '?'} sets`
+    const loggedReps = [...exercise.set_logs]
+      .sort((a, b) => a.set_number - b.set_number)
+      .map((log) => log.completed_reps)
+      .join(', ')
+    lines.push(
+      `${index + 1}. ${exercise.name} — ${target}`,
+      `   Logged reps: ${loggedReps || 'Not logged'}`,
+      `   Effort: ${effortLabel(exercise.rpe)}`,
+    )
+  })
+
+  return lines.join('\n')
+}
+
+export function coachWhatsAppShareUrl(message: string): string {
+  return `https://wa.me/${COACH_WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`
 }
 
 export function capitalize(name: string): string {
