@@ -400,6 +400,7 @@ class WorkoutPlanRepository:
         completed_at = source_session.get("completed_at")
         session_row = {
             "user_id": user_id,
+            "parent_session_id": source_session.get("id"),
             "plan_type": source_session.get("plan_type"),
             "plan_selection_reason": (
                 f"Progressive overload from the session completed on {completed_at}."
@@ -490,6 +491,7 @@ class WorkoutPlanRepository:
     def create_session(self, user_id: str, plan: Dict[str, Any]) -> dict:
         session_row = {
             "user_id": user_id,
+            "parent_session_id": None,
             "plan_type": plan.get("plan_type"),
             "plan_selection_reason": plan.get("plan_selection_reason"),
             "medical_clearance_warning": plan.get("medical_clearance_warning"),

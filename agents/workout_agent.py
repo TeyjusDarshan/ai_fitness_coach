@@ -6,7 +6,7 @@ from typing import Any, Dict
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
-from langchain_mistralai import ChatMistralAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from agents.prompts_v1 import DAY_TEMPLATES, WORKOUT_AGENT_V1_SYSTEM_PROMPT_TEMPLATE
 from agents.tools.workout_tools import WORKOUT_TOOLS_V1
@@ -16,13 +16,13 @@ from langchain_core.rate_limiters import InMemoryRateLimiter
 load_dotenv()
 
 rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.5,   # e.g. 1 request every 2 seconds — match your actual free-tier limit
+    requests_per_second=0.08,  # ~5 req/min — conservative free-tier guess for gemini-3.1-pro-preview; check aistudio.google.com/rate-limit and raise if you're on a paid tier
     check_every_n_seconds=0.1, # how often it checks if a slot has opened up
     max_bucket_size=1,         # burst allowance; keep at 1 for a tight free tier
 )
 
-llm = ChatMistralAI(
-    model="mistral-large-latest",
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.1-pro-preview",
     temperature=0.1,
     max_retries=2,
     rate_limiter=rate_limiter
