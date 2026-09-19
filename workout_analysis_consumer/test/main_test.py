@@ -1,10 +1,12 @@
 """Integration test for _process_message.
 
-Only the Gemini LLM call is mocked (summarizer.llm.invoke), since it's
-currently unreliable to call for real in a test run (tier/rate-limit issues
-on the free plan - see summarizer.py). Everything downstream of it - the
-Supabase context fetch, Sarvam TTS, the mp3->ogg conversion, the Supabase
-Storage upload, and the session_day_analysis upsert - runs for real, same as
+Only the Gemini LLM call and the outbound WhatsApp send are mocked
+(summarizer.llm.invoke, main.whatsapp_client.send_audio), since it's
+currently unreliable to call the LLM for real in a test run (tier/rate-limit
+issues on the free plan - see summarizer.py) and sending a real WhatsApp
+message has no test recipient. Everything else - the Supabase context fetch,
+Sarvam TTS, the mp3->ogg conversion, the Supabase Storage upload, and the
+session_day_analysis upsert - runs for real, same as
 backend/tests/kafka_producer/client_test.py does for Kafka.
 """
 from unittest.mock import MagicMock
@@ -16,6 +18,7 @@ from workout_analysis_consumer.repository import AnalysisRepository
 
 SESSION_ID = 37
 DAY_NUMBER = 5
+PHONE_NUMBER = "919876543210"
 
 CONSTANT_ANALYSIS_TEXT = (
     "இன்னைக்கு workout semma ஆ முடிச்சிட்டீங்க! எல்லா sets-உம் complete "
@@ -29,8 +32,11 @@ def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     mock_llm.invoke.return_value = MagicMock(content=CONSTANT_ANALYSIS_TEXT)
     monkeypatch.setattr("workout_analysis_consumer.summarizer.llm", mock_llm)
 
+    mock_send_audio = MagicMock()
+    monkeypatch.setattr("workout_analysis_consumer.main.whatsapp_client.send_audio", mock_send_audio)
+
     repo = AnalysisRepository()
-    _process_message(repo, SESSION_ID, DAY_NUMBER)
+    _process_message(repo, SESSION_ID, DAY_NUMBER, PHONE_NUMBER)
 
     saved = (
         repo.client.table("session_day_analysis")
@@ -44,3 +50,4 @@ def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     assert saved
     assert saved[0]["analysis"] == CONSTANT_ANALYSIS_TEXT
     assert saved[0]["audio_url"]
+    mock_send_audio.assert_called_once_with(PHONE_NUMBER, saved[0]["audio_url"])

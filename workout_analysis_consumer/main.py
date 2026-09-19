@@ -5,6 +5,7 @@ Run (from the repo root):  python3 -m workout_analysis_consumer.main
 import json
 import logging
 
+from whatsapp_client import WhatsAppClient
 from workout_analysis_consumer.consumer import WORKOUT_COMPLETE_TOPIC, build_consumer
 from workout_analysis_consumer.kafka_producer import KafkaProducerClient
 from workout_analysis_consumer.repository import AnalysisRepository
@@ -15,9 +16,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 producer = KafkaProducerClient()
+whatsapp_client = WhatsAppClient()
 
 
-def _process_message(repo: AnalysisRepository, session_id: int, day_number: int) -> None:
+def _process_message(
+    repo: AnalysisRepository, session_id: int, day_number: int, phone_number: str
+) -> None:
     context = repo.fetch_context(session_id, day_number)
     if context is None:
         logger.warning(
@@ -39,6 +43,17 @@ def _process_message(repo: AnalysisRepository, session_id: int, day_number: int)
 
     repo.save_analysis(session_id, day_number, analysis, audio_url)
     logger.info("Stored analysis for session_id=%s day_number=%s", session_id, day_number)
+
+    if audio_url:
+        # Best-effort: the analysis is already durably saved, so a failure to
+        # send the WhatsApp reply shouldn't discard any of the above work.
+        try:
+            whatsapp_client.send_audio(phone_number, audio_url)
+        except Exception:
+            logger.exception(
+                "Failed to send WhatsApp voice note for session_id=%s day_number=%s",
+                session_id, day_number,
+            )
 
     # Best-effort: the analysis is already durably saved, so a failure to
     # publish this notification shouldn't fail the whole message.
@@ -74,7 +89,9 @@ def run() -> None:
             # for manual follow-up rather than retried automatically.
             try:
                 payload = json.loads(msg.value())
-                _process_message(repo, payload["session_id"], payload["day_number"])
+                _process_message(
+                    repo, payload["session_id"], payload["day_number"], payload["phone_number"]
+                )
             except Exception:
                 logger.exception(
                     "Failed to process message at offset=%s partition=%s",

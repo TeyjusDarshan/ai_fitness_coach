@@ -41,9 +41,10 @@ def test_send_workout_complete_event_is_consumable():
     # identifiable among whatever else is already on the topic.
     session_id = uuid.uuid4().int % 1_000_000_000
     day_number = uuid.uuid4().int % 1_000_000_000
+    phone_number = "919876543210"
 
     producer = KafkaProducerClient()
-    producer.send_workout_complete_event(session_id, day_number)
+    producer.send_workout_complete_event(session_id, day_number, phone_number)
 
     consumer = _make_consumer()
     try:
@@ -62,6 +63,8 @@ def test_send_workout_complete_event_is_consumable():
 
     finally:
         consumer.close()
-    
 
-    assert found_payload == {"session_id": session_id, "day_number": day_number}
+
+    assert found_payload == {
+        "session_id": session_id, "day_number": day_number, "phone_number": phone_number,
+    }

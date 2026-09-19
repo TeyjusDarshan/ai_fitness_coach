@@ -1,7 +1,7 @@
 """Tests for the /webhooks/whatsapp controller.
 
 Supabase and the WhatsApp Cloud API are mocked (see conftest.app_module):
-whatsapp_webhook_controller's own module-level plan_repo/whatsapp_client
+whatsapp_webhook_controller's own module-level whatsapp_client/kafka_producer
 instances have their methods swapped for MagicMocks so these tests exercise
 only the webhook's own parsing/routing logic.
 """
@@ -32,13 +32,9 @@ def _inbound_payload(text: str, sender: str = "919876543210"):
     }
 
 
-def test_receive_message_with_ready_analysis_sends_audio(app_module, controller, monkeypatch):
-    monkeypatch.setattr(
-        controller.plan_repo, "get_day_analysis",
-        MagicMock(return_value={"analysis": "...", "audio_url": "https://example.com/a.ogg"}),
-    )
-    monkeypatch.setattr(controller.whatsapp_client, "send_audio", MagicMock())
+def test_receive_message_with_session_fields_acks_and_publishes(app_module, controller, monkeypatch):
     monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_workout_complete_event", MagicMock())
 
     client = app_module.app.test_client()
     response = client.post(
@@ -47,43 +43,24 @@ def test_receive_message_with_ready_analysis_sends_audio(app_module, controller,
     )
 
     assert response.status_code == 200
-    controller.plan_repo.get_day_analysis.assert_called_once_with(12, 1)
-    controller.whatsapp_client.send_audio.assert_called_once_with(
-        "919876543210", "https://example.com/a.ogg"
-    )
-    controller.whatsapp_client.send_text.assert_not_called()
-
-
-def test_receive_message_with_pending_analysis_sends_holding_text(app_module, controller, monkeypatch):
-    monkeypatch.setattr(controller.plan_repo, "get_day_analysis", MagicMock(return_value=None))
-    monkeypatch.setattr(controller.whatsapp_client, "send_audio", MagicMock())
-    monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
-
-    client = app_module.app.test_client()
-    response = client.post(
-        "/webhooks/whatsapp",
-        json=_inbound_payload("Session ID: 12\nDay: 1\n"),
-    )
-
-    assert response.status_code == 200
     controller.whatsapp_client.send_text.assert_called_once_with(
-        "919876543210", controller.ANALYSIS_PENDING_MESSAGE
+        "919876543210", controller.WORKOUT_RECEIVED_MESSAGE
     )
-    controller.whatsapp_client.send_audio.assert_not_called()
+    controller.kafka_producer.send_workout_complete_event.assert_called_once_with(
+        12, 1, "919876543210"
+    )
 
 
 def test_receive_message_without_session_fields_is_ignored(app_module, controller, monkeypatch):
-    monkeypatch.setattr(controller.plan_repo, "get_day_analysis", MagicMock())
     monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
-    monkeypatch.setattr(controller.whatsapp_client, "send_audio", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_workout_complete_event", MagicMock())
 
     client = app_module.app.test_client()
     response = client.post("/webhooks/whatsapp", json=_inbound_payload("hey coach, question!"))
 
     assert response.status_code == 200
-    controller.plan_repo.get_day_analysis.assert_not_called()
     controller.whatsapp_client.send_text.assert_not_called()
-    controller.whatsapp_client.send_audio.assert_not_called()
+    controller.kafka_producer.send_workout_complete_event.assert_not_called()
 
 
 def test_verify_webhook_matching_token_echoes_challenge(app_module, controller, monkeypatch):

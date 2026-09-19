@@ -49,9 +49,9 @@ class KafkaProducerClient:
             "ssl.ca.location": ca_cert_path,
         })
 
-    def send_workout_complete_event(self, session_id: int, day_number: int) -> None:
+    def send_workout_complete_event(self, session_id: int, day_number: int, phone_number: str) -> None:
         """Produce a workout-complete event and block until it's acked or fails."""
-        payload = {"session_id": session_id, "day_number": day_number}
+        payload = {"session_id": session_id, "day_number": day_number, "phone_number": phone_number}
         self._producer.produce(
             WORKOUT_COMPLETE_TOPIC,
             value=json.dumps(payload).encode("utf-8"),

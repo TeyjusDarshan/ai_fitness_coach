@@ -3,9 +3,11 @@ with clients (see COACH_WHATSAPP_NUMBER in frontend/src/constants.ts).
 
 Meta forwards every inbound message on that number here as a POST. The
 "Share Session with Coach" button (frontend/src/utils.ts:buildCoachShareMessage)
-embeds "Session ID: <id>" / "Day: <n>" lines in the shared text, so replying
-to that message is enough for us to look up the generated analysis and reply
-with its voice note, or a holding message if it isn't ready yet.
+embeds "Session ID: <id>" / "Day: <n>" lines in the shared text, so a message
+that parses those out is treated as a workout-complete trigger: we ack it
+immediately, then publish a workout-complete event so
+workout_analysis_consumer can generate the analysis/voice note and push it
+back to the sender once it's ready.
 """
 import logging
 import os
@@ -13,22 +15,22 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from backend.clients.whatsapp_client import WhatsAppClient
-from backend.repository.workout_plan_repository import WorkoutPlanRepository
+from backend.kafka_producer import KafkaProducerClient
+from whatsapp_client import WhatsAppClient
 
 logger = logging.getLogger(__name__)
 
 whatsapp_webhook_bp = Blueprint("whatsapp_webhook", __name__)
 
-plan_repo = WorkoutPlanRepository()
 whatsapp_client = WhatsAppClient()
+kafka_producer = KafkaProducerClient()
 
 # Matches the "Session ID: <id>" / "Day: <n>" lines added in
 # frontend/src/utils.ts:buildCoachShareMessage.
 _SESSION_ID_RE = re.compile(r"Session ID:\s*(\d+)")
 _DAY_RE = re.compile(r"Day:\s*(\d+)")
 
-ANALYSIS_PENDING_MESSAGE = "Super! Ill take a look at this and let you know"
+WORKOUT_RECEIVED_MESSAGE = "Amazing session! Looking into your workout"
 
 
 @whatsapp_webhook_bp.get("/webhooks/whatsapp")
@@ -68,21 +70,19 @@ def _handle_message(message: dict) -> None:
         return
 
     try:
-        analysis = plan_repo.get_day_analysis(session_id, day_number)
+        whatsapp_client.send_text(sender, WORKOUT_RECEIVED_MESSAGE)
     except Exception:
-        logger.exception(
-            "Failed to fetch session_day_analysis for session_id=%s day_number=%s",
-            session_id, day_number,
-        )
-        return
+        logger.exception("Failed to send WhatsApp ack to %s", sender)
 
     try:
-        if analysis and analysis.get("audio_url"):
-            whatsapp_client.send_audio(sender, analysis["audio_url"])
-        else:
-            whatsapp_client.send_text(sender, ANALYSIS_PENDING_MESSAGE)
+        kafka_producer.send_workout_complete_event(session_id, day_number, sender)
     except Exception:
-        logger.exception("Failed to send WhatsApp reply to %s", sender)
+        # The ack already went out; a failure to publish this notification
+        # shouldn't fail the whole webhook request.
+        logger.exception(
+            "Failed to publish workout-complete event for session_id=%s day_number=%s",
+            session_id, day_number,
+        )
 
 
 def _extract_session_and_day(text: str) -> tuple:
