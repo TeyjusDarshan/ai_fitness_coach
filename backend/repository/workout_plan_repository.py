@@ -203,6 +203,18 @@ class WorkoutPlanRepository:
         )
         return bool(result)
 
+    def get_day_analysis(self, session_id: int, day_number: int) -> Optional[dict]:
+        """Fetch the workout_analysis_consumer-generated summary for a day, if ready."""
+        rows = (
+            self.client.table("session_day_analysis")
+            .select("analysis, audio_url")
+            .eq("session_id", session_id)
+            .eq("day_number", day_number)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
     def get_unfinished_session(self, user_id: str) -> Optional[dict]:
         sessions = (
             self.client.table("sessions")

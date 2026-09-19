@@ -92,14 +92,18 @@ function effortLabel(rpe: number | null): string {
 }
 
 // WhatsApp renders *text* as bold and a blank line as a paragraph break, so
-// the message reads as formatted once pasted into a chat.
+// the message reads as formatted once pasted into a chat. Session ID/Day are
+// included as plain labeled fields so the message can be parsed back to its
+// session_exercises/session_day_logs rows if the coach forwards it along.
 export function buildCoachShareMessage(
   day: DashboardDay,
   summary: DayCompleteSummary,
   username: string | null,
+  sessionId: number,
 ): string {
   const lines: string[] = [`*Workout Summary — ${day.day_label} (${day.split_name})*`]
   if (username) lines.push(`Client: ${capitalize(username)}`)
+  lines.push(`Session ID: ${sessionId}`, `Day: ${day.day_number}`)
   lines.push(
     '',
     `Total Time: ${formatDuration(summary.total_time_seconds)}`,

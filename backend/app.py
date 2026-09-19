@@ -12,10 +12,12 @@ from flask import Flask, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
+from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.kafka_producer import KafkaProducerClient
 from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
 
 app = Flask(__name__)
+app.register_blueprint(whatsapp_webhook_bp)
 plan_repo = WorkoutPlanRepository()
 kafka_producer = KafkaProducerClient()
 
