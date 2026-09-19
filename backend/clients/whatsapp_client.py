@@ -44,7 +44,7 @@ class WhatsAppClient:
             "messaging_product": "whatsapp",
             "to": to,
             "type": "audio",
-            "audio": {"link": "https://khwrrvmejvrupokvfwvf.supabase.co/storage/v1/object/public/test_bucket/day_5.ogg"},
+            "audio": {"link": audio_url},
         })
 
     def _send(self, payload: dict) -> None:
