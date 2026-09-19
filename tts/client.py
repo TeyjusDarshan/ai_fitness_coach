@@ -23,9 +23,9 @@ class SarvamTTSClient(TTSClient):
     def __init__(
         self,
         language_code: str = "ta-IN",
-        speaker: str = "pooja",
+        speaker: str = "shubh",
         model: str = "bulbul:v3",
-        pace: float = 1.2,
+        pace: float = 1.1,
         speech_sample_rate: int = 22050,
         output_audio_codec="mp3"
 
