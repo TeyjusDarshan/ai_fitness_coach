@@ -58,8 +58,8 @@ export function SummaryScreen() {
   const day = dashboard?.days.find((d) => d.day_number === dayNum)
 
   function handleShareWithCoach() {
-    if (!day || !summary) return
-    const message = buildCoachShareMessage(day, summary, username)
+    if (!day || !summary || !dashboard) return
+    const message = buildCoachShareMessage(day, summary, username, dashboard.session_id)
     window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
   }
 
