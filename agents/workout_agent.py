@@ -5,27 +5,19 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from agents.prompts_v1 import DAY_TEMPLATES, WORKOUT_AGENT_V1_SYSTEM_PROMPT_TEMPLATE
 from agents.tools.workout_tools import WORKOUT_TOOLS_V1
-from langchain_core.rate_limiters import InMemoryRateLimiter
 
 
 load_dotenv()
 
-rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.08,  # ~5 req/min — conservative free-tier guess for gemini-3.1-pro-preview; check aistudio.google.com/rate-limit and raise if you're on a paid tier
-    check_every_n_seconds=0.1, # how often it checks if a slot has opened up
-    max_bucket_size=1,         # burst allowance; keep at 1 for a tight free tier
-)
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.1-pro-preview",
-    temperature=0.1,
+llm = ChatAnthropic(
+    model="claude-sonnet-5",
     max_retries=2,
-    rate_limiter=rate_limiter
+    max_tokens=16000,
 )
 
 _prompt_template = Template(WORKOUT_AGENT_V1_SYSTEM_PROMPT_TEMPLATE)
@@ -53,6 +45,21 @@ def select_plan_type(days_per_week: Any) -> str:
     if days <= 0:
         days = 3
     return "3_day" if days <= 3 else "4_day"
+
+
+def extract_message_text(content) -> str:
+    """Flatten an AIMessage.content into plain text.
+
+    langchain_anthropic returns a bare string only when the response is a
+    single text block; as soon as a second block is present (e.g. Sonnet 5's
+    default adaptive-thinking block, which precedes the text block on every
+    response since thinking can't be turned off on this model) content comes
+    back as a list of block dicts instead. Concatenate every block's own
+    "text" field, which non-text blocks (thinking, tool_use, ...) don't have.
+    """
+    if isinstance(content, str):
+        return content
+    return "".join(block.get("text", "") for block in content if isinstance(block, dict))
 
 
 def _extract_json(text: str) -> str:
@@ -100,7 +107,7 @@ def generate_workout_plan_v1(user_profile: Dict[str, Any]) -> Dict[str, Any]:
         {"messages": [HumanMessage(content=json.dumps(request_payload, indent=2))]},
         config=AGENT_INVOKE_CONFIG,
     )
-    raw_text = agent_response["messages"][-1].content
+    raw_text = extract_message_text(agent_response["messages"][-1].content)
 
     try:
         return json.loads(_extract_json(raw_text))

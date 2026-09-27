@@ -5,27 +5,19 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
+from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
-from langchain_core.rate_limiters import InMemoryRateLimiter
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from agents.mock_data_v1 import SAMPLE_USER_PROFILE_V1
 from agents.prompts_preprocessor import PREPROCESSOR_SYSTEM_PROMPT_TEMPLATE
-from agents.workout_agent import generate_workout_plan_v1
+from agents.workout_agent import extract_message_text, generate_workout_plan_v1
 
 load_dotenv()
 
-rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.08,  # match workout_agent_v1's gemini-3.1-pro-preview free-tier pacing
-    check_every_n_seconds=0.1,
-    max_bucket_size=1,
-)
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.1-pro-preview",
-    temperature=0.1,
+llm = ChatAnthropic(
+    model="claude-sonnet-5",
     max_retries=2,
-    rate_limiter=rate_limiter,
+    max_tokens=16000,
 )
 
 _prompt_template = Template(PREPROCESSOR_SYSTEM_PROMPT_TEMPLATE)
@@ -47,12 +39,12 @@ def generate_user_profile(raw_text: str) -> Dict[str, Any]:
     """
     agent = create_agent(model=llm, system_prompt=SYSTEM_PROMPT)
     agent_response = agent.invoke({"messages": [HumanMessage(content=raw_text)]})
-    raw_json = agent_response["messages"][-1].content
+    raw_text_response = extract_message_text(agent_response["messages"][-1].content)
 
     try:
-        profile = json.loads(_strip_code_fences(raw_json))
+        profile = json.loads(_strip_code_fences(raw_text_response))
     except json.JSONDecodeError as e:
-        raise ValueError(f"Preprocessor agent returned invalid JSON: {e}\n{raw_json}") from e
+        raise ValueError(f"Preprocessor agent returned invalid JSON: {e}\n{raw_text_response}") from e
 
     if not profile.get("user_id"):
         profile["user_id"] = f"usr_{uuid.uuid4().hex[:8]}"
