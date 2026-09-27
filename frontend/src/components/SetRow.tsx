@@ -1,6 +1,6 @@
 interface Props {
   index: number
-  targetReps: string | null
+  targetReps: number
   reps: number
   confirmed: boolean
   onChange: (reps: number) => void

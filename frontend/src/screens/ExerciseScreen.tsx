@@ -1,21 +1,20 @@
 import { useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { VideoPlaceholder } from '../components/VideoPlaceholder'
+import { VideoPlayer } from '../components/VideoPlayer'
 import { SetRow } from '../components/SetRow'
 import { EffortSlider, DEFAULT_RPE } from '../components/EffortSlider'
 import { useAppState } from '../state/AppStateContext'
 import { logSet, logRpe } from '../api'
-import { flattenExercises, targetReps, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
+import { flattenExercises, targetRepsForSet, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
 import { REST_BETWEEN_EXERCISES_SECONDS, REST_BETWEEN_SETS_SECONDS } from '../constants'
 import type { ExerciseEntry } from '../types'
 
 function initialRepCounts(exercise: ExerciseEntry | undefined): number[] {
   if (!exercise) return []
   const totalSets = exercise.sets ?? 0
-  const fallback = targetReps(exercise)
   return Array.from({ length: totalSets }, (_, i) => {
     const log = exercise.set_logs.find((l) => l.set_number === i + 1)
-    return log ? log.completed_reps : fallback
+    return log ? log.completed_reps : targetRepsForSet(exercise, i)
   })
 }
 
@@ -109,7 +108,7 @@ export function ExerciseScreen() {
 
   return (
     <div className="screen">
-      <VideoPlaceholder />
+      <VideoPlayer videoUrl={exercise.video_url} />
       <h1 className="screen-title exercise-name">{exercise.name}</h1>
 
       <div className="card set-list">
@@ -119,7 +118,7 @@ export function ExerciseScreen() {
             <SetRow
               key={i}
               index={i}
-              targetReps={exercise.reps}
+              targetReps={targetRepsForSet(exercise, i)}
               reps={reps}
               confirmed={log?.completed_reps === reps}
               onChange={(next) => handleRepChange(i, next)}

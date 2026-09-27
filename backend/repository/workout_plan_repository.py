@@ -29,17 +29,16 @@ PROGRESSION_EXERCISE_SELECT = (
 )
 
 # Autoregulated-progression constants — see _compute_progressed_reps.
-PROGRESSION_TARGET_RPE = 8
-PROGRESSION_FALLBACK_RPE = 10  # goal not met, or met but RPE was never logged
-PROGRESSION_DIVISOR = 3
 PROGRESSION_MIN_REPS = 1
 
-# performance_factor (TARGET_RPE - actual_rpe) -> volume multiplier. Keyed by
-# the 3 performance_factor values the app's RPE inputs actually produce
-# (Easy/Medium/Hard = rpe 6/8/10 -> PF 2/0/-2); a reported rpe outside
-# {6, 8, 10} is possible via direct API use, so _compute_progressed_reps
-# snaps performance_factor to whichever of these keys it's closest to.
-PROGRESSION_PF_MULTIPLIERS = {-2: 0.9, 0: 1.02, 2: 1.1}
+# Easy/Medium/Hard = rpe 6/8/10, matching the frontend's EffortSlider — a
+# reported rpe outside {6, 8, 10} is possible via direct API use, so
+# _compute_progressed_reps snaps it to whichever of these it's closest to.
+RPE_TOO_EASY, RPE_CORRECT, RPE_HARD = 6, 8, 10
+_RPE_BUCKETS = (RPE_TOO_EASY, RPE_CORRECT, RPE_HARD)
+PROGRESSION_FALLBACK_RPE = RPE_HARD  # no rpe was ever logged -> assume hard
+PROGRESSION_CORRECT_STEP = 1
+PROGRESSION_EASY_STEP = 2
 
 # exercise_relationships.reason is semicolon-delimited when an edge has more
 # than one reason (e.g. "Lack of form;Lack of strength") — substring match
@@ -64,58 +63,72 @@ JOINT_LOAD_INJURY_MULTIPLIERS: Dict[PainLevel, Dict[str, float]] = {
 }
 
 
+def _parse_target_reps(reps: Optional[str], sets: int) -> List[int]:
+    """Previous per-set target list from a session_exercises row's `reps`.
+
+    `reps` is either a single number (uniform across all sets — a brand-new
+    session from create_session, or a fully caught-up ramp) or a
+    comma-separated per-set list written by a previous progression while one
+    set is ahead of the others (e.g. "11,10,10" — see _bump_next_set).
+    """
+    if not reps:
+        return [PROGRESSION_MIN_REPS] * sets
+    values = [int(v) for v in str(reps).split(",")]
+    return values if len(values) > 1 else values * sets
+
+
+def _nearest_rpe_bucket(rpe: int) -> int:
+    return min(_RPE_BUCKETS, key=lambda bucket: abs(bucket - rpe))
+
+
+def _bump_next_set(target_reps: List[int], step: int) -> List[int]:
+    """Advance the ramp by `step` reps on the first set that hasn't caught up.
+
+    The lowest current value is the "not yet bumped" baseline; the first set
+    still at that baseline is the next one to advance. Once every set is
+    equal again, the ramp has completed a lap and the next call starts a new
+    one from set 1.
+    """
+    bumped = list(target_reps)
+    index = bumped.index(min(bumped))
+    bumped[index] += step
+    return bumped
+
+
 def _compute_progressed_reps(
     exercise_row: Dict[str, Any], injury_multiplier: Optional[float] = None
-) -> int:
-    """Autoregulated next-session reps target for one session_exercises row.
+) -> List[int]:
+    """Next session's per-set target reps list for one session_exercises row.
 
-    "Met" requires a logged set for every prescribed `sets` slot, each at or
-    above that row's target `reps`. If met, actual_rpe is the user-reported
-    session_exercise_rpe value; otherwise (goal not met, or met but no RPE
-    was ever logged) it falls back to PROGRESSION_FALLBACK_RPE, same as a
-    missed goal. performance_factor = TARGET_RPE - actual_rpe is mapped to a
-    multiplier via PROGRESSION_PF_MULTIPLIERS and applied to last session's
-    average reps per set (total_volume / PROGRESSION_DIVISOR). Floored at
-    PROGRESSION_MIN_REPS so the result written to the varchar `reps` column
-    is never zero, negative, or fractional.
+    Driven entirely by the reported RPE against last week's *prescribed*
+    reps (not what was actually completed):
+      - RPE 10 (hard): every set's target drops by 1.
+      - RPE 8 (correct): the ramp advances by 1 rep, one set at a time (see
+        _bump_next_set) — only the next not-yet-bumped set goes up this week.
+      - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
 
-    If injury_multiplier is given (the exercise loads a joint the user has
-    reported pain in — see _injury_multiplier_for_exercise), it replaces the
-    RPE-derived multiplier entirely rather than the two being combined, since
-    the injury factor already encodes "back off regardless of performance."
+    A missing RPE, or an injury_multiplier below 1.0 (the exercise loads a
+    joint the user has reported pain in — see _injury_multiplier_for_exercise),
+    is always treated as RPE 10 regardless of what was reported — an injury
+    caps volume outright, the same way a missing RPE can't be trusted to
+    justify progressing.
     """
-    prescribed_sets = exercise_row.get("sets") or 0
-    try:
-        target_reps = int(exercise_row.get("reps"))
-    except (TypeError, ValueError):
-        target_reps = None
+    sets = exercise_row.get("sets") or 1
+    target_reps = _parse_target_reps(exercise_row.get("reps"), sets)
 
-    set_logs = exercise_row.get("session_exercise_set_logs") or []
-    logged_by_set = {log["set_number"]: log["completed_reps"] for log in set_logs}
-
-    if injury_multiplier is not None:
-        multiplier = injury_multiplier
+    if injury_multiplier is not None and injury_multiplier < 1.0:
+        rpe_bucket = RPE_HARD
     else:
-        met_target = (
-            target_reps is not None
-            and prescribed_sets > 0
-            and len(logged_by_set) >= prescribed_sets
-            and all(logged_by_set.get(n, 0) >= target_reps for n in range(1, prescribed_sets + 1))
+        reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe")
+        rpe_bucket = (
+            _nearest_rpe_bucket(reported_rpe) if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
         )
 
-        if met_target:
-            reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe") or None
-            actual_rpe = reported_rpe if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
-        else:
-            actual_rpe = PROGRESSION_FALLBACK_RPE
-
-        performance_factor = PROGRESSION_TARGET_RPE - actual_rpe
-        nearest_pf = min(PROGRESSION_PF_MULTIPLIERS, key=lambda pf: abs(pf - performance_factor))
-        multiplier = PROGRESSION_PF_MULTIPLIERS[nearest_pf]
-
-    total_volume = sum(logged_by_set.values())
-    next_reps = multiplier * (total_volume / PROGRESSION_DIVISOR)
-    return max(PROGRESSION_MIN_REPS, round(next_reps))
+    if rpe_bucket == RPE_HARD:
+        return [max(PROGRESSION_MIN_REPS, r - 1) for r in target_reps]
+    if rpe_bucket == RPE_TOO_EASY:
+        return _bump_next_set(target_reps, PROGRESSION_EASY_STEP)
+    return _bump_next_set(target_reps, PROGRESSION_CORRECT_STEP)
 
 
 class WorkoutPlanRepository:
@@ -444,13 +457,13 @@ class WorkoutPlanRepository:
             row["exercise_id"]
             for row in exercise_rows
             if row["exercise_id"] in rep_bounds
-            and computed_reps[row["id"]] < rep_bounds[row["exercise_id"]]["min_reps"]
+            and min(computed_reps[row["id"]]) < rep_bounds[row["exercise_id"]]["min_reps"]
         ]
         above_max_ids = [
             row["exercise_id"]
             for row in exercise_rows
             if row["exercise_id"] in rep_bounds
-            and computed_reps[row["id"]] > rep_bounds[row["exercise_id"]]["max_reps"]
+            and max(computed_reps[row["id"]]) > rep_bounds[row["exercise_id"]]["max_reps"]
         ]
         regressions = self._fetch_regressions(below_min_ids)
         progressions = self._fetch_progressions(above_max_ids)
@@ -463,26 +476,26 @@ class WorkoutPlanRepository:
             exercise_id = row["exercise_id"]
             rep_range = row.get("rep_range")
             bounds = rep_bounds.get(exercise_id)
-            next_reps = computed_reps[row["id"]]
+            next_reps_list = computed_reps[row["id"]]
 
-            if bounds is not None and next_reps < bounds["min_reps"]:
+            if bounds is not None and min(next_reps_list) < bounds["min_reps"]:
                 target_id = regressions.get(exercise_id)
                 if target_id is not None:
                     exercise_id = target_id
                     target_bounds = replacement_bounds[target_id]
-                    next_reps = target_bounds["min_reps"]
+                    next_reps_list = [target_bounds["min_reps"]] * len(next_reps_list)
                     rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
                 else:
-                    next_reps = bounds["min_reps"]
-            elif bounds is not None and next_reps > bounds["max_reps"]:
+                    next_reps_list = [bounds["min_reps"]] * len(next_reps_list)
+            elif bounds is not None and max(next_reps_list) > bounds["max_reps"]:
                 target_id = progressions.get(exercise_id)
                 if target_id is not None:
                     exercise_id = target_id
                     target_bounds = replacement_bounds[target_id]
-                    next_reps = target_bounds["min_reps"]
+                    next_reps_list = [target_bounds["min_reps"]] * len(next_reps_list)
                     rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
                 else:
-                    next_reps = bounds["max_reps"]
+                    next_reps_list = [bounds["max_reps"]] * len(next_reps_list)
 
             new_exercise_rows.append({
                 "session_id": session["id"],
@@ -491,7 +504,7 @@ class WorkoutPlanRepository:
                 "category": row["category"],
                 "slot_label": row.get("slot_label"),
                 "sets": row.get("sets"),
-                "reps": str(next_reps),
+                "reps": ",".join(str(r) for r in next_reps_list),
                 "rep_range": rep_range,
                 "note": row.get("note"),
             })
@@ -784,6 +797,8 @@ class WorkoutPlanRepository:
                 "rep_range": row.get("rep_range"),
                 "equipment": exercise["equipment"],
                 "note": row.get("note"),
+                # Same NULL-coercion undo as orientation above.
+                "video_url": exercise["video_url"] or None,
                 "set_logs": sorted(
                     (row.get("session_exercise_set_logs") or []),
                     key=lambda log: log["set_number"],

@@ -16,6 +16,7 @@ export interface ExerciseEntry {
   rep_range: string | null
   equipment: string[]
   note: string | null
+  video_url: string | null
   set_logs: SetLog[]
   rpe: number | null
 }

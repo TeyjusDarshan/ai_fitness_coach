@@ -10,10 +10,13 @@ export function isExerciseComplete(exercise: ExerciseEntry): boolean {
   return Boolean(exercise.sets) && exercise.set_logs.length >= (exercise.sets ?? 0)
 }
 
-// exercise.reps is a plain numeric target (e.g. "10") set by the workout
-// agent — falls back to 8 for the rare case it's missing or non-numeric.
-export function targetReps(exercise: ExerciseEntry): number {
-  const parsed = Number(exercise.reps)
+// exercise.reps is either a single numeric target (e.g. "10", shared by
+// every set) or a comma-separated per-set target list (e.g. "11,10,10")
+// written once a progression is mid-ramp on one set ahead of the others —
+// falls back to 8 for the rare case a value is missing or non-numeric.
+export function targetRepsForSet(exercise: ExerciseEntry, setIndex: number): number {
+  const values = (exercise.reps ?? '').split(',').map((v) => Number(v.trim()))
+  const parsed = values[setIndex] ?? values[0]
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 8
 }
 

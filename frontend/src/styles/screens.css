@@ -132,6 +132,12 @@
   object-fit: cover;
   display: block;
 }
+.video-placeholder__iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
 .video-placeholder__controls {
   position: absolute;
   left: 0;
