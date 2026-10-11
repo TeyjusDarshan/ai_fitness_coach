@@ -1,15 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { DayRow } from '../components/DayRow'
-import { startDay } from '../api'
+import { startSession } from '../api'
 import { useAppState } from '../state/AppStateContext'
-import { WEEKDAYS } from '../constants'
 import { firstIncompleteIndex } from '../utils'
 import type { DashboardDay } from '../types'
 
 export function DashboardScreen() {
   const { dashboard, loading, error, refreshDashboard, logout } = useAppState()
   const navigate = useNavigate()
+  const [startError, setStartError] = useState<string | null>(null)
 
   useEffect(() => {
     refreshDashboard().catch(() => {
@@ -19,8 +19,16 @@ export function DashboardScreen() {
   }, [])
 
   async function handleStart(day: DashboardDay) {
-    if (!dashboard) return
-    await startDay(dashboard.session_id, day.day_number)
+    if (day.session_id == null) return
+    setStartError(null)
+    try {
+      await startSession(day.session_id)
+    } catch (e) {
+      // e.g. 409 when the day's scheduled date hasn't arrived in the app's
+      // timezone yet, even though the device clock says it has.
+      setStartError(e instanceof Error ? e.message : 'Could not start this workout.')
+      return
+    }
     const slotIndex = firstIncompleteIndex(day)
     navigate(`/day/${day.day_number}/exercise/${slotIndex}`)
   }
@@ -53,12 +61,12 @@ export function DashboardScreen() {
   return (
     <div className="screen">
       <h1 className="screen-title">Weekly Calendar</h1>
+      {startError && <div className="error-banner">{startError}</div>}
       <div className="card day-list">
-        {dashboard.days.map((day, i) => (
+        {dashboard.days.map((day) => (
           <DayRow
             key={day.day_number}
             day={day}
-            weekday={WEEKDAYS[i] ?? day.day_label}
             timerLabel={timerLabel}
             onStart={() => handleStart(day)}
           />

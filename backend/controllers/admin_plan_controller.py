@@ -4,10 +4,12 @@ Flow: POST /api/admin/users/profile turns the coach's free-form notes about
 a client into a structured profile (preprocessor agent) and upserts it;
 GET /api/admin/plan-builder serves the DAY_TEMPLATES skeletons and the
 exercise library; POST /api/admin/users/<user_id>/initial-plan saves the
-plan the coach filled in by hand as the user's first session.
+plan the coach filled in by hand as the user's first plan, with one session
+per training day scheduled from the coach's start date.
 """
 import logging
 import re
+from datetime import date
 
 from flask import Blueprint, jsonify, request
 
@@ -15,7 +17,7 @@ from agents.preprocessor_agent import generate_user_profile
 from agents.prompts_v1 import DAY_TEMPLATES
 from backend.auth import auth_repo, require_admin
 from backend.controllers.auth_controller import mint_enrollment_link
-from backend.repository.workout_plan_repository import WorkoutPlanRepository
+from backend.repository.workout_plan_repository import WorkoutPlanRepository, app_today
 from backend.repository.workout_repository import WorkoutRepository
 
 logger = logging.getLogger(__name__)
@@ -41,15 +43,27 @@ def _is_int_in(value, low, high):
     return isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
 
 
-def _unfinished_session_conflict(user_id):
-    """409 response if user_id already has an unfinished session, else None."""
-    existing = plan_repo.get_unfinished_session(user_id)
+def _unfinished_plan_conflict(user_id):
+    """409 response if user_id already has an unfinished plan, else None."""
+    existing = plan_repo.get_unfinished_plan(user_id)
     if existing is None:
         return None
     return jsonify({
-        "error": f"User {user_id} already has an unfinished plan (session {existing['id']}).",
-        "session_id": existing["id"],
+        "error": f"User {user_id} already has an unfinished plan (plan {existing['id']}).",
+        "plan_id": existing["id"],
     }), 409
+
+
+def _parse_start_date(value):
+    """The plan's start date (day 1's scheduled_date): an ISO YYYY-MM-DD
+    string, not before today."""
+    try:
+        start_date = date.fromisoformat(value)
+    except (TypeError, ValueError):
+        raise PlanValidationError("'start_date' (YYYY-MM-DD) is required.")
+    if start_date < app_today():
+        raise PlanValidationError("'start_date' can't be in the past.")
+    return start_date
 
 
 @admin_plan_bp.post("/api/admin/users/profile")
@@ -66,7 +80,7 @@ def create_profile():
 
     # Checked before the (slow, billed) LLM call so a client mid-plan never
     # has their profile overwritten out from under that plan.
-    if conflict := _unfinished_session_conflict(user_id):
+    if conflict := _unfinished_plan_conflict(user_id):
         return conflict
 
     user_created = not plan_repo.user_exists(user_id)
@@ -102,7 +116,7 @@ def plan_builder_options():
 
 def _build_plan(body, exercises_by_id, profile):
     """Validate the coach's slot picks against DAY_TEMPLATES and return a
-    plan dict in the shape WorkoutPlanRepository.create_session consumes."""
+    plan dict in the shape WorkoutPlanRepository.create_plan consumes."""
     plan_type = body.get("plan_type")
     if plan_type not in DAY_TEMPLATES:
         raise PlanValidationError(f"'plan_type' must be one of {sorted(DAY_TEMPLATES)}.")
@@ -205,7 +219,7 @@ def create_initial_plan(user_id):
     profile = plan_repo.get_profile(user_id)
     if profile is None:
         return jsonify({"error": f"User {user_id} not found — generate their profile first."}), 404
-    if conflict := _unfinished_session_conflict(user_id):
+    if conflict := _unfinished_plan_conflict(user_id):
         return conflict
 
     body = request.get_json(silent=True) or {}
@@ -216,12 +230,13 @@ def create_initial_plan(user_id):
         return jsonify({"error": "Failed to load the exercise library."}), 500
 
     try:
+        start_date = _parse_start_date(body.get("start_date"))
         plan = _build_plan(body, exercises_by_id, profile)
     except PlanValidationError as e:
         return jsonify({"error": str(e)}), 400
 
     try:
-        session = plan_repo.create_session(user_id, plan)
+        created = plan_repo.create_plan(user_id, plan, start_date)
     except Exception:
         logger.exception("Failed to save initial plan for user_id=%s", user_id)
         return jsonify({"error": "Failed to save the plan."}), 500
@@ -235,4 +250,4 @@ def create_initial_plan(user_id):
     except Exception:
         logger.exception("Failed to mint enrollment link for user_id=%s", user_id)
 
-    return jsonify({"user_id": user_id, "session_id": session["id"], "enrollment": enrollment}), 201
+    return jsonify({"user_id": user_id, "plan_id": created["id"], "enrollment": enrollment}), 201

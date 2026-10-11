@@ -88,6 +88,15 @@
   font-weight: 500;
 }
 
+.day-row__opens {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
 .day-row__check {
   color: var(--success);
   font-size: 22px;

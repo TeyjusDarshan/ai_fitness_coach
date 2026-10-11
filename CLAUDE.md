@@ -4,7 +4,7 @@
 
 Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northeast-1`, Postgres 17.6).
 
-> ⚠️ **RLS is disabled on every table below.** All 18 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_day_analysis` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+> ⚠️ **RLS is disabled on every table below.** All 18 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `plans`, `sessions`, `session_exercises`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_analysis` hold real per-user data (generated profiles, weekly plans, scheduled workout days and their progress, prescribed exercises, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
 >
 > This includes the passkey-auth tables (`user_passkeys`, `auth_challenges`, `auth_sessions`, `passkey_enrollment_tokens`): the API-level passkey sign-in is only as strong as the secrecy of the publishable key, since anyone holding it can insert an `auth_sessions` row (or their own passkey) for any `user_id` and impersonate that user. Kept this way deliberately (decision 2026-09-27) because the backend's `SUPABASE_KEY` is the publishable key. The fix is to switch the backend (and `workout_analysis_consumer`) to the secret/service-role key, which bypasses RLS, and then enable RLS on these tables.
 
@@ -12,18 +12,18 @@ Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northe
 
 ### Entity overview
 
-`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `user_joint_pain` holds one row per (user, joint) the user has reported pain for; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan; `session_day_analysis` holds one LLM-generated Tanglish summary per (session, day), written by the standalone `workout_analysis_consumer` service (see below). The passkey-auth tables — `user_passkeys`, `auth_sessions`, `passkey_enrollment_tokens`, `auth_challenges` — hang off `user_profiles` (see "Passkey authentication tables" below).
+`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `user_joint_pain` holds one row per (user, joint) the user has reported pain for. Workouts form a three-level hierarchy: `plans` holds one row per weekly workout plan for a user; `sessions` holds one row per **training day** of a plan (its `day_number`, `scheduled_date`, and start/completion timestamps); `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot of that day. `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_analysis` holds one LLM-generated Tanglish summary per session, written by the standalone `workout_analysis_consumer` service (see below). The passkey-auth tables — `user_passkeys`, `auth_sessions`, `passkey_enrollment_tokens`, `auth_challenges` — hang off `user_profiles` (see "Passkey authentication tables" below).
 
 ```
 movement_types ─┐
                 ├─< exercises >─┬─< exercise_loaded_joints >─ joints
 equipment ──────┘               └─< exercise_relationships >─ exercises (self-referential: from/to)
-                                 └─< session_exercises >─ sessions >─ user_profiles ─< user_joint_pain >─ joints
-                                       ├─< session_exercise_set_logs
-                                       └─< session_exercise_rpe
-                                                             sessions ─< session_day_logs
-                                                             sessions ─< session_day_analysis
+                                 └─< session_exercises >─ sessions >─ plans >─ user_profiles ─< user_joint_pain >─ joints
+                                       ├─< session_exercise_set_logs   │
+                                       └─< session_exercise_rpe        └─< session_analysis (one per session)
 ```
+
+`plans.parent_plan_id` links each auto-progressed plan to the plan it was progressed from.
 
 ### Lookup tables
 
@@ -103,15 +103,15 @@ Populated by `WorkoutPlanRepository.upsert_joint_pain` / `delete_joint_pain` via
 
 Unique: (`user_id`, `joint_id`) — makes `upsert_joint_pain` an idempotent upsert; re-reporting pain for a joint already on file overwrites it rather than duplicating.
 
-### `sessions` — one row per generated workout plan
+### `plans` — one row per weekly workout plan
 
-Populated by `WorkoutPlanRepository.create_session` (brand-new plan — either agent-generated via `/workout-plan`, or hand-built by the coach in the `/admin` planner and saved via `POST /api/admin/users/<user_id>/initial-plan`, which refuses with 409 if the user already has an unfinished session and sets `plan_selection_reason` to "Built manually by coach") or `WorkoutPlanRepository.create_progressed_session` (progress-plan flow — carries forward a completed session's exercises) after a successful generation. Plan-level metadata only — the per-exercise prescriptions live in `session_exercises`.
+Populated by `WorkoutPlanRepository.create_plan` (brand-new plan — either agent-generated via `/workout-plan`, or hand-built by the coach in the `/admin` planner and saved via `POST /api/admin/users/<user_id>/initial-plan`, which refuses with 409 if the user already has an unfinished plan and sets `plan_selection_reason` to "Built manually by coach") or `WorkoutPlanRepository.create_progressed_plan` (progress-plan flow — carries forward a completed plan's sessions and exercises). Plan-level metadata only — the training days live in `sessions`. (This table was named `sessions` before the 2026-10-11 plans/sessions split.)
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
-| `user_id` | text, FK → `user_profiles.user_id` | no cascade |
-| `parent_session_id` | int4, nullable, FK → `sessions.id` | self-referential; `ON DELETE SET NULL`. `NULL` for a brand-new session (`create_session`); set to the source session's `id` when created via `create_progressed_session` (auto-progress on completion, or `POST /api/users/<user_id>/progress-plan`) |
+| `user_id` | text, FK → `user_profiles.user_id` | `ON DELETE CASCADE` |
+| `parent_plan_id` | int4, nullable, FK → `plans.id` | self-referential; `ON DELETE SET NULL`. `NULL` for a brand-new plan (`create_plan`); set to the source plan's `id` when created via `create_progressed_plan` (auto-progress on completion, or `POST /api/users/<user_id>/progress-plan`) |
 | `plan_type` | varchar | `3_day` \| `4_day` |
 | `plan_selection_reason` | text, nullable | |
 | `medical_clearance_warning` | text, nullable | |
@@ -121,18 +121,33 @@ Populated by `WorkoutPlanRepository.create_session` (brand-new plan — either a
 | `created_at` | timestamptz, default `now()` | |
 | `completed_at` | timestamptz, nullable | set when marked completed |
 
-Partial unique index `sessions_one_unfinished_per_user` on `(user_id)` where `completed = false` — enforces at most one unfinished session per user, matching the endpoint's short-circuit logic (`POST /workout-plan` returns the existing unfinished session instead of generating a new one) and guarding against duplicate inserts from a racing/retried request.
+Partial unique index `plans_one_unfinished_per_user` on `(user_id)` where `completed = false` — enforces at most one unfinished plan per user, matching the endpoints' short-circuit logic (`POST /workout-plan` returns the existing unfinished plan instead of generating a new one) and guarding against duplicate inserts from a racing/retried request.
+
+### `sessions` — one row per training day of a plan
+
+One row per non-rest day of a plan's `DAY_TEMPLATES[plan_type]` schedule (rest days have no row). Created alongside the plan by `create_plan` / `create_progressed_plan`. Drives the PWA dashboard's per-day status (rest / completed / next / upcoming, plus `locked`) and the end-of-day summary screen's Total Time stat.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` — the id the PWA's `/api/sessions/<session_id>/…` routes and the WhatsApp share message ("Session ID: …") use |
+| `plan_id` | int4, FK → `plans.id` | `ON DELETE CASCADE` |
+| `day_number` | int2 | check 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
+| `scheduled_date` | date | the day this session opens. `create_plan`: coach-chosen start date + (`day_number` − 1); `create_progressed_plan`: the source plan's same-day session + 7 days |
+| `started_at` | timestamptz, nullable | set once, on the first `start_session` call — never overwritten by a later re-entry |
+| `completed_at` | timestamptz, nullable | set when the session's summary screen is reached (`complete_session`) |
+| `created_at` | timestamptz, default `now()` | |
+
+Unique: (`plan_id`, `day_number`). **Scheduled-date lock:** the backend refuses start / set / RPE / complete for a session (409, `_deny_unless_session_open` in `backend/app.py`) while `scheduled_date` is after today in `APP_TIMEZONE` (env, default `Asia/Kolkata`; see `app_today()`); once the date arrives it stays open, so a missed day can be done late. When every session of a plan has a `completed_at`, `complete_session` calls `mark_plan_completed` to close out the whole plan (which auto-progresses it). Replaces the former `session_day_logs` table.
 
 ### `session_exercises` — join table between `sessions` and `exercises`
 
-One row per prescribed exercise slot within a non-rest day of a session. Deliberately does **not** duplicate `name`/`movement_type`/`equipment`/`orientation`/`dominant` (joined in from `exercises` at read time) or `day_label`/`split_name`/`is_rest_day` (reconstructed from the fixed `DAY_TEMPLATES[plan_type]` skeleton in `agents/prompts_v1.py` using `sessions.plan_type` + `day_number`).
+One row per prescribed exercise slot within a session. Deliberately does **not** duplicate `name`/`movement_type`/`equipment`/`orientation`/`dominant` (joined in from `exercises` at read time) or `day_label`/`split_name`/`is_rest_day` (reconstructed from the fixed `DAY_TEMPLATES[plan_type]` skeleton in `agents/prompts_v1.py` using `plans.plan_type` + `sessions.day_number`).
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
 | `session_id` | int4, FK → `sessions.id` | `ON DELETE CASCADE` |
 | `exercise_id` | int4, FK → `exercises.id` | no cascade |
-| `day_number` | int2 | 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
 | `category` | varchar | check ∈ `primary, secondary` — which slot list this exercise fills |
 | `slot_label` | varchar, nullable | e.g. `"Hinge"`, `"Push (Horizontal)"` — echoes the slot label from `DAY_TEMPLATES` |
 | `sets` | int2, nullable | |
@@ -155,7 +170,7 @@ One row per set actually logged, written via `WorkoutPlanRepository.log_set`. Ea
 | `completed_reps` | int2 | reps actually performed on that set |
 | `created_at` | timestamptz, default `now()` | |
 
-Unique: (`session_exercise_id`, `set_number`) — one log row per set, and makes `log_set` an idempotent upsert. `complete_day` treats a `session_exercises` row as fully done once it has as many logged sets as its prescribed `sets`.
+Unique: (`session_exercise_id`, `set_number`) — one log row per set, and makes `log_set` an idempotent upsert. `complete_session` treats a `session_exercises` row as fully done once it has as many logged sets as its prescribed `sets`.
 
 ### `session_exercise_rpe` — perceived exertion per prescribed exercise
 
@@ -170,35 +185,19 @@ One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe`
 
 Unique: (`session_exercise_id`) — makes `log_rpe` an idempotent upsert.
 
-### `session_day_logs` — per-day progress within a session
+### `session_analysis` — LLM-generated Tanglish summary per session
 
-Tracks start/completion timestamps for each individual day (`day_number`) of a session's plan, separately from `sessions.completed`/`completed_at` which track the whole multi-day plan. Populated by `WorkoutPlanRepository.start_day` / `complete_day` (`backend/repository/workout_plan_repository.py`), driving the PWA dashboard's per-day status (rest / completed / next / upcoming) and the end-of-day summary screen's Total Time stat.
-
-| Column | Type | Notes |
-|---|---|---|
-| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
-| `session_id` | int4, FK → `sessions.id` | `ON DELETE CASCADE` |
-| `day_number` | int2 | 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
-| `started_at` | timestamptz, nullable | set once, on first `start_day` call for this (session, day) — never overwritten by a later re-entry into the same day |
-| `completed_at` | timestamptz, nullable | set when the day's summary screen is reached (`complete_day`) |
-| `created_at` | timestamptz, default `now()` | |
-
-Unique: (`session_id`, `day_number`) — enforces one log row per day per session, and makes `start_day`/`complete_day` idempotent upserts. When every non-rest `day_number` in a session's `DAY_TEMPLATES[plan_type]` has a `completed_at`, `complete_day` automatically calls `mark_session_completed` to close out the whole plan.
-
-### `session_day_analysis` — LLM-generated Tanglish summary per (session, day)
-
-One row per day of a session that's been marked complete. Written by the standalone `workout_analysis_consumer` package (repo root, alongside `backend`/`frontend`) — a Kafka consumer, independent of the Flask app, that listens on the `workout-complete-events` topic (produced by `backend/kafka_producer` when `POST /api/sessions/<session_id>/days/<day_number>/complete` succeeds). On each event it reads that day's `session_exercises` (with `session_exercise_set_logs` and `session_exercise_rpe` joined in), the user's `user_profiles.profile`, and their `user_joint_pain`, then prompts Gemini (`gemini-3.8-flash`) to write a short coach-style summary in **Tanglish** (Tamil-majority, code-switching into English for gym/fitness terms — see `workout_analysis_consumer/prompts.py`), and upserts the result here. If the session has a `parent_session_id`, the consumer also fetches that parent session's `session_exercises`/`session_exercise_set_logs`/`session_exercise_rpe`/`session_day_logs` for the **same `day_number`** and includes them as `previous_session` context, so the prompt can call out individual- and exercise-specific progress compared to the client's last time on that day of their split (see `AnalysisRepository._fetch_parent_session_context`).
+One row per session that's been analyzed. Written by the standalone `workout_analysis_consumer` package (repo root, alongside `backend`/`frontend`) — a Kafka consumer, independent of the Flask app, that listens on the `workout-complete-events` topic. Those events are produced by `backend/kafka_producer` from the WhatsApp webhook (`backend/controllers/whatsapp_webhook_controller.py`) when the client shares a finished workout with the coach: the shared message carries a `Session ID: <sessions.id>` line, and the event payload is `{session_id, phone_number}`. On each event the consumer reads that session's `session_exercises` (with `session_exercise_set_logs` and `session_exercise_rpe` joined in), its plan, the user's `user_profiles.profile`, and their `user_joint_pain`, then prompts Gemini (`gemini-3.8-flash`) to write a short coach-style summary in **Tanglish** (Tamil-majority, code-switching into English for gym/fitness terms — see `workout_analysis_consumer/prompts.py`), and upserts the result here. If the plan has a `parent_plan_id`, the consumer also fetches the parent plan's session for the **same `day_number`** (its exercises, set logs, RPE and start/completion times) and includes it as `previous_session` context, so the prompt can call out individual- and exercise-specific progress compared to the client's last time on that day of their split (see `AnalysisRepository._fetch_previous_session_context`). The voice note is stored as `plan_<plan_id>/day_<day_number>.ogg`.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
 | `session_id` | int4, FK → `sessions.id` | `ON DELETE CASCADE` |
-| `day_number` | int2 | 1–7, matches `DAY_TEMPLATES[plan_type].schedule[].day_number` |
 | `analysis` | text | the generated Tanglish summary |
 | `audio_url` | text, nullable | URL of the generated voice analysis (TTS audio) for `analysis` |
 | `created_at` | timestamptz, default `now()` | |
 
-Unique: (`session_id`, `day_number`) — makes the consumer's write an idempotent upsert, so redelivering an already-processed Kafka message overwrites rather than duplicates.
+Unique: (`session_id`) — makes the consumer's write an idempotent upsert, so redelivering an already-processed Kafka message overwrites rather than duplicates. (Was `session_day_analysis`, keyed by plan + day, before the plans/sessions split.)
 
 ### Passkey authentication tables
 
@@ -226,4 +225,4 @@ Written by `AuthRepository` (`backend/repository/auth_repository.py`) via the pa
 
 ### Notes on FK delete behavior
 
-`movement_type_id` and `equipment_id` on `exercises`, `exercise_id` on `session_exercises`, and `joint_id` on `user_joint_pain`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions`, `user_joint_pain`, and the four passkey-auth tables is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions`, `user_joint_pain`, passkeys, auth sessions, enrollment tokens and pending challenges; `sessions` in turn cascades to `session_exercises`, `session_day_logs`, and `session_day_analysis` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across every child table. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. `sessions.parent_session_id` (self-referential) is the one exception to the "no cascade blocks delete" rule: it's `ON DELETE SET NULL`, so deleting a parent session merely nulls out its children's `parent_session_id` rather than being blocked or cascading further. Indexes exist on all FK columns.
+`movement_type_id` and `equipment_id` on `exercises`, `exercise_id` on `session_exercises`, and `joint_id` on `user_joint_pain`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `plans`, `user_joint_pain`, and the four passkey-auth tables is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `plans`, `user_joint_pain`, passkeys, auth sessions, enrollment tokens and pending challenges; `plans` in turn cascades to `sessions` via `plan_id`, `sessions` to `session_exercises` and `session_analysis` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across every child table. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. `plans.parent_plan_id` (self-referential) is the one exception to the "no cascade blocks delete" rule: it's `ON DELETE SET NULL`, so deleting a parent plan merely nulls out its children's `parent_plan_id` rather than being blocked or cascading further. Indexes exist on all FK columns.

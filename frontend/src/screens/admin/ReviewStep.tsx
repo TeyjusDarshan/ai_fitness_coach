@@ -7,7 +7,15 @@ import {
   type ProfileResult,
 } from '../../adminApi'
 import { ProfileSummary } from './ProfileStep'
-import { CATEGORIES, isOutsideRepRange, painfulJointsFor, toRequest, type PlanDraft } from './planDraft'
+import {
+  CATEGORIES,
+  dayDateIso,
+  isOutsideRepRange,
+  painfulJointsFor,
+  toRequest,
+  type PlanDraft,
+} from './planDraft'
+import { formatDayDate } from '../../utils'
 
 // Step 3: read-only recap of the whole plan, then save it as the user's
 // first session.
@@ -19,6 +27,7 @@ export function ReviewStep({
   planType,
   draft,
   coachNotes,
+  startDate,
   onBack,
   onSaved,
   onUnauthorized,
@@ -30,6 +39,7 @@ export function ReviewStep({
   planType: string
   draft: PlanDraft
   coachNotes: string
+  startDate: string
   onBack: () => void
   onSaved: (result: InitialPlanResult) => void
   onUnauthorized: () => void
@@ -43,7 +53,7 @@ export function ReviewStep({
     setSubmitting(true)
     setError(null)
     try {
-      onSaved(await createInitialPlan(adminKey, profile.user_id, toRequest(planType, coachNotes, draft)))
+      onSaved(await createInitialPlan(adminKey, profile.user_id, toRequest(planType, coachNotes, startDate, draft)))
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onUnauthorized()
@@ -60,7 +70,8 @@ export function ReviewStep({
       <section className="card admin__section">
         <h2 className="admin__section-title">3 · Review</h2>
         <p className="admin__muted">
-          {template.label} for <strong>{profile.user_id}</strong>
+          {template.label} for <strong>{profile.user_id}</strong>, starting{' '}
+          <strong>{formatDayDate(startDate)}</strong>
         </p>
         <ProfileSummary profile={profile.profile} />
         {coachNotes.trim() && (
@@ -74,12 +85,13 @@ export function ReviewStep({
       {template.schedule.map((day) =>
         day.is_rest_day ? (
           <div key={day.day_number} className="admin__rest-day">
-            {day.day_label} · Rest
+            {day.day_label} · {formatDayDate(dayDateIso(startDate, day.day_number))} · Rest
           </div>
         ) : (
           <section key={day.day_number} className="card admin__section">
             <h2 className="admin__section-title">
-              {day.day_label} <span className="admin__muted">· {day.split_name}</span>
+              {day.day_label} · {formatDayDate(dayDateIso(startDate, day.day_number))}
+              <span className="admin__muted">· {day.split_name}</span>
             </h2>
             <table className="admin__review-table">
               <thead>
@@ -159,7 +171,7 @@ export function PlanSavedCard({ result, onStartOver }: { result: InitialPlanResu
     <section className="card admin__section">
       <h2 className="admin__section-title">Plan saved</h2>
       <p>
-        <strong>{result.user_id}</strong>’s first plan is live as session #{result.session_id}.
+        <strong>{result.user_id}</strong>’s first plan is live as plan #{result.plan_id}.
       </p>
       {result.enrollment ? (
         <>

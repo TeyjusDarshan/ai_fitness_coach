@@ -1,12 +1,14 @@
-"""Tests for WorkoutPlanRepository.create_progressed_session.
+"""Tests for WorkoutPlanRepository's plan/session writes: create_plan,
+create_progressed_plan, and complete_session.
 
 Supabase is faked with FakeSupabaseClient/FakeTable below rather than plain
-MagicMock chains: create_progressed_session's branching (regression/
+MagicMock chains: create_progressed_plan's branching (regression/
 progression swaps, injury-multiplier override, min/max clamping) depends on
 what each query's filters actually match, so the fake applies .eq/.in_/.ilike
 filters against small per-table fixture lists instead of returning a fixed
 canned response regardless of arguments.
 """
+from datetime import date
 from typing import Dict, List
 
 from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
@@ -29,9 +31,20 @@ class FakeTable:
         self._eq = []
         self._in = []
         self._ilike = []
+        self._is_null = []
         self._insert_rows = None
+        self._update = None
 
     def select(self, *_args, **_kwargs):
+        return self
+
+    def update(self, values):
+        self._update = values
+        return self
+
+    def is_(self, key, value):
+        assert value == "null"
+        self._is_null.append(key)
         return self
 
     def insert(self, rows):
@@ -75,6 +88,11 @@ class FakeTable:
             matched = [r for r in matched if r.get(key) in values]
         for key, needle in self._ilike:
             matched = [r for r in matched if needle in (r.get(key) or "").lower()]
+        for key in self._is_null:
+            matched = [r for r in matched if r.get(key) is None]
+        if self._update is not None:
+            for r in matched:
+                r.update(self._update)
         return FakeResponse(matched)
 
 
@@ -128,10 +146,27 @@ def _row(**overrides):
     return row
 
 
-def _source_session(**overrides):
-    session = {"id": 55, "plan_type": "3_day", "completed_at": None}
-    session.update(overrides)
-    return session
+def _source_plan(**overrides):
+    plan = {"id": 55, "plan_type": "3_day", "completed_at": None}
+    plan.update(overrides)
+    return plan
+
+
+def _progress(repo, user_id, source_plan, exercise_rows):
+    """create_progressed_plan with the source plan's sessions built from
+    exercise_rows: one session per distinct day_number, each scheduled on
+    2026-10-12 + (day_number - 1) with its rows nested."""
+    sessions = {}
+    for row in exercise_rows:
+        day_number = row["day_number"]
+        session = sessions.setdefault(day_number, {
+            "id": 500 + day_number,
+            "day_number": day_number,
+            "scheduled_date": date(2026, 10, 11 + day_number).isoformat(),
+            "session_exercises": [],
+        })
+        session["session_exercises"].append({k: v for k, v in row.items() if k != "day_number"})
+    return repo.create_progressed_plan(user_id, source_plan, list(sessions.values()))
 
 
 def test_hard_rpe_reduces_every_set_by_one():
@@ -141,13 +176,13 @@ def test_hard_rpe_reduces_every_set_by_one():
 
     exercise_rows = [_row(reps="10,11,10", session_exercise_rpe={"rpe": 10})]
 
-    session = repo.create_progressed_session("usr_1", _source_session(), exercise_rows)
+    _progress(repo, "usr_1", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "9,10,9"
     assert new_row["exercise_id"] == 100
     assert new_row["rep_range"] == "8-12"
-    assert new_row["session_id"] == session["id"]
+    assert new_row["session_id"] == client.inserted["sessions"][0]["id"]
 
 
 def test_missing_rpe_falls_back_to_hard():
@@ -157,7 +192,7 @@ def test_missing_rpe_falls_back_to_hard():
 
     exercise_rows = [_row(reps="10,10,10", session_exercise_rpe=None)]
 
-    repo.create_progressed_session("usr_1", _source_session(), exercise_rows)
+    _progress(repo, "usr_1", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "9,9,9"
@@ -170,8 +205,7 @@ def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one():
 
     # Week 1: fully uniform -> set 1 (the first index at the shared minimum)
     # is the one that advances.
-    week1 = repo.create_progressed_session(
-        "usr_1", _source_session(), [_row(reps="10,9,9", session_exercise_rpe={"rpe": 8})]
+    week1 = _progress(repo, "usr_1", _source_plan(), [_row(reps="10,9,9", session_exercise_rpe={"rpe": 8})]
     )
     [week1_row] = client.inserted["session_exercises"]
     assert week1_row["reps"] == "10,10,9"
@@ -180,7 +214,7 @@ def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one():
     # first one still at the shared minimum (10), so it advances next.
     client.inserted["session_exercises"] = []
     week2_row_input = _row(id=2, reps=week1_row["reps"], session_exercise_rpe={"rpe": 8})
-    repo.create_progressed_session("usr_1", _source_session(id=week1["id"]), [week2_row_input])
+    _progress(repo, "usr_1", _source_plan(id=week1["id"]), [week2_row_input])
     [week2_row] = client.inserted["session_exercises"]
     assert week2_row["reps"] == "10,10,10"
 
@@ -188,14 +222,14 @@ def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one():
     # the lap (all three sets now equal).
     client.inserted["session_exercises"] = []
     week3_row_input = _row(id=3, reps=week2_row["reps"], session_exercise_rpe={"rpe": 8})
-    repo.create_progressed_session("usr_1", _source_session(), [week3_row_input])
+    _progress(repo, "usr_1", _source_plan(), [week3_row_input])
     [week3_row] = client.inserted["session_exercises"]
     assert week3_row["reps"] == "11,10,10"
 
     # Week 4: lap complete and uniform again -> set 1 starts a new lap.
     client.inserted["session_exercises"] = []
     week4_row_input = _row(id=4, reps=week3_row["reps"], session_exercise_rpe={"rpe": 8})
-    repo.create_progressed_session("usr_1", _source_session(), [week4_row_input])
+    _progress(repo, "usr_1", _source_plan(), [week4_row_input])
     [week4_row] = client.inserted["session_exercises"]
     assert week4_row["reps"] == "11,11,10"
 
@@ -207,7 +241,7 @@ def test_too_easy_rpe_bumps_only_the_next_uncaught_up_set_by_two():
 
     exercise_rows = [_row(reps="10,10,10", session_exercise_rpe={"rpe": 6})]
 
-    repo.create_progressed_session("usr_1", _source_session(), exercise_rows)
+    _progress(repo, "usr_1", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "12,10,10"
@@ -235,13 +269,13 @@ def test_reported_joint_pain_forces_hard_regardless_of_rpe_and_triggers_regressi
         session_exercise_rpe={"rpe": 6},
     )]
 
-    session = repo.create_progressed_session("usr_2", _source_session(), exercise_rows)
+    plan = _progress(repo, "usr_2", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 201
     assert new_row["reps"] == "4,4,4"
     assert new_row["rep_range"] == "4-10"
-    assert new_row["session_id"] == session["id"]
+    assert new_row["session_id"] == client.inserted["sessions"][0]["id"]
 
 
 def test_below_min_without_regression_edge_clamps_every_set_to_own_min_reps():
@@ -251,7 +285,7 @@ def test_below_min_without_regression_edge_clamps_every_set_to_own_min_reps():
 
     exercise_rows = [_row(id=3, exercise_id=300, reps="6,6,6", session_exercise_rpe={"rpe": 10})]
 
-    repo.create_progressed_session("usr_3", _source_session(), exercise_rows)
+    _progress(repo, "usr_3", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 300
@@ -275,13 +309,13 @@ def test_above_max_with_progression_edge_swaps_exercise():
         id=4, exercise_id=400, reps="20,19,19", session_exercise_rpe={"rpe": 6},
     )]
 
-    session = repo.create_progressed_session("usr_4", _source_session(), exercise_rows)
+    plan = _progress(repo, "usr_4", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 401
     assert new_row["reps"] == "10,10,10"
     assert new_row["rep_range"] == "10-18"
-    assert new_row["session_id"] == session["id"]
+    assert new_row["session_id"] == client.inserted["sessions"][0]["id"]
 
 
 def test_above_max_without_progression_edge_clamps_every_set_to_own_max_reps():
@@ -293,7 +327,7 @@ def test_above_max_without_progression_edge_clamps_every_set_to_own_max_reps():
         id=5, exercise_id=500, reps="20,19,19", session_exercise_rpe={"rpe": 6},
     )]
 
-    repo.create_progressed_session("usr_5", _source_session(), exercise_rows)
+    _progress(repo, "usr_5", _source_plan(), exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 500
@@ -301,20 +335,22 @@ def test_above_max_without_progression_edge_clamps_every_set_to_own_max_reps():
     assert new_row["rep_range"] == "8-12"
 
 
-def test_falls_back_to_generic_reason_and_skips_exercise_queries_when_no_source_exercises():
+def test_falls_back_to_generic_reason_and_skips_exercise_queries_when_no_source_sessions():
     client = FakeSupabaseClient()
     repo = _repo(client)
 
-    source_session = {"id": 77, "plan_type": "4_day", "completed_at": None}
+    source_plan = {"id": 77, "plan_type": "4_day", "completed_at": None}
 
-    session = repo.create_progressed_session("usr_6", source_session, [])
+    plan = _progress(repo, "usr_6", source_plan, [])
 
-    assert client.inserted["sessions"][0]["plan_selection_reason"] == (
-        "Progressive overload from the previous completed session."
+    assert client.inserted["plans"][0]["plan_selection_reason"] == (
+        "Progressive overload from the previous completed plan."
     )
+    assert client.inserted["plans"][0]["parent_plan_id"] == 77
     assert "session_exercises" not in client.inserted
-    assert set(client.query_log) == {"sessions", "user_joint_pain"}
-    assert session["id"] == client.inserted["sessions"][0]["id"]
+    assert "sessions" not in client.inserted
+    assert set(client.query_log) == {"plans", "user_joint_pain"}
+    assert plan["id"] == client.inserted["plans"][0]["id"]
 
 
 def test_fetch_user_joint_pain_parses_pain_level_enum():
@@ -329,3 +365,121 @@ def test_fetch_user_joint_pain_parses_pain_level_enum():
     result = repo._fetch_user_joint_pain("usr_7")
 
     assert result == {1: PainLevel.SEVERE, 2: PainLevel.MILD}
+
+
+def test_create_plan_schedules_one_session_per_training_day_from_start_date():
+    from agents.prompts_v1 import DAY_TEMPLATES
+
+    client = FakeSupabaseClient()
+    repo = _repo(client)
+    schedule = [
+        {**day, "primary": [{"exercise_id": 100, "slot": "Hinge", "sets": 3, "reps": "10"}], "secondary": []}
+        if not day["is_rest_day"] else day
+        for day in DAY_TEMPLATES["3_day"]["schedule"]
+    ]
+
+    plan = repo.create_plan("usr_1", {"plan_type": "3_day", "schedule": schedule}, date(2026, 10, 13))
+
+    assert client.inserted["plans"][0]["parent_plan_id"] is None
+    sessions = client.inserted["sessions"]
+    assert [(s["plan_id"], s["day_number"], s["scheduled_date"]) for s in sessions] == [
+        (plan["id"], 1, "2026-10-13"),
+        (plan["id"], 3, "2026-10-15"),
+        (plan["id"], 5, "2026-10-17"),
+    ]
+    session_ids = [s["id"] for s in sessions]
+    assert [row["session_id"] for row in client.inserted["session_exercises"]] == session_ids
+    assert all("day_number" not in row for row in client.inserted["session_exercises"])
+
+
+def test_progressed_plan_schedules_each_day_a_week_later_and_keeps_exercises_on_their_day():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    repo = _repo(client)
+
+    exercise_rows = [
+        _row(id=1, day_number=1, session_exercise_rpe={"rpe": 8}),
+        _row(id=2, day_number=3, session_exercise_rpe={"rpe": 8}),
+        _row(id=3, day_number=3, category="secondary", session_exercise_rpe={"rpe": 8}),
+    ]
+
+    plan = _progress(repo, "usr_1", _source_plan(), exercise_rows)
+
+    sessions = {s["day_number"]: s for s in client.inserted["sessions"]}
+    # Source day 1 was 2026-10-12 and day 3 was 2026-10-14 (see _progress).
+    assert sessions[1]["scheduled_date"] == "2026-10-19"
+    assert sessions[3]["scheduled_date"] == "2026-10-21"
+    assert all(s["plan_id"] == plan["id"] for s in sessions.values())
+    assert [row["session_id"] for row in client.inserted["session_exercises"]] == [
+        sessions[1]["id"], sessions[3]["id"], sessions[3]["id"],
+    ]
+
+
+def _seed_plan_with_sessions(client, day3_completed_at=None, plan_completed=False):
+    plan_ref = {"user_id": "usr_1", "plan_type": "3_day", "completed": plan_completed}
+    client.seed("plans", [{"id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": plan_completed}])
+    client.seed("sessions", [
+        {"id": 1, "plan_id": 7, "day_number": 1, "scheduled_date": "2026-10-12",
+         "started_at": "2026-10-12T10:00:00+00:00", "completed_at": "2026-10-12T10:30:00+00:00",
+         "plans": plan_ref},
+        {"id": 3, "plan_id": 7, "day_number": 3, "scheduled_date": "2026-10-14",
+         "started_at": "2026-10-14T10:00:00+00:00", "completed_at": day3_completed_at, "plans": plan_ref},
+        {"id": 5, "plan_id": 7, "day_number": 5, "scheduled_date": "2026-10-16",
+         "started_at": "2026-10-16T10:00:00+00:00", "completed_at": None, "plans": plan_ref},
+    ])
+    client.seed("session_exercises", [
+        {"id": 90, "session_id": 5, "sets": 3, "session_exercise_set_logs": [{"set_number": 1}, {"set_number": 2}]},
+        {"id": 91, "session_id": 5, "sets": 2, "session_exercise_set_logs": [{"set_number": 1}, {"set_number": 2}]},
+    ])
+
+
+def test_complete_session_completes_the_plan_once_every_session_is_done():
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at="2026-10-14T10:40:00+00:00")
+    repo = _repo(client)
+
+    summary = repo.complete_session(5)
+
+    assert summary["session_id"] == 5
+    assert summary["day_number"] == 5
+    assert (summary["exercises_completed"], summary["total_exercises"]) == (1, 2)
+    assert (summary["sets_completed"], summary["total_sets"]) == (4, 5)
+    assert summary["plan_completed"] is True
+    assert client.tables["plans"][0]["completed"] is True
+    assert client.tables["sessions"][2]["completed_at"] is not None
+
+
+def test_complete_session_leaves_the_plan_open_while_other_sessions_remain():
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at=None)
+    repo = _repo(client)
+
+    summary = repo.complete_session(5)
+
+    assert summary["plan_completed"] is False
+    assert client.tables["plans"][0]["completed"] is False
+
+
+def test_complete_session_does_not_recomplete_an_already_completed_plan():
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at="2026-10-14T10:40:00+00:00", plan_completed=True)
+    repo = _repo(client)
+
+    assert repo.complete_session(5)["plan_completed"] is False
+    assert "plans" not in client.inserted
+
+
+def test_complete_session_unknown_session_returns_none():
+    assert _repo(FakeSupabaseClient()).complete_session(404) is None
+
+
+def test_start_session_stamps_started_at_only_once():
+    client = FakeSupabaseClient()
+    client.seed("sessions", [{"id": 3, "plan_id": 7, "day_number": 3, "started_at": None, "completed_at": None}])
+    repo = _repo(client)
+
+    first = repo.start_session(3)["started_at"]
+    assert first is not None
+
+    client.tables["sessions"][0]["started_at"] = "2026-10-14T10:00:00+00:00"
+    assert repo.start_session(3)["started_at"] == "2026-10-14T10:00:00+00:00"

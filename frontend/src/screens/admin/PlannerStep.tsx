@@ -5,15 +5,19 @@ import {
   MAX_REPS,
   MAX_SETS,
   allSlots,
+  dayDateIso,
   defaultReps,
   emptyDraft,
+  isValidStartDate,
   isOutsideRepRange,
   isSlotComplete,
   matchesSlot,
   painfulJointsFor,
+  todayIso,
   type PlanDraft,
   type SlotDraft,
 } from './planDraft'
+import { formatDayDate } from '../../utils'
 
 // Step 2: pick a DAY_TEMPLATES plan type and fill every slot of every
 // training day by hand.
@@ -23,6 +27,8 @@ export function PlannerStep({
   planType,
   draft,
   coachNotes,
+  startDate,
+  onStartDateChange,
   onPlanTypeChange,
   onDraftChange,
   onCoachNotesChange,
@@ -34,6 +40,8 @@ export function PlannerStep({
   planType: string
   draft: PlanDraft
   coachNotes: string
+  startDate: string
+  onStartDateChange: (startDate: string) => void
   onPlanTypeChange: (planType: string, draft: PlanDraft) => void
   onDraftChange: (draft: PlanDraft) => void
   onCoachNotesChange: (notes: string) => void
@@ -44,6 +52,7 @@ export function PlannerStep({
   const exercisesById = useMemo(() => new Map(options.exercises.map((ex) => [ex.id, ex])), [options.exercises])
   const slots = allSlots(draft)
   const readyCount = slots.filter(isSlotComplete).length
+  const startDateValid = isValidStartDate(startDate)
 
   function changePlanType(next: string) {
     if (next === planType) return
@@ -88,6 +97,19 @@ export function PlannerStep({
           </div>
         </div>
         <label className="admin__field">
+          <span>Start date (day 1 — the client can’t start a day before its date)</span>
+          <input
+            className="login-screen__input"
+            type="date"
+            min={todayIso()}
+            value={startDate}
+            onChange={(e) => onStartDateChange(e.target.value)}
+          />
+          {!startDateValid && (
+            <small className="admin__hint admin__hint--error">Pick today or a later date.</small>
+          )}
+        </label>
+        <label className="admin__field">
           <span>Coach notes (optional, shown on the client’s dashboard)</span>
           <textarea
             className="login-screen__input admin__textarea"
@@ -101,12 +123,15 @@ export function PlannerStep({
       {template.schedule.map((day) =>
         day.is_rest_day ? (
           <div key={day.day_number} className="admin__rest-day">
-            {day.day_label} · Rest
+            {day.day_label}
+            {startDateValid && ` · ${formatDayDate(dayDateIso(startDate, day.day_number))}`} · Rest
           </div>
         ) : (
           <section key={day.day_number} className="card admin__section">
             <h2 className="admin__section-title">
-              {day.day_label} <span className="admin__muted">· {day.split_name}</span>
+              {day.day_label}
+              {startDateValid && ` · ${formatDayDate(dayDateIso(startDate, day.day_number))}`}
+              <span className="admin__muted">· {day.split_name}</span>
             </h2>
             <div className="admin__slots">
               {CATEGORIES.map((category) =>
@@ -135,12 +160,18 @@ export function PlannerStep({
       <div className="admin__footer">
         <p className="admin__hint">
           {readyCount} of {slots.length} slots ready
+          {!startDateValid && ' · pick a start date'}
         </p>
         <div className="admin__actions">
           <button type="button" className="btn-secondary" onClick={onBack}>
             Back to profile
           </button>
-          <button type="button" className="btn-primary" disabled={readyCount !== slots.length} onClick={onReview}>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={readyCount !== slots.length || !startDateValid}
+            onClick={onReview}
+          >
             Review plan
           </button>
         </div>

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { SetRow } from '../components/SetRow'
 import { EffortSlider, DEFAULT_RPE } from '../components/EffortSlider'
@@ -39,6 +39,10 @@ export function ExerciseScreen() {
     setRepCounts(initialRepCounts(exercise))
   }
 
+  // Deep-link guard: a day whose scheduled date hasn't arrived can't be
+  // worked out (the server refuses its writes too).
+  if (day?.locked) return <Navigate to="/" replace />
+
   if (!dashboard || !day || !exercise) {
     return (
       <div className="screen">
@@ -70,7 +74,7 @@ export function ExerciseScreen() {
     // concurrent in-flight confirm for a sibling set can't be clobbered by a
     // response snapshot that predates it. Not awaited, so confirming a set
     // can navigate to the between-set rest screen immediately.
-    logSet(dashboard!.session_id, exercise!.id, setNumber, reps).catch(() => {
+    logSet(day!.session_id!, exercise!.id, setNumber, reps).catch(() => {
       updateDashboard((prev) =>
         previousLog
           ? withSetLogged(prev, dayNum, exercise!.id, setNumber, previousLog.completed_reps)
@@ -89,7 +93,7 @@ export function ExerciseScreen() {
   function handleRpeChange(rpe: number) {
     const previousRpe = exercise!.rpe
     updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, rpe))
-    logRpe(dashboard!.session_id, exercise!.id, rpe).catch(() => {
+    logRpe(day!.session_id!, exercise!.id, rpe).catch(() => {
       updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, previousRpe))
     })
   }

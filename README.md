@@ -72,19 +72,22 @@ curl -X POST http://localhost:8001/api/admin/users/usr_10235/enrollment-link -H 
 | Method & path | Auth | Purpose |
 |---|---|---|
 | `POST /api/workout-plan` | admin | Generate (or fetch the in-progress) plan for a user |
-| `PATCH /api/workout-plan/<session_id>/complete` | admin | Force-mark a session completed |
+| `PATCH /api/plans/<plan_id>/complete` | admin | Force-mark a plan completed |
 | `POST /api/users/<user_id>/progress-plan` | admin | Generate the *next* week's plan from the last completed one (usually already generated automatically — see below) |
 | `POST`/`DELETE /api/users/<user_id>/joint-pain…` | admin | Report / clear joint pain |
 | `POST /api/admin/users/<user_id>/enrollment-link` | admin | Mint a one-time passkey sign-up link |
+| `POST /api/admin/users/profile` | admin | Coach `/admin` flow: client text → preprocessor profile, upserted |
+| `GET /api/admin/plan-builder` | admin | Day templates + exercise library for the `/admin` planner |
+| `POST /api/admin/users/<user_id>/initial-plan` | admin | Save a coach-built first plan with a start date |
 | `POST /api/auth/register/options`, `…/register/verify` | sign-up token (or session, to add a device) | Create a passkey |
 | `POST /api/auth/login/options`, `…/login/verify` | — | Sign in with a passkey (sets the session cookie) |
 | `GET /api/auth/me` | session | Who is signed in |
 | `POST /api/auth/logout` | — | End the session |
 | `GET /api/users/<user_id>/dashboard` | session (own user) | Weekly calendar view — day statuses for the PWA home screen |
-| `POST /api/sessions/<id>/days/<n>/start` | session (own session) | Mark a day as started |
+| `POST /api/sessions/<session_id>/start` | session (own session) | Mark a training day (session) as started |
 | `PATCH /api/sessions/<id>/exercises/<id>/sets/<n>` | session (own session) | Log reps for one completed set |
 | `PATCH /api/sessions/<id>/exercises/<id>/rpe` | session (own session) | Log perceived exertion (1–10) for an exercise |
-| `POST /api/sessions/<id>/days/<n>/complete` | session (own session) | Mark a day done; auto-completes the session on the last day |
+| `POST /api/sessions/<session_id>/complete` | session (own session) | Mark a training day done; auto-completes the plan on the last one |
 | `GET /`, `GET /<path>` | — | Serves the built PWA (`frontend/dist`), falling back to `index.html` for client-side routes |
 
 Auth config (env): `ADMIN_API_KEY`, `WEBAUTHN_RP_ID` (the site's domain — defaults to `localhost`),
@@ -94,27 +97,33 @@ on one domain won't work on another; testing on a phone needs an HTTPS domain.
 
 ### Flow detail
 
-**`POST /api/workout-plan`** — `{userid, raw_user_text}`
-1. If the user already has an unfinished session, return it as-is (idempotent — no regeneration).
+Workouts are stored as **plans** (one per week) → **sessions** (one per training day, each with a
+`scheduled_date`) → **session_exercises**. A session can't be started, logged or completed before
+its `scheduled_date` (in `APP_TIMEZONE`, default `Asia/Kolkata`) — those routes return `409` until
+then.
+
+**`POST /api/workout-plan`** — `{userid, raw_user_text, start_date?}`
+1. If the user already has an unfinished plan, return it as-is (idempotent — no regeneration).
 2. Otherwise: `raw_user_text` → `generate_user_profile` (preprocessor agent) → profile → `generate_workout_plan_v1` (workout agent) → plan.
-3. Upsert `user_profiles`, insert `sessions` + `session_exercises` (retried once on transient failure).
-4. Return the plan with `session_id` attached.
+3. Upsert `user_profiles`, insert `plans` + one `sessions` row per training day (day N scheduled `start_date` + N−1, default today) + `session_exercises` (retried once on transient failure).
+4. Return the plan with `plan_id` attached (each schedule day carries its `session_id` and `scheduled_date`).
 
-Errors: `400` missing fields · `502` profile extraction failed · `500` plan generation or persistence failure.
+Errors: `400` missing fields or bad `start_date` · `502` profile extraction failed · `500` plan generation or persistence failure.
 
-**`PATCH /api/workout-plan/<session_id>/complete`**
-Directly flips `sessions.completed = true`. A manual/administrative shortcut — the PWA's real
-completion path is the per-day `.../complete` route below, which completes the session
-automatically once every day is done. `404` if the session doesn't exist. Like any session
-completion, this also auto-generates the next progressed session — see below.
+**`PATCH /api/plans/<plan_id>/complete`**
+Directly flips `plans.completed = true`. A manual/administrative shortcut — the PWA's real
+completion path is the per-session `.../complete` route below, which completes the plan
+automatically once every session is done. `404` if the plan doesn't exist. Like any plan
+completion, this also auto-generates the next progressed plan — see below.
 
 **`POST /api/users/<user_id>/progress-plan`**
-1. If an unfinished session already exists, return it (idempotent).
-2. Else look up the user's last *completed* session — `404` if there isn't one.
-3. Clone/advance it into a new session (`create_progressed_session`) and return the new plan.
+1. If an unfinished plan already exists, return it (idempotent).
+2. Else look up the user's last *completed* plan — `404` if there isn't one.
+3. Clone/advance it into a new plan (`create_progressed_plan`), each session scheduled 7 days after
+   the same day of the old plan, and return the new plan.
 
-In practice this endpoint rarely needs to be called directly: completing a session (whether via
-the last day auto-completing it, or the manual admin endpoint) already triggers step 3
+In practice this endpoint rarely needs to be called directly: completing a plan (whether via
+the last session auto-completing it, or the manual admin endpoint) already triggers step 3
 automatically — see below. It exists mainly as an idempotent fetch/retry path, and as a manual
 trigger if auto-progression ever fails (it's best-effort and logs rather than blocking the
 completion request that triggered it).
@@ -123,16 +132,16 @@ Per-exercise rep targets and exercise selection for the new session are computed
 autoregulation algorithm — see [Exercise progression](#exercise-progression) below.
 
 **`GET /api/users/<user_id>/dashboard`**
-1. Look up the user's unfinished session — `404` (`"No plan found for this user."`) if none.
+1. Look up the user's unfinished plan — `404` (`"No plan found for this user."`) if none.
 2. Walk `DAY_TEMPLATES[plan_type].schedule`, tagging each day `rest` / `completed` / `next` /
-   `upcoming` from `session_day_logs`.
+   `upcoming` from its session's `completed_at`, plus its `session_id`, `date`, and `locked`
+   (its date hasn't arrived yet).
 3. Attach `session_duration_minutes` from the user's profile.
 
 This is what `DashboardScreen` loads on login and on every visit to `/`.
 
-**`POST /api/sessions/<id>/days/<n>/start`**
-Upserts `session_day_logs.started_at` — set once on first entry into a day, never overwritten by
-re-entry.
+**`POST /api/sessions/<session_id>/start`**
+Sets `sessions.started_at` — set once on first entry into a day, never overwritten by re-entry.
 
 **`PATCH /api/sessions/<id>/exercises/<id>/sets/<n>`** — `{completed_reps}`
 Upserts a `session_exercise_set_logs` row for that set (one row per set, idempotent per
@@ -143,29 +152,29 @@ Upserts `session_exercise_rpe` (one row per exercise). Fired by the effort slide
 defaulted to Medium (8) automatically if the user never touches it before moving to the next
 exercise.
 
-**`POST /api/sessions/<id>/days/<n>/complete`**
-1. Sets `session_day_logs.completed_at` and computes summary stats (time, exercises/sets
+**`POST /api/sessions/<session_id>/complete`**
+1. Sets `sessions.completed_at` and computes summary stats (time, exercises/sets
    completed vs. total).
-2. If every non-rest day in the plan template now has `completed_at`, also marks the whole
-   `sessions` row completed and returns `plan_completed: true` — which, per below, also
-   auto-generates next week's session.
+2. If every session of the plan now has `completed_at`, also marks the whole `plans` row
+   completed and returns `plan_completed: true` — which, per below, also auto-generates next
+   week's plan.
 
 Powers `SummaryScreen`; `plan_completed` triggers the "You've completed your whole plan!" message.
 
 ## Exercise progression
 
-**Triggered automatically.** Any time a session is marked completed —
-`mark_session_completed` in `backend/repository/workout_plan_repository.py`, called both by
-`complete_day` once the last day is done and by the manual `PATCH /api/workout-plan/<id>/complete`
-endpoint — it immediately builds next week's session via `create_progressed_session`. This is
+**Triggered automatically.** Any time a plan is marked completed —
+`mark_plan_completed` in `backend/repository/workout_plan_repository.py`, called both by
+`complete_session` once the last session is done and by the manual `PATCH /api/plans/<id>/complete`
+endpoint — it immediately builds next week's plan via `create_progressed_plan`. This is
 best-effort: it runs after the completion itself is already committed, so a failure here is
-logged and swallowed rather than failing the request that completed the session (the user simply
+logged and swallowed rather than failing the request that completed the plan (the user simply
 falls back to `POST /api/users/<user_id>/progress-plan`, which does the same thing on demand).
 
-The new session doesn't re-run the workout agent — it carries forward the *same* exercise slots
-from the just-completed session (same `day_number`/`category`/`slot_label`/`sets`/`note`) and
-recalculates each slot's `reps` autoregulated off how that exercise actually went. This is
-entirely deterministic code (`_compute_progressed_reps` + `create_progressed_session`) — no LLM
+The new plan doesn't re-run the workout agent — it carries forward the *same* sessions (same
+`day_number`, scheduled one week later) and exercise slots (same `category`/`slot_label`/`sets`/`note`)
+and recalculates each slot's `reps` autoregulated off how that exercise actually went. This is
+entirely deterministic code (`_compute_progressed_reps` + `create_progressed_plan`) — no LLM
 call is involved. Runs once per exercise slot, independently.
 
 ### Step 1 — did they hit the target?

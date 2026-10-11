@@ -1,9 +1,10 @@
 import logging
 import os
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -20,13 +21,21 @@ SESSION_EXERCISE_JOIN = (
     "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
 
+# A plan's sessions (one per training day) with their exercises nested in.
+PLAN_SESSIONS_SELECT = f"*, session_exercises({SESSION_EXERCISE_JOIN})"
+
 # Lighter than SESSION_EXERCISE_JOIN: progression only needs exercise_id (not
 # the nested exercises(...) join) since it's carried forward as-is into the
-# next session's session_exercises rows, never rendered.
+# next plan's session_exercises rows, never rendered.
 PROGRESSION_EXERCISE_SELECT = (
-    "id, exercise_id, day_number, category, slot_label, sets, reps, rep_range, note, "
+    "id, exercise_id, category, slot_label, sets, reps, rep_range, note, "
     "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
+PROGRESSION_SESSIONS_SELECT = f"id, day_number, scheduled_date, session_exercises({PROGRESSION_EXERCISE_SELECT})"
+
+# Each auto-progressed plan's sessions land one week after the same day of
+# the plan it was progressed from.
+PROGRESSION_SCHEDULE_OFFSET = timedelta(days=7)
 
 # Autoregulated-progression constants — see _compute_progressed_reps.
 PROGRESSION_MIN_REPS = 1
@@ -44,6 +53,27 @@ PROGRESSION_EASY_STEP = 2
 # than one reason (e.g. "Lack of form;Lack of strength") — substring match
 # catches both that and the plain "Lack of strength" case.
 REGRESSION_REASON_FILTER = "lack of strength"
+
+
+def app_today() -> date:
+    """Today's date in the app's timezone (APP_TIMEZONE, default IST), which
+    decides when a session's scheduled_date has arrived."""
+    return datetime.now(ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Kolkata"))).date()
+
+
+def scheduled_date_for(start_date: date, day_number: int) -> date:
+    """Day N of a plan falls N-1 days after the plan's start date."""
+    return start_date + timedelta(days=day_number - 1)
+
+
+def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
+    """Pull each session's nested session_exercises rows out into one list,
+    tagging every row with its session's day_number, ordered by day then id."""
+    rows = []
+    for session in sorted(sessions, key=lambda s: s["day_number"]):
+        for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
+            rows.append({**row, "day_number": session["day_number"]})
+    return rows
 
 
 class PainLevel(Enum):
@@ -67,7 +97,7 @@ def _parse_target_reps(reps: Optional[str], sets: int) -> List[int]:
     """Previous per-set target list from a session_exercises row's `reps`.
 
     `reps` is either a single number (uniform across all sets — a brand-new
-    session from create_session, or a fully caught-up ramp) or a
+    plan from create_plan, or a fully caught-up ramp) or a
     comma-separated per-set list written by a previous progression while one
     set is ahead of the others (e.g. "11,10,10" — see _bump_next_set).
     """
@@ -98,7 +128,7 @@ def _bump_next_set(target_reps: List[int], step: int) -> List[int]:
 def _compute_progressed_reps(
     exercise_row: Dict[str, Any], injury_multiplier: Optional[float] = None
 ) -> List[int]:
-    """Next session's per-set target reps list for one session_exercises row.
+    """Next plan's per-set target reps list for one session_exercises row.
 
     Driven entirely by the reported RPE against last week's *prescribed*
     reps (not what was actually completed):
@@ -176,15 +206,17 @@ class WorkoutPlanRepository:
         )
         return bool(rows)
 
-    def get_session_owner(self, session_id: int) -> Optional[str]:
+    def get_session(self, session_id: int) -> Optional[dict]:
+        """One day session, with its plan's owner/type/completion nested
+        under "plans", or None if it doesn't exist."""
         rows = (
             self.client.table("sessions")
-            .select("user_id")
+            .select("*, plans(user_id, plan_type, completed)")
             .eq("id", session_id)
             .execute()
             .data
         )
-        return rows[0]["user_id"] if rows else None
+        return rows[0] if rows else None
 
     def upsert_joint_pain(self, user_id: str, joint_pains: List[Dict[str, Any]]) -> List[dict]:
         """Upsert one or more (user, joint) pain_level rows into user_joint_pain.
@@ -226,21 +258,20 @@ class WorkoutPlanRepository:
         )
         return bool(result)
 
-    def get_day_analysis(self, session_id: int, day_number: int) -> Optional[dict]:
-        """Fetch the workout_analysis_consumer-generated summary for a day, if ready."""
+    def get_session_analysis(self, session_id: int) -> Optional[dict]:
+        """Fetch the workout_analysis_consumer-generated summary for a session, if ready."""
         rows = (
-            self.client.table("session_day_analysis")
+            self.client.table("session_analysis")
             .select("analysis, audio_url")
             .eq("session_id", session_id)
-            .eq("day_number", day_number)
             .execute()
             .data
         )
         return rows[0] if rows else None
 
-    def get_unfinished_session(self, user_id: str) -> Optional[dict]:
-        sessions = (
-            self.client.table("sessions")
+    def get_unfinished_plan(self, user_id: str) -> Optional[dict]:
+        plans = (
+            self.client.table("plans")
             .select("*")
             .eq("user_id", user_id)
             .eq("completed", False)
@@ -249,27 +280,51 @@ class WorkoutPlanRepository:
             .execute()
             .data
         )
-        if not sessions:
+        if not plans:
             return None
-        session = sessions[0]
+        plan = plans[0]
 
-        exercise_rows = (
-            self.client.table("session_exercises")
-            .select(SESSION_EXERCISE_JOIN)
-            .eq("session_id", session["id"])
+        sessions = self._fetch_plan_sessions(plan["id"], PLAN_SESSIONS_SELECT)
+        return {
+            "id": plan["id"],
+            "completed": plan["completed"],
+            "plan": self._reconstruct_plan(plan, sessions),
+            "sessions": {
+                s["day_number"]: {
+                    "id": s["id"],
+                    "scheduled_date": s["scheduled_date"],
+                    "started_at": s.get("started_at"),
+                    "completed_at": s.get("completed_at"),
+                }
+                for s in sessions
+            },
+        }
+
+    def _fetch_plan_sessions(self, plan_id: int, select: str) -> List[dict]:
+        return (
+            self.client.table("sessions")
+            .select(select)
+            .eq("plan_id", plan_id)
             .order("day_number")
             .execute()
             .data
         )
-        return {
-            "id": session["id"],
-            "completed": session["completed"],
-            "plan": self._reconstruct_plan(session, exercise_rows),
-        }
 
-    def get_last_completed_session(self, user_id: str) -> Optional[dict]:
-        sessions = (
-            self.client.table("sessions")
+    def _insert_sessions(self, plan_id: int, dates_by_day: Dict[int, date]) -> Dict[int, int]:
+        """Insert one sessions row per (day_number, scheduled_date) and
+        return {day_number: session id}."""
+        if not dates_by_day:
+            return {}
+        rows = [
+            {"plan_id": plan_id, "day_number": day_number, "scheduled_date": scheduled.isoformat()}
+            for day_number, scheduled in sorted(dates_by_day.items())
+        ]
+        inserted = self.client.table("sessions").insert(rows).execute().data
+        return {row["day_number"]: row["id"] for row in inserted}
+
+    def get_last_completed_plan(self, user_id: str) -> Optional[dict]:
+        plans = (
+            self.client.table("plans")
             .select("*")
             .eq("user_id", user_id)
             .eq("completed", True)
@@ -278,18 +333,10 @@ class WorkoutPlanRepository:
             .execute()
             .data
         )
-        if not sessions:
+        if not plans:
             return None
-        session = sessions[0]
-
-        exercise_rows = (
-            self.client.table("session_exercises")
-            .select(PROGRESSION_EXERCISE_SELECT)
-            .eq("session_id", session["id"])
-            .execute()
-            .data
-        )
-        return {"session": session, "exercise_rows": exercise_rows}
+        plan = plans[0]
+        return {"plan": plan, "sessions": self._fetch_plan_sessions(plan["id"], PROGRESSION_SESSIONS_SELECT)}
 
     def get_injury_multiplier(
         self, exercise_id: int, joint_id: int, pain_level: PainLevel
@@ -404,11 +451,17 @@ class WorkoutPlanRepository:
         )
         return {row["from_exercise_id"]: row["to_exercise_id"] for row in rows}
 
-    def create_progressed_session(
-        self, user_id: str, source_session: dict, exercise_rows: List[dict]
+    def create_progressed_plan(
+        self, user_id: str, source_plan: dict, source_sessions: List[dict]
     ) -> dict:
-        """Insert the next session by carrying forward source_session's exercises,
-        recalculating each row's `reps` via _compute_progressed_reps.
+        """Insert the next plan by carrying forward source_plan's sessions and
+        their exercises, recalculating each exercise row's `reps` via
+        _compute_progressed_reps.
+
+        source_sessions are the source plan's sessions rows (selected with
+        PROGRESSION_SESSIONS_SELECT, so each has its session_exercises nested).
+        Each new session keeps its source's day_number and is scheduled
+        PROGRESSION_SCHEDULE_OFFSET (one week) after it.
 
         Each exercise's reps target is computed by _compute_progressed_reps,
         using an injury multiplier (_injury_multiplier_for_exercise) in place
@@ -426,27 +479,36 @@ class WorkoutPlanRepository:
         min_reps/max_reps instead. `rep_range` is refreshed to match a
         swapped-in exercise's own min-max (per the "matched catalog row's
         f'{min_reps}-{max_reps}'" convention); everything else
-        (day_number/category/slot_label/sets/note) is carried over unchanged.
+        (category/slot_label/sets/note, and the day via its session) is
+        carried over unchanged.
 
         This applies uniformly regardless of *why* reps dropped, so an
         injury-driven low multiplier can swap an exercise to its regression
         exactly like a poor-performance one would.
         """
-        completed_at = source_session.get("completed_at")
-        session_row = {
+        completed_at = source_plan.get("completed_at")
+        plan_row = {
             "user_id": user_id,
-            "parent_session_id": source_session.get("id"),
-            "plan_type": source_session.get("plan_type"),
+            "parent_plan_id": source_plan.get("id"),
+            "plan_type": source_plan.get("plan_type"),
             "plan_selection_reason": (
-                f"Progressive overload from the session completed on {completed_at}."
+                f"Progressive overload from the plan completed on {completed_at}."
                 if completed_at
-                else "Progressive overload from the previous completed session."
+                else "Progressive overload from the previous completed plan."
             ),
-            "medical_clearance_warning": source_session.get("medical_clearance_warning"),
-            "coach_notes": source_session.get("coach_notes"),
-            "safety_summary": source_session.get("safety_summary"),
+            "medical_clearance_warning": source_plan.get("medical_clearance_warning"),
+            "coach_notes": source_plan.get("coach_notes"),
+            "safety_summary": source_plan.get("safety_summary"),
         }
-        session = self.client.table("sessions").insert(session_row).execute().data[0]
+        plan = self.client.table("plans").insert(plan_row).execute().data[0]
+        session_ids = self._insert_sessions(
+            plan["id"],
+            {
+                s["day_number"]: date.fromisoformat(s["scheduled_date"]) + PROGRESSION_SCHEDULE_OFFSET
+                for s in source_sessions
+            },
+        )
+        exercise_rows = _flatten_session_exercises(source_sessions)
 
         user_joint_pain = self._fetch_user_joint_pain(user_id)
         loaded_joints_by_exercise = self._fetch_loaded_joints(
@@ -508,9 +570,8 @@ class WorkoutPlanRepository:
                     next_reps_list = [bounds["max_reps"]] * len(next_reps_list)
 
             new_exercise_rows.append({
-                "session_id": session["id"],
+                "session_id": session_ids[row["day_number"]],
                 "exercise_id": exercise_id,
-                "day_number": row["day_number"],
                 "category": row["category"],
                 "slot_label": row.get("slot_label"),
                 "sets": row.get("sets"),
@@ -521,34 +582,39 @@ class WorkoutPlanRepository:
         if new_exercise_rows:
             self.client.table("session_exercises").insert(new_exercise_rows).execute()
 
-        return session
+        return plan
 
-    def create_session(self, user_id: str, plan: Dict[str, Any]) -> dict:
-        session_row = {
+    def create_plan(self, user_id: str, plan: Dict[str, Any], start_date: date) -> dict:
+        """Insert a brand-new plan: the plans row, one sessions row per
+        training day (day N scheduled N-1 days after start_date), and each
+        day's prescribed exercises."""
+        plan_row = {
             "user_id": user_id,
-            "parent_session_id": None,
+            "parent_plan_id": None,
             "plan_type": plan.get("plan_type"),
             "plan_selection_reason": plan.get("plan_selection_reason"),
             "medical_clearance_warning": plan.get("medical_clearance_warning"),
             "coach_notes": plan.get("coach_notes"),
             "safety_summary": plan.get("safety_summary"),
         }
-        session = self.client.table("sessions").insert(session_row).execute().data[0]
+        created = self.client.table("plans").insert(plan_row).execute().data[0]
+
+        training_days = [day for day in plan.get("schedule", []) if not day.get("is_rest_day")]
+        session_ids = self._insert_sessions(
+            created["id"],
+            {day["day_number"]: scheduled_date_for(start_date, day["day_number"]) for day in training_days},
+        )
 
         exercise_rows = []
-        for day in plan.get("schedule", []):
-            if day.get("is_rest_day"):
-                continue
+        for day in training_days:
             for category in ("primary", "secondary"):
                 for ex in day.get(category, []):
-                    sets = ex.get("sets")
                     exercise_rows.append({
-                        "session_id": session["id"],
+                        "session_id": session_ids[day["day_number"]],
                         "exercise_id": ex["exercise_id"],
-                        "day_number": day["day_number"],
                         "category": category,
                         "slot_label": ex.get("slot"),
-                        "sets": sets,
+                        "sets": ex.get("sets"),
                         "reps": ex.get("reps"),
                         "rep_range": ex.get("rep_range"),
                         "note": ex.get("note"),
@@ -556,102 +622,61 @@ class WorkoutPlanRepository:
         if exercise_rows:
             self.client.table("session_exercises").insert(exercise_rows).execute()
 
-        return session
+        return created
 
-    def mark_session_completed(self, session_id: int) -> Optional[dict]:
+    def mark_plan_completed(self, plan_id: int) -> Optional[dict]:
         result = (
-            self.client.table("sessions")
+            self.client.table("plans")
             .update({"completed": True, "completed_at": datetime.now(timezone.utc).isoformat()})
-            .eq("id", session_id)
+            .eq("id", plan_id)
             .execute()
             .data
         )
         if not result:
             return None
-        completed_session = result[0]
-        self._auto_progress(completed_session)
-        return completed_session
+        completed_plan = result[0]
+        self._auto_progress(completed_plan)
+        return completed_plan
 
-    def _auto_progress(self, completed_session: dict) -> None:
-        """Generate the next week's session as soon as this one is marked
+    def _auto_progress(self, completed_plan: dict) -> None:
+        """Generate the next week's plan as soon as this one is marked
         completed, so the user always has a next plan waiting without having
         to call POST /api/users/<user_id>/progress-plan themselves.
 
-        Best-effort: the session is already committed as completed regardless
+        Best-effort: the plan is already committed as completed regardless
         of whether this succeeds, so a failure here is logged and swallowed
         rather than surfaced as a failure of whatever request triggered the
-        completion (day-completion or the manual admin endpoint).
+        completion (session completion or the manual admin endpoint).
         """
         try:
-            exercise_rows = (
-                self.client.table("session_exercises")
-                .select(PROGRESSION_EXERCISE_SELECT)
-                .eq("session_id", completed_session["id"])
-                .execute()
-                .data
-            )
-            if exercise_rows:
-                self.create_progressed_session(
-                    completed_session["user_id"], completed_session, exercise_rows
-                )
+            sessions = self._fetch_plan_sessions(completed_plan["id"], PROGRESSION_SESSIONS_SELECT)
+            if _flatten_session_exercises(sessions):
+                self.create_progressed_plan(completed_plan["user_id"], completed_plan, sessions)
         except Exception:
             logger.exception(
-                "Failed to auto-generate progressed session for user_id=%s after session_id=%s completed",
-                completed_session.get("user_id"),
-                completed_session.get("id"),
+                "Failed to auto-generate progressed plan for user_id=%s after plan_id=%s completed",
+                completed_plan.get("user_id"),
+                completed_plan.get("id"),
             )
 
-    def list_day_logs(self, session_id: int) -> Dict[int, dict]:
-        rows = (
-            self.client.table("session_day_logs")
-            .select("day_number, started_at, completed_at")
-            .eq("session_id", session_id)
-            .execute()
-            .data
-        )
-        return {row["day_number"]: row for row in rows}
+    def start_session(self, session_id: int) -> dict:
+        """Stamp started_at on a session the first time it's started.
 
-    def start_day(self, session_id: int, day_number: int) -> dict:
-        """Get-or-create the session_day_logs row for this (session, day).
-
-        started_at is never overwritten once set, so re-entering a day the
-        user already began doesn't reset its Total Time baseline.
+        started_at is never overwritten once set (the update only matches
+        while it's still null), so re-entering a session the user already
+        began doesn't reset its Total Time baseline.
         """
-        existing = (
-            self.client.table("session_day_logs")
-            .select("*")
-            .eq("session_id", session_id)
-            .eq("day_number", day_number)
-            .execute()
-            .data
-        )
-        if existing:
-            return existing[0]
-
-        row = {
-            "session_id": session_id,
-            "day_number": day_number,
-            "started_at": datetime.now(timezone.utc).isoformat(),
-        }
         result = (
-            self.client.table("session_day_logs")
-            .upsert(row, on_conflict="session_id,day_number", ignore_duplicates=True)
+            self.client.table("sessions")
+            .update({"started_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", session_id)
+            .is_("started_at", "null")
             .execute()
             .data
         )
         if result:
             return result[0]
-
-        # Another request created the row between our select and upsert.
-        existing = (
-            self.client.table("session_day_logs")
-            .select("*")
-            .eq("session_id", session_id)
-            .eq("day_number", day_number)
-            .execute()
-            .data
-        )
-        return existing[0]
+        return self.client.table("sessions").select("*").eq("id", session_id).execute().data[0]
 
     def log_set(
         self, session_id: int, session_exercise_id: int, set_number: int, completed_reps: int
@@ -717,39 +742,25 @@ class WorkoutPlanRepository:
         )
         return result[0] if result else None
 
-    def complete_day(self, session_id: int, day_number: int) -> Optional[dict]:
-        sessions = self.client.table("sessions").select("*").eq("id", session_id).execute().data
-        if not sessions:
+    def complete_session(self, session_id: int) -> Optional[dict]:
+        session = self.get_session(session_id)
+        if session is None:
             return None
-        session = sessions[0]
 
         now = datetime.now(timezone.utc)
-        day_log_rows = (
-            self.client.table("session_day_logs")
-            .select("*")
-            .eq("session_id", session_id)
-            .eq("day_number", day_number)
+        # Defensive fallback: complete_session called without a prior start_session.
+        started_at = session.get("started_at") or now.isoformat()
+        (
+            self.client.table("sessions")
+            .update({"started_at": started_at, "completed_at": now.isoformat()})
+            .eq("id", session_id)
             .execute()
-            .data
         )
-        started_at = day_log_rows[0]["started_at"] if day_log_rows and day_log_rows[0]["started_at"] else None
-        if not started_at:
-            # Defensive: complete_day was called without a prior start_day.
-            started_at = now.isoformat()
-
-        log_row = {
-            "session_id": session_id,
-            "day_number": day_number,
-            "started_at": started_at,
-            "completed_at": now.isoformat(),
-        }
-        self.client.table("session_day_logs").upsert(log_row, on_conflict="session_id,day_number").execute()
 
         exercise_rows = (
             self.client.table("session_exercises")
             .select("sets, session_exercise_set_logs(set_number)")
             .eq("session_id", session_id)
-            .eq("day_number", day_number)
             .execute()
             .data
         )
@@ -767,17 +778,26 @@ class WorkoutPlanRepository:
 
         total_time_seconds = int((now - datetime.fromisoformat(started_at)).total_seconds())
 
+        # The plan is done once every one of its sessions is. Skipped when the
+        # plan is already completed (a re-completed session), so it isn't
+        # re-marked and auto-progressed twice.
         plan_completed = False
-        template = DAY_TEMPLATES.get(session["plan_type"], {}).get("schedule", [])
-        non_rest_days = {d["day_number"] for d in template if not d["is_rest_day"]}
-        if non_rest_days:
-            all_logs = self.list_day_logs(session_id)
-            if all(all_logs.get(d, {}).get("completed_at") for d in non_rest_days):
-                self.mark_session_completed(session_id)
+        if not (session.get("plans") or {}).get("completed"):
+            still_open = (
+                self.client.table("sessions")
+                .select("id")
+                .eq("plan_id", session["plan_id"])
+                .is_("completed_at", "null")
+                .execute()
+                .data
+            )
+            if not still_open:
+                self.mark_plan_completed(session["plan_id"])
                 plan_completed = True
 
         return {
-            "day_number": day_number,
+            "session_id": session_id,
+            "day_number": session["day_number"],
             "total_time_seconds": total_time_seconds,
             "exercises_completed": exercises_completed,
             "total_exercises": total_exercises,
@@ -787,54 +807,63 @@ class WorkoutPlanRepository:
         }
 
     @staticmethod
-    def _reconstruct_plan(session: dict, exercise_rows: List[dict]) -> Dict[str, Any]:
-        by_day = defaultdict(lambda: {"primary": [], "secondary": []})
-        for row in exercise_rows:
-            exercise = WorkoutRepository._normalize_exercise(row["exercises"])
-            entry = {
-                "id": row["id"],
-                "slot": row.get("slot_label"),
-                "exercise_id": exercise["id"],
-                "name": exercise["name"],
-                "movement_type": exercise["movement_type"],
-                # _normalize_exercise coerces SQL NULL to "" for CSV-repository
-                # interchangeability; undo that here so a reconstructed plan's
-                # orientation matches the null the workout agent originally emits.
-                "orientation": exercise["orientation"] or None,
-                "dominant": exercise["dominant"],
-                "sets": row.get("sets"),
-                "reps": row.get("reps"),
-                "rep_range": row.get("rep_range"),
-                "equipment": exercise["equipment"],
-                "note": row.get("note"),
-                # Same NULL-coercion undo as orientation above.
-                "video_url": exercise["video_url"] or None,
-                "set_logs": sorted(
-                    (row.get("session_exercise_set_logs") or []),
-                    key=lambda log: log["set_number"],
-                ),
-                "rpe": ((row.get("session_exercise_rpe") or {}).get("rpe")) or 8
-            }
-            by_day[row["day_number"]][row["category"]].append(entry)
+    def _reconstruct_plan(plan: dict, sessions: List[dict]) -> Dict[str, Any]:
+        """Rebuild the full DAY_TEMPLATES-shaped schedule from a plan row and
+        its sessions (each with nested session_exercises rows)."""
+        sessions_by_day = {s["day_number"]: s for s in sessions}
 
-        template = DAY_TEMPLATES[session["plan_type"]]["schedule"]
+        template = DAY_TEMPLATES[plan["plan_type"]]["schedule"]
         schedule = []
         for day in template:
-            entry = {
+            session = None if day["is_rest_day"] else sessions_by_day.get(day["day_number"])
+            entries = {"primary": [], "secondary": []}
+            if session is not None:
+                for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
+                    entries[row["category"]].append(WorkoutPlanRepository._exercise_entry(row))
+            schedule.append({
                 "day_number": day["day_number"],
                 "day_label": day["day_label"],
                 "split_name": day["split_name"],
                 "is_rest_day": day["is_rest_day"],
-                "primary": [] if day["is_rest_day"] else by_day[day["day_number"]]["primary"],
-                "secondary": [] if day["is_rest_day"] else by_day[day["day_number"]]["secondary"],
-            }
-            schedule.append(entry)
+                "session_id": session["id"] if session else None,
+                "scheduled_date": session["scheduled_date"] if session else None,
+                "primary": entries["primary"],
+                "secondary": entries["secondary"],
+            })
 
         return {
-            "plan_type": session["plan_type"],
-            "plan_selection_reason": session["plan_selection_reason"],
-            "medical_clearance_warning": session["medical_clearance_warning"],
-            "coach_notes": session["coach_notes"],
-            "safety_summary": session["safety_summary"],
+            "plan_type": plan["plan_type"],
+            "plan_selection_reason": plan["plan_selection_reason"],
+            "medical_clearance_warning": plan["medical_clearance_warning"],
+            "coach_notes": plan["coach_notes"],
+            "safety_summary": plan["safety_summary"],
             "schedule": schedule,
+        }
+
+    @staticmethod
+    def _exercise_entry(row: dict) -> Dict[str, Any]:
+        exercise = WorkoutRepository._normalize_exercise(row["exercises"])
+        return {
+            "id": row["id"],
+            "slot": row.get("slot_label"),
+            "exercise_id": exercise["id"],
+            "name": exercise["name"],
+            "movement_type": exercise["movement_type"],
+            # _normalize_exercise coerces SQL NULL to "" for CSV-repository
+            # interchangeability; undo that here so a reconstructed plan's
+            # orientation matches the null the workout agent originally emits.
+            "orientation": exercise["orientation"] or None,
+            "dominant": exercise["dominant"],
+            "sets": row.get("sets"),
+            "reps": row.get("reps"),
+            "rep_range": row.get("rep_range"),
+            "equipment": exercise["equipment"],
+            "note": row.get("note"),
+            # Same NULL-coercion undo as orientation above.
+            "video_url": exercise["video_url"] or None,
+            "set_logs": sorted(
+                (row.get("session_exercise_set_logs") or []),
+                key=lambda log: log["set_number"],
+            ),
+            "rpe": ((row.get("session_exercise_rpe") or {}).get("rpe")) or 8
         }

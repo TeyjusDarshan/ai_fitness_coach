@@ -1,6 +1,3 @@
-// day_number 1-7 maps onto Monday-Sunday (indexed by schedule position).
-export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-
 // Between-set rest: shown after checking off a set that doesn't yet
 // complete the exercise (1:00).
 export const REST_BETWEEN_SETS_SECONDS = 60

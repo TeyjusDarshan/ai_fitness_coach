@@ -97,16 +97,16 @@ function effortLabel(rpe: number | null): string {
 // WhatsApp renders *text* as bold and a blank line as a paragraph break, so
 // the message reads as formatted once pasted into a chat. Session ID/Day are
 // included as plain labeled fields so the message can be parsed back to its
-// session_exercises/session_day_logs rows if the coach forwards it along.
+// sessions row if the coach forwards it along (the backend's WhatsApp webhook
+// keys off "Session ID").
 export function buildCoachShareMessage(
   day: DashboardDay,
   summary: DayCompleteSummary,
   username: string | null,
-  sessionId: number,
 ): string {
   const lines: string[] = [`*Workout Summary — ${day.day_label} (${day.split_name})*`]
   if (username) lines.push(`Client: ${capitalize(username)}`)
-  lines.push(`Session ID: ${sessionId}`, `Day: ${day.day_number}`)
+  lines.push(`Session ID: ${summary.session_id}`, `Day: ${day.day_number}`)
   lines.push(
     '',
     `Total Time: ${formatDuration(summary.total_time_seconds)}`,
@@ -142,4 +142,15 @@ export function capitalize(name: string): string {
     .filter(Boolean)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ')
+}
+
+// "2026-10-13" -> "Mon 13 Oct". Parsed as a local calendar date (not UTC
+// midnight) so the weekday can't shift by a day in negative-offset zones.
+export function formatDayDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return new Date(year, month - 1, day).toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
 }

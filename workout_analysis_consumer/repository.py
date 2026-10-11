@@ -6,9 +6,9 @@ from supabase import Client, create_client
 
 load_dotenv()
 
-# session_exercises for one (session_id, day_number), joined with the
+# session_exercises for one session (training day), joined with the
 # exercise's name/movement type, its per-set completion logs, and its RPE.
-SESSION_DAY_EXERCISE_JOIN = (
+SESSION_EXERCISE_JOIN = (
     "id, category, slot_label, sets, reps, rep_range, note, "
     "exercises(name, movement_types(name)), "
     "session_exercise_set_logs(set_number, completed_reps), "
@@ -30,8 +30,8 @@ def _effort_flag(rpe):
 
 def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Shared shaping for session_exercises rows joined via
-    SESSION_DAY_EXERCISE_JOIN, used for both the current day and the
-    matching day from a parent session.
+    SESSION_EXERCISE_JOIN, used for both the current session and the
+    same-day session from the parent plan.
     """
     return [
         {
@@ -53,8 +53,8 @@ def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 class AnalysisRepository:
-    """Reads the Supabase data needed to summarize one workout day, and
-    persists the generated summary to session_day_analysis.
+    """Reads the Supabase data needed to summarize one workout session, and
+    persists the generated summary to session_analysis.
     """
 
     def __init__(self, client: Optional[Client] = None):
@@ -65,29 +65,31 @@ class AnalysisRepository:
             key = os.environ["SUPABASE_KEY"]
             self.client = create_client(url, key)
 
-    def fetch_context(self, session_id: int, day_number: int) -> Optional[Dict[str, Any]]:
-        """Gather everything needed to summarize this session/day: the
-        prescribed exercises with their set logs and RPE, the client's
-        profile, and any joint pain they've reported. Returns None if the
-        session doesn't exist.
+    def fetch_context(self, session_id: int) -> Optional[Dict[str, Any]]:
+        """Gather everything needed to summarize this session (one training
+        day of a plan): the prescribed exercises with their set logs and RPE,
+        the client's profile, and any joint pain they've reported. Returns
+        None if the session doesn't exist.
         """
         sessions = (
             self.client.table("sessions")
-            .select("id, user_id, plan_type, parent_session_id")
+            .select("id, day_number, plan_id, plans(user_id, plan_type, parent_plan_id)")
             .eq("id", session_id)
             .execute()
             .data
         )
         if not sessions:
             return None
-        user_id = sessions[0]["user_id"]
-        parent_session_id = sessions[0].get("parent_session_id")
+        session = sessions[0]
+        plan = session["plans"]
+        user_id = plan["user_id"]
+        day_number = session["day_number"]
 
         exercise_rows = (
             self.client.table("session_exercises")
-            .select(SESSION_DAY_EXERCISE_JOIN)
+            .select(SESSION_EXERCISE_JOIN)
             .eq("session_id", session_id)
-            .eq("day_number", day_number)
+            .order("id")
             .execute()
             .data
         )
@@ -111,9 +113,10 @@ class AnalysisRepository:
 
         context = {
             "session_id": session_id,
+            "plan_id": session["plan_id"],
             "day_number": day_number,
             "user_id": user_id,
-            "plan_type": sessions[0]["plan_type"],
+            "plan_type": plan["plan_type"],
             "user_profile": profile,
             "joint_pain": [
                 {"joint": row["joints"]["name"], "pain_level": row["pain_level"]}
@@ -123,61 +126,53 @@ class AnalysisRepository:
             "exercises": _shape_exercise_rows(exercise_rows),
         }
 
-        if parent_session_id is not None:
-            context["previous_session"] = self._fetch_parent_session_context(
-                parent_session_id, day_number
+        if plan.get("parent_plan_id") is not None:
+            context["previous_session"] = self._fetch_previous_session_context(
+                plan["parent_plan_id"], day_number
             )
 
         return context
 
-    def _fetch_parent_session_context(self, parent_session_id: int, day_number: int) -> Dict[str, Any]:
-        """The parent session's data for the same day_number as the current
+    def _fetch_previous_session_context(self, parent_plan_id: int, day_number: int) -> Optional[Dict[str, Any]]:
+        """The parent plan's session for the same day_number as the current
         analysis, so the LLM can compare like for like (same split day).
+        None if the parent plan has no session for that day.
         """
-        day_log_rows = (
-            self.client.table("session_day_logs")
-            .select("day_number, started_at, completed_at")
-            .eq("session_id", parent_session_id)
+        sessions = (
+            self.client.table("sessions")
+            .select(f"id, started_at, completed_at, session_exercises({SESSION_EXERCISE_JOIN})")
+            .eq("plan_id", parent_plan_id)
             .eq("day_number", day_number)
             .execute()
             .data
         )
-
-        exercise_rows = (
-            self.client.table("session_exercises")
-            .select(SESSION_DAY_EXERCISE_JOIN)
-            .eq("session_id", parent_session_id)
-            .eq("day_number", day_number)
-            .execute()
-            .data
-        )
-
+        if not sessions:
+            return None
+        session = sessions[0]
         return {
-            "session_id": parent_session_id,
-            "day_log": day_log_rows[0] if day_log_rows else None,
-            "exercises": _shape_exercise_rows(exercise_rows),
+            "session_id": session["id"],
+            "plan_id": parent_plan_id,
+            "started_at": session.get("started_at"),
+            "completed_at": session.get("completed_at"),
+            "exercises": _shape_exercise_rows(
+                sorted(session.get("session_exercises") or [], key=lambda row: row["id"])
+            ),
         }
 
-    def save_analysis(
-        self,
-        session_id: int,
-        day_number: int,
-        analysis: str,
-        audio_url: Optional[str] = None,
-    ) -> dict:
-        """Upsert keyed by (session_id, day_number), so redelivering an
-        already-processed message overwrites rather than duplicates.
+    def save_analysis(self, session_id: int, analysis: str, audio_url: Optional[str] = None) -> dict:
+        """Upsert keyed by session_id, so redelivering an already-processed
+        message overwrites rather than duplicates.
 
         audio_url is omitted from the payload (rather than sent as None) when
         not given, so a redelivery whose voice-note generation fails doesn't
         null out audio_url from an earlier successful attempt.
         """
-        row = {"session_id": session_id, "day_number": day_number, "analysis": analysis}
+        row = {"session_id": session_id, "analysis": analysis}
         if audio_url is not None:
             row["audio_url"] = audio_url
         result = (
-            self.client.table("session_day_analysis")
-            .upsert(row, on_conflict="session_id,day_number")
+            self.client.table("session_analysis")
+            .upsert(row, on_conflict="session_id")
             .execute()
             .data
         )

@@ -37,14 +37,13 @@ def _make_consumer() -> Consumer:
 
 @pytest.mark.integration
 def test_send_workout_complete_event_is_consumable():
-    # Random sentinel values so this run's message is unambiguously
+    # Random sentinel value so this run's message is unambiguously
     # identifiable among whatever else is already on the topic.
     session_id = uuid.uuid4().int % 1_000_000_000
-    day_number = uuid.uuid4().int % 1_000_000_000
     phone_number = "919876543210"
 
     producer = KafkaProducerClient()
-    producer.send_workout_complete_event(session_id, day_number, phone_number)
+    producer.send_workout_complete_event(session_id, phone_number)
 
     consumer = _make_consumer()
     try:
@@ -57,7 +56,7 @@ def test_send_workout_complete_event_is_consumable():
             if msg is None or msg.error():
                 continue
             payload = json.loads(msg.value())
-            if payload.get("session_id") == session_id and payload.get("day_number") == day_number:
+            if payload.get("session_id") == session_id:
                 found_payload = payload
                 print("Found Payload", found_payload)
 
@@ -66,5 +65,5 @@ def test_send_workout_complete_event_is_consumable():
 
 
     assert found_payload == {
-        "session_id": session_id, "day_number": day_number, "phone_number": phone_number,
+        "session_id": session_id, "phone_number": phone_number,
     }

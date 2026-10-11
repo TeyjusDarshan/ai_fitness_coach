@@ -4,7 +4,8 @@ with clients (see COACH_WHATSAPP_NUMBER in frontend/src/constants.ts).
 Meta forwards every inbound message on that number here as a POST. The
 "Share Session with Coach" button (frontend/src/utils.ts:buildCoachShareMessage)
 embeds "Session ID: <id>" / "Day: <n>" lines in the shared text, so a message
-that parses those out is treated as a workout-complete trigger: we ack it
+carrying a session id (a sessions row — one training day of a plan) is
+treated as a workout-complete trigger: we ack it
 immediately, then publish a workout-complete event so
 workout_analysis_consumer can generate the analysis/voice note and push it
 back to the sender once it's ready.
@@ -25,10 +26,10 @@ whatsapp_webhook_bp = Blueprint("whatsapp_webhook", __name__)
 whatsapp_client = WhatsAppClient()
 kafka_producer = KafkaProducerClient()
 
-# Matches the "Session ID: <id>" / "Day: <n>" lines added in
-# frontend/src/utils.ts:buildCoachShareMessage.
+# Matches the "Session ID: <id>" line added in
+# frontend/src/utils.ts:buildCoachShareMessage. (Its "Day: <n>" line is just
+# for the coach to read — the session row already knows its day.)
 _SESSION_ID_RE = re.compile(r"Session ID:\s*(\d+)")
-_DAY_RE = re.compile(r"Day:\s*(\d+)")
 
 WORKOUT_RECEIVED_MESSAGE = "Amazing session! Looking into your workout"
 
@@ -64,10 +65,11 @@ def _handle_message(message: dict) -> None:
     if not sender or not text:
         return
 
-    session_id, day_number = _extract_session_and_day(text)
-    if session_id is None or day_number is None:
-        logger.info("No session_id/day_number found in WhatsApp message from %s", sender)
+    match = _SESSION_ID_RE.search(text)
+    if not match:
+        logger.info("No session_id found in WhatsApp message from %s", sender)
         return
+    session_id = int(match.group(1))
 
     try:
         whatsapp_client.send_text(sender, WORKOUT_RECEIVED_MESSAGE)
@@ -75,19 +77,8 @@ def _handle_message(message: dict) -> None:
         logger.exception("Failed to send WhatsApp ack to %s", sender)
 
     try:
-        kafka_producer.send_workout_complete_event(session_id, day_number, sender)
+        kafka_producer.send_workout_complete_event(session_id, sender)
     except Exception:
         # The ack already went out; a failure to publish this notification
         # shouldn't fail the whole webhook request.
-        logger.exception(
-            "Failed to publish workout-complete event for session_id=%s day_number=%s",
-            session_id, day_number,
-        )
-
-
-def _extract_session_and_day(text: str) -> tuple:
-    session_match = _SESSION_ID_RE.search(text)
-    day_match = _DAY_RE.search(text)
-    if not session_match or not day_match:
-        return None, None
-    return int(session_match.group(1)), int(day_match.group(1))
+        logger.exception("Failed to publish workout-complete event for session_id=%s", session_id)

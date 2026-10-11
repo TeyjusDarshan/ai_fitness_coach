@@ -6,9 +6,14 @@ currently unreliable to call the LLM for real in a test run (tier/rate-limit
 issues on the free plan - see summarizer.py) and sending a real WhatsApp
 message has no test recipient. Everything else - the Supabase context fetch,
 Sarvam TTS, the mp3->ogg conversion, the Supabase Storage upload, and the
-session_day_analysis upsert - runs for real, same as
+session_analysis upsert - runs for real, same as
 backend/tests/kafka_producer/client_test.py does for Kafka.
+
+It writes a real session_analysis row, so it only runs against the sessions
+row named by ANALYSIS_IT_SESSION_ID (one with logged exercises, ideally a
+throwaway test user's) and is skipped when that isn't set.
 """
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -16,8 +21,7 @@ import pytest
 from workout_analysis_consumer.main import _process_message
 from workout_analysis_consumer.repository import AnalysisRepository
 
-SESSION_ID = 37
-DAY_NUMBER = 5
+SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 PHONE_NUMBER = "919876543210"
 
 CONSTANT_ANALYSIS_TEXT = (
@@ -27,6 +31,7 @@ CONSTANT_ANALYSIS_TEXT = (
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(not SESSION_ID, reason="set ANALYSIS_IT_SESSION_ID to a test sessions row")
 def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     mock_llm = MagicMock()
     mock_llm.invoke.return_value = MagicMock(content=CONSTANT_ANALYSIS_TEXT)
@@ -36,13 +41,12 @@ def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     monkeypatch.setattr("workout_analysis_consumer.main.whatsapp_client.send_audio", mock_send_audio)
 
     repo = AnalysisRepository()
-    _process_message(repo, SESSION_ID, DAY_NUMBER, PHONE_NUMBER)
+    _process_message(repo, SESSION_ID, PHONE_NUMBER)
 
     saved = (
-        repo.client.table("session_day_analysis")
+        repo.client.table("session_analysis")
         .select("analysis, audio_url")
         .eq("session_id", SESSION_ID)
-        .eq("day_number", DAY_NUMBER)
         .execute()
         .data
     )

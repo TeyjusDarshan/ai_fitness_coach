@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
-import { completeDay } from '../api'
+import { completeSession } from '../api'
 import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDuration } from '../utils'
 import type { DayCompleteSummary } from '../types'
 
@@ -17,8 +17,10 @@ export function SummaryScreen() {
 
   useEffect(() => {
     if (fired.current || !dashboard) return
+    const sessionId = dashboard.days.find((d) => d.day_number === dayNum)?.session_id
+    if (sessionId == null) return
     fired.current = true
-    completeDay(dashboard.session_id, dayNum)
+    completeSession(sessionId)
       .then(setSummary)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to complete this day.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -59,7 +61,7 @@ export function SummaryScreen() {
 
   function handleShareWithCoach() {
     if (!day || !summary || !dashboard) return
-    const message = buildCoachShareMessage(day, summary, userId, dashboard.session_id)
+    const message = buildCoachShareMessage(day, summary, userId)
     window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
   }
 

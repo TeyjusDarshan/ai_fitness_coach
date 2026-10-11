@@ -41,8 +41,8 @@ export function fetchDashboard(userId: string): Promise<Dashboard> {
   return request<Dashboard>(`/users/${encodeURIComponent(userId)}/dashboard`)
 }
 
-export function startDay(sessionId: number, dayNumber: number): Promise<unknown> {
-  return request(`/sessions/${sessionId}/days/${dayNumber}/start`, { method: 'POST' })
+export function startSession(sessionId: number): Promise<unknown> {
+  return request(`/sessions/${sessionId}/start`, { method: 'POST' })
 }
 
 export function logSet(
@@ -68,8 +68,8 @@ export function logRpe(
   })
 }
 
-export function completeDay(sessionId: number, dayNumber: number): Promise<DayCompleteSummary> {
-  return request(`/sessions/${sessionId}/days/${dayNumber}/complete`, { method: 'POST' })
+export function completeSession(sessionId: number): Promise<DayCompleteSummary> {
+  return request(`/sessions/${sessionId}/complete`, { method: 'POST' })
 }
 
 export { ApiError }

@@ -19,29 +19,26 @@ producer = KafkaProducerClient()
 whatsapp_client = WhatsAppClient()
 
 
-def _process_message(
-    repo: AnalysisRepository, session_id: int, day_number: int, phone_number: str
-) -> None:
-    context = repo.fetch_context(session_id, day_number)
+def _process_message(repo: AnalysisRepository, session_id: int, phone_number: str) -> None:
+    context = repo.fetch_context(session_id)
     if context is None:
-        logger.warning(
-            "No session found for session_id=%s; skipping day_number=%s", session_id, day_number
-        )
+        logger.warning("No session found for session_id=%s; skipping", session_id)
         return
+    day_number = context["day_number"]
 
     analysis = generate_workout_summary(context)
 
     # Best-effort: a TTS/storage failure shouldn't discard the (costlier)
     # LLM-generated text analysis, so it's still saved with audio_url unset.
     try:
-        audio_url = generate_voice_note(analysis, session_id, day_number)
+        audio_url = generate_voice_note(analysis, context["plan_id"], day_number)
     except Exception:
         logger.exception(
             "Failed to generate voice note for session_id=%s day_number=%s", session_id, day_number
         )
         audio_url = None
 
-    repo.save_analysis(session_id, day_number, analysis, audio_url)
+    repo.save_analysis(session_id, analysis, audio_url)
     logger.info("Stored analysis for session_id=%s day_number=%s", session_id, day_number)
 
     if audio_url:
@@ -89,9 +86,7 @@ def run() -> None:
             # for manual follow-up rather than retried automatically.
             try:
                 payload = json.loads(msg.value())
-                _process_message(
-                    repo, payload["session_id"], payload["day_number"], payload["phone_number"]
-                )
+                _process_message(repo, payload["session_id"], payload["phone_number"])
             except Exception:
                 logger.exception(
                     "Failed to process message at offset=%s partition=%s",

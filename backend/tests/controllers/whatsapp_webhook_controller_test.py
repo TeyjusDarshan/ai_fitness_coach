@@ -46,9 +46,7 @@ def test_receive_message_with_session_fields_acks_and_publishes(app_module, cont
     controller.whatsapp_client.send_text.assert_called_once_with(
         "919876543210", controller.WORKOUT_RECEIVED_MESSAGE
     )
-    controller.kafka_producer.send_workout_complete_event.assert_called_once_with(
-        12, 1, "919876543210"
-    )
+    controller.kafka_producer.send_workout_complete_event.assert_called_once_with(12, "919876543210")
 
 
 def test_receive_message_without_session_fields_is_ignored(app_module, controller, monkeypatch):

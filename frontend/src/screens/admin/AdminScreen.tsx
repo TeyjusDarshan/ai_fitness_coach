@@ -8,7 +8,7 @@ import {
   type PlanBuilderOptions,
   type ProfileResult,
 } from '../../adminApi'
-import { defaultPlanType, emptyDraft, painJoints, type PlanDraft } from './planDraft'
+import { defaultPlanType, emptyDraft, nextMondayIso, painJoints, type PlanDraft } from './planDraft'
 import { PlannerStep } from './PlannerStep'
 import { ProfileStep } from './ProfileStep'
 import { PlanSavedCard, ReviewStep } from './ReviewStep'
@@ -127,6 +127,7 @@ function OnboardingFlow({
   const [planType, setPlanType] = useState(() => Object.keys(options.templates)[0])
   const [draft, setDraft] = useState<PlanDraft>(() => emptyDraft(options.templates[planType]))
   const [coachNotes, setCoachNotes] = useState('')
+  const [startDate, setStartDate] = useState(nextMondayIso)
   const [saved, setSaved] = useState<InitialPlanResult | null>(null)
   const pain = useMemo(() => (profile ? painJoints(profile.profile) : new Set<string>()), [profile])
 
@@ -138,6 +139,7 @@ function OnboardingFlow({
       setPlanType(type)
       setDraft(emptyDraft(options.templates[type]))
       setCoachNotes('')
+      setStartDate(nextMondayIso())
     }
     setProfile(result)
   }
@@ -146,6 +148,7 @@ function OnboardingFlow({
     setProfile(null)
     setSaved(null)
     setCoachNotes('')
+    setStartDate(nextMondayIso())
     setDraft(emptyDraft(options.templates[planType]))
     setStage('profile')
   }
@@ -186,6 +189,8 @@ function OnboardingFlow({
           planType={planType}
           draft={draft}
           coachNotes={coachNotes}
+          startDate={startDate}
+          onStartDateChange={setStartDate}
           onPlanTypeChange={(type, next) => {
             setPlanType(type)
             setDraft(next)
@@ -205,6 +210,7 @@ function OnboardingFlow({
           planType={planType}
           draft={draft}
           coachNotes={coachNotes}
+          startDate={startDate}
           onBack={() => setStage('planner')}
           onSaved={(result) => {
             setSaved(result)

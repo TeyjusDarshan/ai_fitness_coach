@@ -17,36 +17,39 @@ def test_dashboard_without_session_is_401(app_module):
 
 
 def test_dashboard_for_another_user_is_403(app_module, sign_in, monkeypatch):
-    monkeypatch.setattr(app_module.plan_repo, "get_unfinished_session", MagicMock())
+    monkeypatch.setattr(app_module.plan_repo, "get_unfinished_plan", MagicMock())
 
     response = sign_in("usr_1").get("/api/users/usr_2/dashboard")
 
     assert response.status_code == 403
-    app_module.plan_repo.get_unfinished_session.assert_not_called()
+    app_module.plan_repo.get_unfinished_plan.assert_not_called()
 
 
 @pytest.mark.parametrize("method, path, body", [
-    ("post", "/api/sessions/42/days/1/start", None),
+    ("post", "/api/sessions/42/start", None),
     ("patch", "/api/sessions/42/exercises/7/sets/1", {"completed_reps": 10}),
     ("patch", "/api/sessions/42/exercises/7/rpe", {"rpe": 8}),
-    ("post", "/api/sessions/42/days/1/complete", None),
+    ("post", "/api/sessions/42/complete", None),
 ])
 def test_session_routes_reject_other_users_session(app_module, sign_in, monkeypatch, method, path, body):
-    monkeypatch.setattr(app_module.plan_repo, "get_session_owner", MagicMock(return_value="usr_2"))
-    for repo_method in ("start_day", "log_set", "log_rpe", "complete_day"):
+    monkeypatch.setattr(app_module.plan_repo, "get_session", MagicMock(return_value={
+        "id": 42, "plan_id": 7, "day_number": 1, "scheduled_date": "2000-01-01",
+        "plans": {"user_id": "usr_2", "plan_type": "3_day", "completed": False},
+    }))
+    for repo_method in ("start_session", "log_set", "log_rpe", "complete_session"):
         monkeypatch.setattr(app_module.plan_repo, repo_method, MagicMock())
     client = sign_in("usr_1")
 
     response = getattr(client, method)(path, json=body)
 
     assert response.status_code == 403
-    for repo_method in ("start_day", "log_set", "log_rpe", "complete_day"):
+    for repo_method in ("start_session", "log_set", "log_rpe", "complete_session"):
         getattr(app_module.plan_repo, repo_method).assert_not_called()
 
 
 def test_session_routes_without_session_are_401(app_module):
     client = app_module.app.test_client()
-    assert client.post("/api/sessions/42/days/1/start").status_code == 401
+    assert client.post("/api/sessions/42/start").status_code == 401
 
 
 @pytest.mark.parametrize("headers", [{}, {"X-Admin-Key": "wrong"}])

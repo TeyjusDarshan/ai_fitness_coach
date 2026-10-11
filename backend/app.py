@@ -12,6 +12,7 @@ a passkey sign-in session (see backend/auth.py and
 backend/controllers/auth_controller.py).
 """
 import time
+from datetime import date, timedelta
 
 from flask import Flask, g, jsonify, request
 
@@ -21,7 +22,7 @@ from backend.auth import require_admin, require_auth
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
-from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
+from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository, app_today
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
@@ -30,28 +31,42 @@ app.register_blueprint(admin_plan_bp)
 plan_repo = WorkoutPlanRepository()
 
 
-def _deny_unless_session_owner(session_id):
-    """Error response unless the signed-in user owns this session, else None."""
-    owner = plan_repo.get_session_owner(session_id)
-    if owner is None:
+def _deny_unless_session_open(session_id):
+    """Error response unless the signed-in user owns this session and its
+    scheduled_date has arrived, else None."""
+    session = plan_repo.get_session(session_id)
+    if session is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404
-    if owner != g.user_id:
+    if (session.get("plans") or {}).get("user_id") != g.user_id:
         return jsonify({"error": "You don't have access to this session."}), 403
+    scheduled = date.fromisoformat(session["scheduled_date"])
+    if scheduled > app_today():
+        return jsonify({
+            "error": f"This workout opens on {scheduled:%a} {scheduled.day} {scheduled:%b}.",
+            "scheduled_date": session["scheduled_date"],
+        }), 409
     return None
 
 
-def _persist_generated_session(user_id, profile, plan, max_attempts=2):
-    """Upsert the profile and insert the new session, retrying once on failure.
+def _plan_response(existing):
+    response = dict(existing["plan"])
+    response["plan_id"] = existing["id"]
+    response["completed"] = existing["completed"]
+    return response
 
-    Both calls are safe to repeat: the profile upsert overwrites, and a
-    session row from a failed attempt was never committed, so retrying
-    doesn't create duplicates.
+
+def _persist_generated_plan(user_id, profile, plan, start_date, max_attempts=2):
+    """Upsert the profile and insert the new plan, retrying once on failure.
+
+    Safe to repeat: the profile upsert overwrites, and if a failed attempt
+    left a partial plan behind, the retry is refused by the
+    one-unfinished-plan-per-user index rather than creating a duplicate.
     """
     last_exc = None
     for attempt in range(max_attempts):
         try:
             plan_repo.upsert_user_profile(user_id, profile)
-            return plan_repo.create_session(user_id, plan)
+            return plan_repo.create_plan(user_id, plan, start_date)
         except Exception as e:
             last_exc = e
             if attempt < max_attempts - 1:
@@ -69,12 +84,18 @@ def create_workout_plan():
     if not user_id or not raw_user_text:
         return jsonify({"error": "Both 'userid' and 'raw_user_text' are required."}), 400
 
-    existing = plan_repo.get_unfinished_session(user_id)
+    start_date = app_today()
+    if body.get("start_date") is not None:
+        try:
+            start_date = date.fromisoformat(body["start_date"])
+        except (TypeError, ValueError):
+            return jsonify({"error": "'start_date' must be a YYYY-MM-DD date."}), 400
+        if start_date < app_today():
+            return jsonify({"error": "'start_date' can't be in the past."}), 400
+
+    existing = plan_repo.get_unfinished_plan(user_id)
     if existing is not None:
-        response = dict(existing["plan"])
-        response["session_id"] = existing["id"]
-        response["completed"] = existing["completed"]
-        return jsonify(response), 200
+        return jsonify(_plan_response(existing)), 200
 
     try:
         profile = generate_user_profile(raw_user_text)
@@ -90,56 +111,46 @@ def create_workout_plan():
         return jsonify(plan), 500
 
     try:
-        session_row = _persist_generated_session(user_id, profile, plan)
+        _persist_generated_plan(user_id, profile, plan, start_date)
     except Exception:
-        app.logger.exception("Failed to persist generated session for user_id=%s", user_id)
+        app.logger.exception("Failed to persist generated plan for user_id=%s", user_id)
         return jsonify({"error": "Failed to save generated workout after retrying."}), 500
 
-    response = dict(plan)
-    response["session_id"] = session_row["id"]
-    response["completed"] = session_row["completed"]
-    return jsonify(response), 200
+    return jsonify(_plan_response(plan_repo.get_unfinished_plan(user_id))), 200
 
 
-@app.patch("/api/workout-plan/<int:session_id>/complete")
+@app.patch("/api/plans/<int:plan_id>/complete")
 @require_admin
-def complete_session(session_id):
+def complete_plan(plan_id):
     try:
-        updated = plan_repo.mark_session_completed(session_id)
+        updated = plan_repo.mark_plan_completed(plan_id)
     except Exception:
-        app.logger.exception("Failed to mark session_id=%s completed", session_id)
-        return jsonify({"error": "Failed to mark workout as completed."}), 500
+        app.logger.exception("Failed to mark plan_id=%s completed", plan_id)
+        return jsonify({"error": "Failed to mark the plan as completed."}), 500
 
     if updated is None:
-        return jsonify({"error": f"Session {session_id} not found."}), 404
+        return jsonify({"error": f"Plan {plan_id} not found."}), 404
     return jsonify(updated), 200
 
 
 @app.post("/api/users/<user_id>/progress-plan")
 @require_admin
 def progress_plan(user_id):
-    existing = plan_repo.get_unfinished_session(user_id)
+    existing = plan_repo.get_unfinished_plan(user_id)
     if existing is not None:
-        response = dict(existing["plan"])
-        response["session_id"] = existing["id"]
-        response["completed"] = existing["completed"]
-        return jsonify(response), 200
+        return jsonify(_plan_response(existing)), 200
 
-    last = plan_repo.get_last_completed_session(user_id)
+    last = plan_repo.get_last_completed_plan(user_id)
     if last is None:
-        return jsonify({"error": f"No completed session found for user_id={user_id}."}), 404
+        return jsonify({"error": f"No completed plan found for user_id={user_id}."}), 404
 
     try:
-        plan_repo.create_progressed_session(user_id, last["session"], last["exercise_rows"])
+        plan_repo.create_progressed_plan(user_id, last["plan"], last["sessions"])
     except Exception:
-        app.logger.exception("Failed to create progressed session for user_id=%s", user_id)
-        return jsonify({"error": "Failed to create the next session."}), 500
+        app.logger.exception("Failed to create progressed plan for user_id=%s", user_id)
+        return jsonify({"error": "Failed to create the next plan."}), 500
 
-    new_plan = plan_repo.get_unfinished_session(user_id)
-    response = dict(new_plan["plan"])
-    response["session_id"] = new_plan["id"]
-    response["completed"] = new_plan["completed"]
-    return jsonify(response), 200
+    return jsonify(_plan_response(plan_repo.get_unfinished_plan(user_id))), 200
 
 
 @app.get("/api/users/<user_id>/dashboard")
@@ -148,21 +159,31 @@ def get_dashboard(user_id):
     if user_id != g.user_id:
         return jsonify({"error": "You don't have access to this user's plan."}), 403
 
-    existing = plan_repo.get_unfinished_session(user_id)
+    existing = plan_repo.get_unfinished_plan(user_id)
     if existing is None:
         return jsonify({"error": "No plan found for this user."}), 404
 
-    session_id = existing["id"]
     plan = existing["plan"]
-    day_logs = plan_repo.list_day_logs(session_id)
+    sessions = existing["sessions"]
+    today = app_today()
+    # Rest days have no session row; date them from the plan's start (day 1).
+    plan_start = min(
+        (date.fromisoformat(s["scheduled_date"]) - timedelta(days=day_number - 1)
+         for day_number, s in sessions.items()),
+        default=today,
+    )
 
     found_next = False
     days = []
     for day in plan["schedule"]:
-        log = day_logs.get(day["day_number"], {})
+        session = sessions.get(day["day_number"], {})
+        day_date = (
+            date.fromisoformat(session["scheduled_date"]) if session
+            else plan_start + timedelta(days=day["day_number"] - 1)
+        )
         if day["is_rest_day"]:
             status = "rest"
-        elif log.get("completed_at"):
+        elif session.get("completed_at"):
             status = "completed"
         elif not found_next:
             status = "next"
@@ -172,15 +193,17 @@ def get_dashboard(user_id):
         days.append({
             **day,
             "status": status,
-            "started_at": log.get("started_at"),
-            "completed_at": log.get("completed_at"),
+            "date": day_date.isoformat(),
+            "locked": not day["is_rest_day"] and day_date > today,
+            "started_at": session.get("started_at"),
+            "completed_at": session.get("completed_at"),
         })
 
     profile = plan_repo.get_profile(user_id) or {}
     session_duration_minutes = (profile.get("availability") or {}).get("session_duration_minutes")
 
     return jsonify({
-        "session_id": session_id,
+        "plan_id": existing["id"],
         "plan_type": plan["plan_type"],
         "plan_selection_reason": plan["plan_selection_reason"],
         "medical_clearance_warning": plan["medical_clearance_warning"],
@@ -248,26 +271,24 @@ def delete_joint_pain(user_id, joint_id):
     return jsonify({"user_id": user_id, "joint_id": joint_id, "deleted": True}), 200
 
 
-@app.post("/api/sessions/<int:session_id>/days/<int:day_number>/start")
+@app.post("/api/sessions/<int:session_id>/start")
 @require_auth
-def start_day(session_id, day_number):
-    if denied := _deny_unless_session_owner(session_id):
+def start_session(session_id):
+    if denied := _deny_unless_session_open(session_id):
         return denied
 
     try:
-        log = plan_repo.start_day(session_id, day_number)
+        session = plan_repo.start_session(session_id)
     except Exception:
-        app.logger.exception(
-            "Failed to start day_number=%s for session_id=%s", day_number, session_id
-        )
-        return jsonify({"error": "Failed to start this day."}), 500
-    return jsonify(log), 200
+        app.logger.exception("Failed to start session_id=%s", session_id)
+        return jsonify({"error": "Failed to start this workout."}), 500
+    return jsonify(session), 200
 
 
 @app.patch("/api/sessions/<int:session_id>/exercises/<int:session_exercise_id>/sets/<int:set_number>")
 @require_auth
 def log_set(session_id, session_exercise_id, set_number):
-    if denied := _deny_unless_session_owner(session_id):
+    if denied := _deny_unless_session_open(session_id):
         return denied
 
     body = request.get_json(silent=True) or {}
@@ -291,7 +312,7 @@ def log_set(session_id, session_exercise_id, set_number):
 @app.patch("/api/sessions/<int:session_id>/exercises/<int:session_exercise_id>/rpe")
 @require_auth
 def log_rpe(session_id, session_exercise_id):
-    if denied := _deny_unless_session_owner(session_id):
+    if denied := _deny_unless_session_open(session_id):
         return denied
 
     body = request.get_json(silent=True) or {}
@@ -310,19 +331,17 @@ def log_rpe(session_id, session_exercise_id):
     return jsonify(log), 200
 
 
-@app.post("/api/sessions/<int:session_id>/days/<int:day_number>/complete")
+@app.post("/api/sessions/<int:session_id>/complete")
 @require_auth
-def complete_day(session_id, day_number):
-    if denied := _deny_unless_session_owner(session_id):
+def complete_session(session_id):
+    if denied := _deny_unless_session_open(session_id):
         return denied
 
     try:
-        summary = plan_repo.complete_day(session_id, day_number)
+        summary = plan_repo.complete_session(session_id)
     except Exception:
-        app.logger.exception(
-            "Failed to complete day_number=%s for session_id=%s", day_number, session_id
-        )
-        return jsonify({"error": "Failed to complete this day."}), 500
+        app.logger.exception("Failed to complete session_id=%s", session_id)
+        return jsonify({"error": "Failed to complete this workout."}), 500
 
     if summary is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404

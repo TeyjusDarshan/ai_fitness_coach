@@ -29,6 +29,13 @@ export interface DashboardDay {
   split_name: string
   is_rest_day: boolean
   status: DayStatus
+  // The sessions row for this training day (null on rest days).
+  session_id: number | null
+  // YYYY-MM-DD in the app's timezone: the session's scheduled_date, or for
+  // a rest day, its place in the plan's week.
+  date: string
+  // Training day whose date hasn't arrived yet — it can't be started.
+  locked: boolean
   started_at: string | null
   completed_at: string | null
   primary: ExerciseEntry[]
@@ -36,7 +43,7 @@ export interface DashboardDay {
 }
 
 export interface Dashboard {
-  session_id: number
+  plan_id: number
   plan_type: string
   plan_selection_reason: string | null
   medical_clearance_warning: string | null
@@ -51,6 +58,7 @@ export interface Dashboard {
 }
 
 export interface DayCompleteSummary {
+  session_id: number
   day_number: number
   total_time_seconds: number
   exercises_completed: number

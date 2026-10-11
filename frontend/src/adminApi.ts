@@ -81,13 +81,15 @@ export interface PlanEntry {
 
 export interface InitialPlanRequest {
   plan_type: string
+  // YYYY-MM-DD: day 1's scheduled date; day N is scheduled N-1 days later.
+  start_date: string
   coach_notes: string | null
   days: { day_number: number; primary: PlanEntry[]; secondary: PlanEntry[] }[]
 }
 
 export interface InitialPlanResult {
   user_id: string
-  session_id: number
+  plan_id: number
   enrollment: { url: string; expires_at: string } | null
 }
 

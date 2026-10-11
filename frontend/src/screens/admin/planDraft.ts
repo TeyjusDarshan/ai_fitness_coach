@@ -104,7 +104,47 @@ export function painfulJointsFor(exercise: LibraryExercise, pain: Set<string>): 
   return exercise.loaded_joints.filter((joint) => pain.has(joint))
 }
 
-export function toRequest(planType: string, coachNotes: string, draft: PlanDraft): InitialPlanRequest {
+// Local-calendar YYYY-MM-DD helpers for the plan's start date. Built from
+// date parts (not toISOString) so they never shift a day across UTC.
+function toIsoDate(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function fromIsoDate(isoDate: string): Date {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+export function todayIso(): string {
+  return toIsoDate(new Date())
+}
+
+// Plans default to starting on the coming Monday, so day 1 of the template
+// lands on a Monday.
+export function nextMondayIso(): string {
+  const d = new Date()
+  d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7))
+  return toIsoDate(d)
+}
+
+// Mirrors the backend: day N is scheduled N-1 days after the start date.
+export function dayDateIso(startDate: string, dayNumber: number): string {
+  const d = fromIsoDate(startDate)
+  d.setDate(d.getDate() + dayNumber - 1)
+  return toIsoDate(d)
+}
+
+export function isValidStartDate(startDate: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(startDate) && startDate >= todayIso()
+}
+
+export function toRequest(
+  planType: string,
+  coachNotes: string,
+  startDate: string,
+  draft: PlanDraft,
+): InitialPlanRequest {
   const toEntry = (slot: SlotDraft) => ({
     exercise_id: slot.exerciseId as number,
     sets: Number(slot.sets),
@@ -113,6 +153,7 @@ export function toRequest(planType: string, coachNotes: string, draft: PlanDraft
   })
   return {
     plan_type: planType,
+    start_date: startDate,
     coach_notes: coachNotes.trim() || null,
     days: Object.entries(draft).map(([dayNumber, day]) => ({
       day_number: Number(dayNumber),

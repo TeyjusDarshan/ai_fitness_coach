@@ -4,6 +4,7 @@ backend/controllers/admin_plan_controller.py.
 Supabase is mocked (see conftest.app_module); the repository methods and the
 preprocessor agent the endpoints call are swapped for MagicMocks.
 """
+from datetime import date
 from unittest.mock import MagicMock
 
 import pytest
@@ -18,6 +19,7 @@ EXERCISES = [
     {"id": 2, "name": "Band Row", "min_reps": None, "max_reps": None},
 ]
 PROFILE = {"user_id": "usr_new", "health": {"medical_clearance_obtained": True}}
+TODAY = date(2026, 10, 11)
 
 
 def _days(plan_type="3_day", exercise_id=1, sets=3, reps=10):
@@ -33,7 +35,7 @@ def _days(plan_type="3_day", exercise_id=1, sets=3, reps=10):
 
 
 def _plan_body(**overrides):
-    body = {"plan_type": "3_day", "days": _days(), "coach_notes": " Go easy "}
+    body = {"plan_type": "3_day", "start_date": "2026-10-13", "days": _days(), "coach_notes": " Go easy "}
     body.update(overrides)
     return body
 
@@ -47,11 +49,12 @@ def admin(app_module, monkeypatch):
     monkeypatch.setenv("APP_BASE_URL", "https://coach.example")
     repo = controller.plan_repo
     monkeypatch.setattr(controller.exercise_repo, "list_exercises", MagicMock(return_value=EXERCISES))
-    monkeypatch.setattr(repo, "get_unfinished_session", MagicMock(return_value=None))
+    monkeypatch.setattr(repo, "get_unfinished_plan", MagicMock(return_value=None))
     monkeypatch.setattr(repo, "user_exists", MagicMock(return_value=False))
     monkeypatch.setattr(repo, "get_profile", MagicMock(return_value=PROFILE))
     monkeypatch.setattr(repo, "upsert_user_profile", MagicMock())
-    monkeypatch.setattr(repo, "create_session", MagicMock(return_value={"id": 77}))
+    monkeypatch.setattr(repo, "create_plan", MagicMock(return_value={"id": 77}))
+    monkeypatch.setattr(controller, "app_today", lambda: TODAY)
     monkeypatch.setattr(
         controller, "generate_user_profile", MagicMock(return_value={"user_id": "usr_placeholder", "goals": {}})
     )
@@ -71,7 +74,7 @@ def test_endpoints_require_admin_key(admin, method, path):
     client, controller = admin
     assert getattr(client, method)(path, json={}).status_code == 401
     controller.generate_user_profile.assert_not_called()
-    controller.plan_repo.create_session.assert_not_called()
+    controller.plan_repo.create_plan.assert_not_called()
 
 
 # --- POST /api/admin/users/profile ---------------------------------------------
@@ -104,16 +107,16 @@ def test_profile_for_existing_user_reports_not_created(admin):
     assert response.get_json()["user_created"] is False
 
 
-def test_profile_conflicts_with_unfinished_session_before_calling_llm(admin):
+def test_profile_conflicts_with_unfinished_plan_before_calling_llm(admin):
     client, controller = admin
-    controller.plan_repo.get_unfinished_session.return_value = {"id": 5, "completed": False, "plan": {}}
+    controller.plan_repo.get_unfinished_plan.return_value = {"id": 5, "completed": False, "plan": {}}
 
     response = client.post(
         "/api/admin/users/profile", json={"user_id": "usr_new", "raw_user_text": "x"}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 409
-    assert response.get_json()["session_id"] == 5
+    assert response.get_json()["plan_id"] == 5
     controller.generate_user_profile.assert_not_called()
     controller.plan_repo.upsert_user_profile.assert_not_called()
 
@@ -176,7 +179,7 @@ def _post_plan(client, body, user_id="usr_new"):
     return client.post(f"/api/admin/users/{user_id}/initial-plan", json=body, headers=ADMIN_HEADERS)
 
 
-def test_initial_plan_saves_session_and_mints_link(admin):
+def test_initial_plan_saves_plan_and_mints_link(admin):
     client, controller = admin
 
     response = _post_plan(client, _plan_body())
@@ -184,11 +187,12 @@ def test_initial_plan_saves_session_and_mints_link(admin):
     assert response.status_code == 201
     data = response.get_json()
     assert data["user_id"] == "usr_new"
-    assert data["session_id"] == 77
+    assert data["plan_id"] == 77
     assert data["enrollment"]["url"].startswith("https://coach.example/enroll?token=")
 
-    user_id, plan = controller.plan_repo.create_session.call_args.args
+    user_id, plan, start_date = controller.plan_repo.create_plan.call_args.args
     assert user_id == "usr_new"
+    assert start_date == date(2026, 10, 13)
     assert plan["plan_type"] == "3_day"
     assert plan["coach_notes"] == "Go easy"
     assert plan["plan_selection_reason"] == "Built manually by coach"
@@ -208,7 +212,7 @@ def test_initial_plan_rep_range_null_when_exercise_has_no_bounds(admin):
     response = _post_plan(client, _plan_body(days=_days(exercise_id=2)))
 
     assert response.status_code == 201
-    plan = controller.plan_repo.create_session.call_args.args[1]
+    plan = controller.plan_repo.create_plan.call_args.args[1]
     assert plan["schedule"][0]["primary"][0]["rep_range"] is None
 
 
@@ -218,7 +222,7 @@ def test_initial_plan_keeps_slot_notes(admin):
     days[0]["primary"][0]["note"] = "  Slow tempo "
 
     assert _post_plan(client, _plan_body(days=days)).status_code == 201
-    plan = controller.plan_repo.create_session.call_args.args[1]
+    plan = controller.plan_repo.create_plan.call_args.args[1]
     assert plan["schedule"][0]["primary"][0]["note"] == "Slow tempo"
 
 
@@ -227,7 +231,7 @@ def test_initial_plan_warns_when_client_lacks_medical_clearance(admin):
     controller.plan_repo.get_profile.return_value = {"health": {"medical_clearance_obtained": False}}
 
     assert _post_plan(client, _plan_body()).status_code == 201
-    plan = controller.plan_repo.create_session.call_args.args[1]
+    plan = controller.plan_repo.create_plan.call_args.args[1]
     assert plan["medical_clearance_warning"]
 
 
@@ -236,21 +240,31 @@ def test_initial_plan_unknown_user_returns_404(admin):
     controller.plan_repo.get_profile.return_value = None
 
     assert _post_plan(client, _plan_body()).status_code == 404
-    controller.plan_repo.create_session.assert_not_called()
+    controller.plan_repo.create_plan.assert_not_called()
 
 
-def test_initial_plan_conflicts_with_unfinished_session(admin):
+def test_initial_plan_conflicts_with_unfinished_plan(admin):
     client, controller = admin
-    controller.plan_repo.get_unfinished_session.return_value = {"id": 5, "completed": False, "plan": {}}
+    controller.plan_repo.get_unfinished_plan.return_value = {"id": 5, "completed": False, "plan": {}}
 
     response = _post_plan(client, _plan_body())
 
     assert response.status_code == 409
-    assert response.get_json()["session_id"] == 5
-    controller.plan_repo.create_session.assert_not_called()
+    assert response.get_json()["plan_id"] == 5
+    controller.plan_repo.create_plan.assert_not_called()
+
+
+def test_initial_plan_can_start_today(admin):
+    client, controller = admin
+
+    assert _post_plan(client, _plan_body(start_date="2026-10-11")).status_code == 201
+    assert controller.plan_repo.create_plan.call_args.args[2] == TODAY
 
 
 @pytest.mark.parametrize("overrides", [
+    {"start_date": None},
+    {"start_date": "13/10/2026"},
+    {"start_date": "2026-10-10"},                           # in the past
     {"plan_type": "5_day"},
     {"coach_notes": 5},
     {"days": "nope"},
@@ -272,12 +286,12 @@ def test_initial_plan_rejects_invalid_payload(admin, overrides):
 
     assert response.status_code == 400
     assert "error" in response.get_json()
-    controller.plan_repo.create_session.assert_not_called()
+    controller.plan_repo.create_plan.assert_not_called()
 
 
 def test_initial_plan_save_failure_returns_500_without_minting_link(admin):
     client, controller = admin
-    controller.plan_repo.create_session.side_effect = RuntimeError("db unreachable")
+    controller.plan_repo.create_plan.side_effect = RuntimeError("db unreachable")
 
     assert _post_plan(client, _plan_body()).status_code == 500
     controller.auth_repo.create_enrollment_token.assert_not_called()
