@@ -7,6 +7,7 @@ import { DashboardScreen } from './screens/DashboardScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
+import { RoutineVideoScreen } from './screens/RoutineVideoScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
 
 function Spinner() {
@@ -66,6 +67,22 @@ function App() {
         element={
           <RequireAuth>
             <DashboardScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/warmup"
+        element={
+          <RequireAuth>
+            <RoutineVideoScreen kind="warmup" />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/cooldown"
+        element={
+          <RequireAuth>
+            <RoutineVideoScreen kind="cooldown" />
           </RequireAuth>
         }
       />

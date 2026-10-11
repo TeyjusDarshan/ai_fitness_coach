@@ -106,8 +106,13 @@ export function ExerciseScreen() {
     }
 
     const nextIndex = slotIdx + 1
-    const next = nextIndex < exercises.length ? `/day/${dayNum}/exercise/${nextIndex}` : `/day/${dayNum}/summary`
-    navigate(restPath(REST_BETWEEN_EXERCISES_SECONDS, next))
+    if (nextIndex < exercises.length) {
+      navigate(restPath(REST_BETWEEN_EXERCISES_SECONDS, `/day/${dayNum}/exercise/${nextIndex}`))
+    } else {
+      // Last exercise: straight into the cool-down (no rest timer), which
+      // leads on to the summary.
+      navigate(`/day/${dayNum}/cooldown`)
+    }
   }
 
   return (

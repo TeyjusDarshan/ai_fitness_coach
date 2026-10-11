@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { DayRow } from '../components/DayRow'
 import { startSession } from '../api'
 import { useAppState } from '../state/AppStateContext'
-import { firstIncompleteIndex } from '../utils'
+import { firstIncompleteIndex, flattenExercises } from '../utils'
 import type { DashboardDay } from '../types'
 
 export function DashboardScreen() {
@@ -29,8 +29,15 @@ export function DashboardScreen() {
       setStartError(e instanceof Error ? e.message : 'Could not start this workout.')
       return
     }
-    const slotIndex = firstIncompleteIndex(day)
-    navigate(`/day/${day.day_number}/exercise/${slotIndex}`)
+    // A fresh session opens with the warm-up video, whose "Start workout"
+    // button leads to the first exercise. Resuming one that already has
+    // logged sets skips straight back to where the user left off.
+    const resuming = flattenExercises(day).some((ex) => ex.set_logs.length > 0)
+    navigate(
+      resuming
+        ? `/day/${day.day_number}/exercise/${firstIncompleteIndex(day)}`
+        : `/day/${day.day_number}/warmup`,
+    )
   }
 
   if (loading && !dashboard) {

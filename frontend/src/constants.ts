@@ -10,3 +10,8 @@ export const REST_BETWEEN_EXERCISES_SECONDS = 90
 // 9180190745) — digits only (country code + number, no leading +), as
 // required by the wa.me deep-link format.
 export const COACH_WHATSAPP_NUMBER = '919180190745'
+
+// Played full screen in landscape before every workout (after "Start") and
+// after its last exercise (before the summary). YouTube video ids.
+export const WARMUP_VIDEO_ID = 'McIrh35QRM8'
+export const COOLDOWN_VIDEO_ID = 'IlHgLYdt3kc'
