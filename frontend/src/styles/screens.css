@@ -681,41 +681,57 @@
 /* Dark textured page: a soft spotlight over a fine diagonal weave and a
    subtle dot grain, all on near-black. */
 .routine-screen {
-  min-height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: calc(24px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom));
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
   color: #f5f5f7;
   background-color: #111214;
   background-image:
-    radial-gradient(ellipse at 50% 35%, rgba(255, 255, 255, 0.07), transparent 65%),
+    radial-gradient(ellipse at 50% 50%, rgba(255, 255, 255, 0.07), transparent 65%),
     radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.025) 0 2px, transparent 2px 6px),
     repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.35) 0 2px, transparent 2px 6px);
   background-size: auto, 4px 4px, auto, auto;
 }
 
-.routine-screen__content {
+/* The landscape stage. It's a size container so the frame can be sized
+   against the stage's own width/height (cqw/cqh), which stay correct when
+   the stage is rotated. */
+.routine-screen__stage {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  max-width: 900px;
+  height: 100%;
+  container-type: size;
   display: flex;
-  flex-direction: column;
-  gap: 20px;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
 }
 
-.routine-screen__title {
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.015em;
-  margin: 0;
-  text-align: center;
+/* Phone held upright (or an installed PWA locked to portrait): turn the
+   stage 90° so the screen reads in landscape when the phone is turned
+   sideways. The physical top/bottom safe areas become the stage's sides. */
+@media (orientation: portrait) {
+  .routine-screen__stage {
+    width: 100vh;
+    width: 100dvh;
+    height: 100vw;
+    transform-origin: top left;
+    transform: translateX(100vw) rotate(90deg);
+    padding: 16px max(20px, env(safe-area-inset-bottom)) 16px max(20px, env(safe-area-inset-top));
+  }
 }
 
-/* The landscape (16:9) frame the video plays in. */
+/* The 16:9 frame the video plays in: as large as fits beside the side
+   column (200px + 24px gap) and within the stage's height. */
 .routine-screen__frame {
   position: relative;
-  width: 100%;
+  flex: none;
+  width: min(100cqw - 224px, 100cqh * 16 / 9, 960px);
   aspect-ratio: 16 / 9;
   border-radius: var(--radius-md);
   overflow: hidden;
@@ -761,7 +777,22 @@
   box-shadow: 0 6px 20px rgba(0, 113, 227, 0.45);
 }
 
+.routine-screen__side {
+  flex: none;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.routine-screen__title {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+
 .routine-screen__done {
-  align-self: center;
-  max-width: 360px;
+  font-size: 16px;
+  padding: 12px 16px;
 }

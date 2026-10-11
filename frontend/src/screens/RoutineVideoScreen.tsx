@@ -25,10 +25,12 @@ function embedUrl(videoId: string): string {
 }
 
 // The warm-up shown between "Start" and the first exercise, and the
-// cool-down shown between the last exercise and the summary. The video sits
-// in a 16:9 frame on a dark textured page: the frame first shows a start
-// button and loads the video when it's tapped, and the button below the
-// frame that moves on is available the whole time.
+// cool-down shown between the last exercise and the summary. Always laid out
+// in landscape (rotated 90° while the phone is held upright — see
+// .routine-screen__stage): a 16:9 video frame on a dark textured page, with
+// the title and the button that moves on in a side column, available the
+// whole time. The frame first shows a start button and loads the video when
+// it's tapped.
 export function RoutineVideoScreen({ kind }: { kind: 'warmup' | 'cooldown' }) {
   const { dashboard } = useAppState()
   const navigate = useNavigate()
@@ -48,8 +50,7 @@ export function RoutineVideoScreen({ kind }: { kind: 'warmup' | 'cooldown' }) {
 
   return (
     <div className="routine-screen">
-      <div className="routine-screen__content">
-        <h1 className="routine-screen__title">{routine.title}</h1>
+      <div className="routine-screen__stage">
         <div className="routine-screen__frame">
           {playing ? (
             <iframe
@@ -67,9 +68,12 @@ export function RoutineVideoScreen({ kind }: { kind: 'warmup' | 'cooldown' }) {
             </button>
           )}
         </div>
-        <button className="btn-primary routine-screen__done" onClick={handleDone}>
-          {routine.doneLabel}
-        </button>
+        <div className="routine-screen__side">
+          <h1 className="routine-screen__title">{routine.title}</h1>
+          <button className="btn-primary routine-screen__done" onClick={handleDone}>
+            {routine.doneLabel}
+          </button>
+        </div>
       </div>
     </div>
   )
