@@ -1,14 +1,23 @@
 import { useEffect, type ReactNode } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAppState } from './state/AppStateContext'
+import { EnrollScreen } from './screens/EnrollScreen'
 import { LoginScreen } from './screens/LoginScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
 
+function Spinner() {
+  return (
+    <div className="screen">
+      <div className="spinner" />
+    </div>
+  )
+}
+
 function RequireAuth({ children }: { children: ReactNode }) {
-  const { username, dashboard, loading, dashboardStatus, refreshDashboard } = useAppState()
+  const { authStatus, dashboard, loading, dashboardStatus, refreshDashboard } = useAppState()
 
   useEffect(() => {
     // Only fetch on the first mount for this session. Gating on
@@ -17,31 +26,39 @@ function RequireAuth({ children }: { children: ReactNode }) {
     // on every subsequent remount — route navigation remounts RequireAuth
     // separately per route, which previously turned a single 404 into a
     // fetch on every screen change.
-    if (username && dashboardStatus === 'idle') {
+    if (authStatus === 'signedIn' && dashboardStatus === 'idle') {
       refreshDashboard().catch(() => {
         // surfaced via useAppState().error, handled by DashboardScreen
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [username, dashboardStatus])
+  }, [authStatus, dashboardStatus])
 
-  if (!username) {
-    return <Navigate to="/login" replace />
-  }
-  if (!dashboard && loading) {
-    return (
-      <div className="screen">
-        <div className="spinner" />
-      </div>
-    )
-  }
+  if (authStatus === 'checking') return <Spinner />
+  if (authStatus === 'signedOut') return <Navigate to="/login" replace />
+  if (!dashboard && loading) return <Spinner />
+  return <>{children}</>
+}
+
+function RedirectIfSignedIn({ children }: { children: ReactNode }) {
+  const { authStatus } = useAppState()
+  if (authStatus === 'checking') return <Spinner />
+  if (authStatus === 'signedIn') return <Navigate to="/" replace />
   return <>{children}</>
 }
 
 function App() {
   return (
     <Routes>
-      <Route path="/login" element={<LoginScreen />} />
+      <Route
+        path="/login"
+        element={
+          <RedirectIfSignedIn>
+            <LoginScreen />
+          </RedirectIfSignedIn>
+        }
+      />
+      <Route path="/enroll" element={<EnrollScreen />} />
       <Route
         path="/"
         element={

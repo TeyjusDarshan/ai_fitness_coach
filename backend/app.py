@@ -4,20 +4,38 @@ Run (from the repo root):  python3 -m backend.app   then:
 
   curl -X POST http://localhost:8001/api/workout-plan \\
     -H "Content-Type: application/json" \\
+    -H "X-Admin-Key: $ADMIN_API_KEY" \\
     -d '{"userid": "usr_10235", "raw_user_text": "..."}'
+
+Coach/admin routes require the X-Admin-Key header; the PWA's routes require
+a passkey sign-in session (see backend/auth.py and
+backend/controllers/auth_controller.py).
 """
 import time
 
-from flask import Flask, jsonify, request
+from flask import Flask, g, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
+from backend.auth import require_admin, require_auth
+from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
+app.register_blueprint(auth_bp)
 plan_repo = WorkoutPlanRepository()
+
+
+def _deny_unless_session_owner(session_id):
+    """Error response unless the signed-in user owns this session, else None."""
+    owner = plan_repo.get_session_owner(session_id)
+    if owner is None:
+        return jsonify({"error": f"Session {session_id} not found."}), 404
+    if owner != g.user_id:
+        return jsonify({"error": "You don't have access to this session."}), 403
+    return None
 
 
 def _persist_generated_session(user_id, profile, plan, max_attempts=2):
@@ -40,6 +58,7 @@ def _persist_generated_session(user_id, profile, plan, max_attempts=2):
 
 
 @app.post("/api/workout-plan")
+@require_admin
 def create_workout_plan():
     body = request.get_json(silent=True) or {}
     user_id = body.get("userid")
@@ -81,6 +100,7 @@ def create_workout_plan():
 
 
 @app.patch("/api/workout-plan/<int:session_id>/complete")
+@require_admin
 def complete_session(session_id):
     try:
         updated = plan_repo.mark_session_completed(session_id)
@@ -94,6 +114,7 @@ def complete_session(session_id):
 
 
 @app.post("/api/users/<user_id>/progress-plan")
+@require_admin
 def progress_plan(user_id):
     existing = plan_repo.get_unfinished_session(user_id)
     if existing is not None:
@@ -120,7 +141,11 @@ def progress_plan(user_id):
 
 
 @app.get("/api/users/<user_id>/dashboard")
+@require_auth
 def get_dashboard(user_id):
+    if user_id != g.user_id:
+        return jsonify({"error": "You don't have access to this user's plan."}), 403
+
     existing = plan_repo.get_unfinished_session(user_id)
     if existing is None:
         return jsonify({"error": "No plan found for this user."}), 404
@@ -165,6 +190,7 @@ def get_dashboard(user_id):
 
 
 @app.post("/api/users/<user_id>/joint-pain")
+@require_admin
 def update_joint_pain(user_id):
     if not plan_repo.user_exists(user_id):
         return jsonify({"error": f"User {user_id} not found."}), 404
@@ -200,6 +226,7 @@ def update_joint_pain(user_id):
 
 
 @app.delete("/api/users/<user_id>/joint-pain/<int:joint_id>")
+@require_admin
 def delete_joint_pain(user_id, joint_id):
     if not plan_repo.user_exists(user_id):
         return jsonify({"error": f"User {user_id} not found."}), 404
@@ -220,7 +247,11 @@ def delete_joint_pain(user_id, joint_id):
 
 
 @app.post("/api/sessions/<int:session_id>/days/<int:day_number>/start")
+@require_auth
 def start_day(session_id, day_number):
+    if denied := _deny_unless_session_owner(session_id):
+        return denied
+
     try:
         log = plan_repo.start_day(session_id, day_number)
     except Exception:
@@ -232,7 +263,11 @@ def start_day(session_id, day_number):
 
 
 @app.patch("/api/sessions/<int:session_id>/exercises/<int:session_exercise_id>/sets/<int:set_number>")
+@require_auth
 def log_set(session_id, session_exercise_id, set_number):
+    if denied := _deny_unless_session_owner(session_id):
+        return denied
+
     body = request.get_json(silent=True) or {}
     completed_reps = body.get("completed_reps")
     if not isinstance(completed_reps, int) or isinstance(completed_reps, bool) or completed_reps < 0:
@@ -252,7 +287,11 @@ def log_set(session_id, session_exercise_id, set_number):
 
 
 @app.patch("/api/sessions/<int:session_id>/exercises/<int:session_exercise_id>/rpe")
+@require_auth
 def log_rpe(session_id, session_exercise_id):
+    if denied := _deny_unless_session_owner(session_id):
+        return denied
+
     body = request.get_json(silent=True) or {}
     rpe = body.get("rpe")
     if not isinstance(rpe, int) or isinstance(rpe, bool) or not (1 <= rpe <= 10):
@@ -270,7 +309,11 @@ def log_rpe(session_id, session_exercise_id):
 
 
 @app.post("/api/sessions/<int:session_id>/days/<int:day_number>/complete")
+@require_auth
 def complete_day(session_id, day_number):
+    if denied := _deny_unless_session_owner(session_id):
+        return denied
+
     try:
         summary = plan_repo.complete_day(session_id, day_number)
     except Exception:

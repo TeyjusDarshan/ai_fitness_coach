@@ -2,14 +2,12 @@
 export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // Between-set rest: shown after checking off a set that doesn't yet
-// complete the exercise (1:30).
-export const REST_BETWEEN_SETS_SECONDS = 90
+// complete the exercise (1:00).
+export const REST_BETWEEN_SETS_SECONDS = 60
 
 // Between-exercise rest: shown after "Begin Next Workout", once every set
-// of the current exercise is checked off.
-export const REST_BETWEEN_EXERCISES_SECONDS = 30
-
-export const USERNAME_STORAGE_KEY = 'fitness-coach:username'
+// of the current exercise is checked off (1:30).
+export const REST_BETWEEN_EXERCISES_SECONDS = 90
 
 // Coach's WhatsApp number for the "Share session with coach" flow (+91
 // 9180190745) — digits only (country code + number, no leading +), as

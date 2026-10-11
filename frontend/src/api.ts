@@ -8,11 +8,21 @@ class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+let onUnauthorized: (() => void) | null = null
+
+// Registered by AppStateProvider so an expired/revoked session anywhere in
+// the app drops the user back to the sign-in screen.
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
     ...init,
   })
+  if (res.status === 401) onUnauthorized?.()
   if (!res.ok) {
     let message = `Request failed (${res.status}).`
     try {
@@ -23,6 +33,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(res.status, message)
   }
+  if (res.status === 204) return undefined as T
   return res.json()
 }
 

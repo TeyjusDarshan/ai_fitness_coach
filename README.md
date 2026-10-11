@@ -16,7 +16,7 @@ raw text ──▶ preprocessor_agent ──▶ profile ──▶ workout_agent 
                                                           frontend/ (React + TS PWA)
 ```
 
-Both agents are LangChain agents backed by Gemini. The workout agent's output follows a fixed
+Both agents are LangChain agents backed by Claude Sonnet (`langchain-anthropic`). The workout agent's output follows a fixed
 per-plan-type day skeleton (`DAY_TEMPLATES` in `agents/prompts_v1.py`) — the DB only stores the
 per-exercise prescriptions, not the day structure, which is reconstructed from that skeleton at
 read time.
@@ -35,7 +35,7 @@ read time.
 
 ## Running it
 
-**Backend** — requires `.env` with `SUPABASE_URL`, `SUPABASE_KEY`, `GOOGLE_API_KEY`:
+**Backend** — requires `.env` with `SUPABASE_URL`, `SUPABASE_KEY`, `ANTHROPIC_API_KEY`, `ADMIN_API_KEY` (plus the optional `WEBAUTHN_*`/`APP_BASE_URL` auth settings under [API](#api)):
 ```bash
 python3 -m backend.app        # http://localhost:8001
 ```
@@ -50,25 +50,51 @@ directly (see the catch-all route below) — no separate frontend server needed.
 
 ## API
 
-All routes live in `backend/app.py`. Note the split: plan generation/completion is at the root
-(`/workout-plan*`); everything else — the PWA's day-to-day tracking — is under `/api`.
-There's no auth layer; `user_id` is a plain caller-supplied string (e.g. `"usr_10235"`).
+Workout routes live in `backend/app.py`; passkey auth routes in
+`backend/controllers/auth_controller.py`. `user_id` is a caller-supplied string (e.g. `"usr_10235"`)
+chosen by the coach when generating a plan.
 
-| Method & path | Purpose |
-|---|---|
-| `POST /workout-plan` | Generate (or fetch the in-progress) plan for a user |
-| `PATCH /workout-plan/<session_id>/complete` | Force-mark a session completed |
-| `POST /api/users/<user_id>/progress-plan` | Generate the *next* week's plan from the last completed one (usually already generated automatically — see below) |
-| `GET /api/users/<user_id>/dashboard` | Weekly calendar view — day statuses for the PWA home screen |
-| `POST /api/sessions/<id>/days/<n>/start` | Mark a day as started |
-| `PATCH /api/sessions/<id>/exercises/<id>/sets/<n>` | Log reps for one completed set |
-| `PATCH /api/sessions/<id>/exercises/<id>/rpe` | Log perceived exertion (1–10) for an exercise |
-| `POST /api/sessions/<id>/days/<n>/complete` | Mark a day done; auto-completes the session on the last day |
-| `GET /`, `GET /<path>` | Serves the built PWA (`frontend/dist`), falling back to `index.html` for client-side routes |
+**Auth** — two kinds of caller:
+- **Coach/admin** routes require an `X-Admin-Key: $ADMIN_API_KEY` header.
+- **PWA** routes require a passkey sign-in: an HttpOnly `fc_session` cookie set by
+  `/api/auth/*/verify`. They return `401` without one and `403` for another user's dashboard or
+  session.
+
+Onboarding a user: generate their plan, then mint a sign-up link and send it to them. Opening it
+in the PWA lets them create a passkey (Face ID / Touch ID / fingerprint), and later sign-ins use
+that passkey — no username or password.
+
+```bash
+curl -X POST http://localhost:8001/api/admin/users/usr_10235/enrollment-link -H "X-Admin-Key: $ADMIN_API_KEY"
+# -> {"url": "<APP_BASE_URL>/enroll?token=...", "expires_at": "..."}   (single-use, valid 48h)
+```
+
+| Method & path | Auth | Purpose |
+|---|---|---|
+| `POST /api/workout-plan` | admin | Generate (or fetch the in-progress) plan for a user |
+| `PATCH /api/workout-plan/<session_id>/complete` | admin | Force-mark a session completed |
+| `POST /api/users/<user_id>/progress-plan` | admin | Generate the *next* week's plan from the last completed one (usually already generated automatically — see below) |
+| `POST`/`DELETE /api/users/<user_id>/joint-pain…` | admin | Report / clear joint pain |
+| `POST /api/admin/users/<user_id>/enrollment-link` | admin | Mint a one-time passkey sign-up link |
+| `POST /api/auth/register/options`, `…/register/verify` | sign-up token (or session, to add a device) | Create a passkey |
+| `POST /api/auth/login/options`, `…/login/verify` | — | Sign in with a passkey (sets the session cookie) |
+| `GET /api/auth/me` | session | Who is signed in |
+| `POST /api/auth/logout` | — | End the session |
+| `GET /api/users/<user_id>/dashboard` | session (own user) | Weekly calendar view — day statuses for the PWA home screen |
+| `POST /api/sessions/<id>/days/<n>/start` | session (own session) | Mark a day as started |
+| `PATCH /api/sessions/<id>/exercises/<id>/sets/<n>` | session (own session) | Log reps for one completed set |
+| `PATCH /api/sessions/<id>/exercises/<id>/rpe` | session (own session) | Log perceived exertion (1–10) for an exercise |
+| `POST /api/sessions/<id>/days/<n>/complete` | session (own session) | Mark a day done; auto-completes the session on the last day |
+| `GET /`, `GET /<path>` | — | Serves the built PWA (`frontend/dist`), falling back to `index.html` for client-side routes |
+
+Auth config (env): `ADMIN_API_KEY`, `WEBAUTHN_RP_ID` (the site's domain — defaults to `localhost`),
+`WEBAUTHN_ORIGINS` (comma-separated, defaults to `http://localhost:5173`), `WEBAUTHN_RP_NAME`,
+`APP_BASE_URL` (used to build sign-up links). Passkeys are bound to `WEBAUTHN_RP_ID`, so ones created
+on one domain won't work on another; testing on a phone needs an HTTPS domain.
 
 ### Flow detail
 
-**`POST /workout-plan`** — `{userid, raw_user_text}`
+**`POST /api/workout-plan`** — `{userid, raw_user_text}`
 1. If the user already has an unfinished session, return it as-is (idempotent — no regeneration).
 2. Otherwise: `raw_user_text` → `generate_user_profile` (preprocessor agent) → profile → `generate_workout_plan_v1` (workout agent) → plan.
 3. Upsert `user_profiles`, insert `sessions` + `session_exercises` (retried once on transient failure).
@@ -76,7 +102,7 @@ There's no auth layer; `user_id` is a plain caller-supplied string (e.g. `"usr_1
 
 Errors: `400` missing fields · `502` profile extraction failed · `500` plan generation or persistence failure.
 
-**`PATCH /workout-plan/<session_id>/complete`**
+**`PATCH /api/workout-plan/<session_id>/complete`**
 Directly flips `sessions.completed = true`. A manual/administrative shortcut — the PWA's real
 completion path is the per-day `.../complete` route below, which completes the session
 automatically once every day is done. `404` if the session doesn't exist. Like any session
@@ -130,7 +156,7 @@ Powers `SummaryScreen`; `plan_completed` triggers the "You've completed your who
 
 **Triggered automatically.** Any time a session is marked completed —
 `mark_session_completed` in `backend/repository/workout_plan_repository.py`, called both by
-`complete_day` once the last day is done and by the manual `PATCH /workout-plan/<id>/complete`
+`complete_day` once the last day is done and by the manual `PATCH /api/workout-plan/<id>/complete`
 endpoint — it immediately builds next week's session via `create_progressed_session`. This is
 best-effort: it runs after the completion itself is already committed, so a failure here is
 logged and swallowed rather than failing the request that completed the session (the user simply

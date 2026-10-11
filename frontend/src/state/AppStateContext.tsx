@@ -2,25 +2,28 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react'
-import { fetchDashboard } from '../api'
-import { USERNAME_STORAGE_KEY } from '../constants'
+import { fetchDashboard, setUnauthorizedHandler } from '../api'
+import { fetchMe, logoutRequest } from '../auth'
 import type { Dashboard } from '../types'
 
 type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
+export type AuthStatus = 'checking' | 'signedIn' | 'signedOut'
 
 interface AppState {
-  username: string | null
+  authStatus: AuthStatus
+  userId: string | null
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
   dashboardStatus: DashboardStatus
-  login: (username: string) => Promise<void>
-  logout: () => void
+  completeSignIn: (userId: string) => void
+  logout: () => Promise<void>
   refreshDashboard: () => Promise<void>
   setDashboard: (dashboard: Dashboard) => void
   updateDashboard: (updater: (prev: Dashboard) => Dashboard) => void
@@ -29,9 +32,10 @@ interface AppState {
 const AppStateContext = createContext<AppState | null>(null)
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
-  const [username, setUsername] = useState<string | null>(() =>
-    localStorage.getItem(USERNAME_STORAGE_KEY),
-  )
+  // The session itself lives in an HttpOnly cookie the JS can't read, so on
+  // boot we ask the server who (if anyone) is signed in.
+  const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
+  const [userId, setUserId] = useState<string | null>(null)
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -45,43 +49,49 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // one in-flight request instead of firing duplicate network calls.
   const fetchInFlight = useRef(false)
 
-  const login = useCallback(async (candidateUsername: string) => {
-    if (fetchInFlight.current) return
-    fetchInFlight.current = true
-    setLoading(true)
+  const resetToSignedOut = useCallback(() => {
+    setUserId(null)
+    setDashboard(null)
     setError(null)
-    setDashboardStatus('loading')
-    try {
-      const data = await fetchDashboard(candidateUsername)
-      localStorage.setItem(USERNAME_STORAGE_KEY, candidateUsername)
-      setUsername(candidateUsername)
-      setDashboard(data)
-      setDashboardStatus('loaded')
-    } catch (e) {
-      setDashboardStatus('error')
-      setError(e instanceof Error ? e.message : 'Something went wrong.')
-      throw e
-    } finally {
-      setLoading(false)
-      fetchInFlight.current = false
-    }
+    setDashboardStatus('idle')
+    setAuthStatus('signedOut')
   }, [])
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(USERNAME_STORAGE_KEY)
-    setUsername(null)
+  useEffect(() => {
+    setUnauthorizedHandler(resetToSignedOut)
+    fetchMe()
+      .then((me) => {
+        setUserId(me.user_id)
+        setAuthStatus('signedIn')
+      })
+      .catch(resetToSignedOut)
+    return () => setUnauthorizedHandler(null)
+  }, [resetToSignedOut])
+
+  const completeSignIn = useCallback((signedInUserId: string) => {
+    setUserId(signedInUserId)
     setDashboard(null)
+    setError(null)
     setDashboardStatus('idle')
+    setAuthStatus('signedIn')
   }, [])
+
+  const logout = useCallback(async () => {
+    try {
+      await logoutRequest()
+    } finally {
+      resetToSignedOut()
+    }
+  }, [resetToSignedOut])
 
   const refreshDashboard = useCallback(async () => {
-    if (!username || fetchInFlight.current) return
+    if (!userId || fetchInFlight.current) return
     fetchInFlight.current = true
     setLoading(true)
     setError(null)
     setDashboardStatus('loading')
     try {
-      const data = await fetchDashboard(username)
+      const data = await fetchDashboard(userId)
       setDashboard(data)
       setDashboardStatus('loaded')
     } catch (e) {
@@ -97,7 +107,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       fetchInFlight.current = false
     }
-  }, [username])
+  }, [userId])
 
   const updateDashboard = useCallback((updater: (prev: Dashboard) => Dashboard) => {
     setDashboard((prev) => (prev ? updater(prev) : prev))
@@ -105,24 +115,26 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
-      username,
+      authStatus,
+      userId,
       dashboard,
       loading,
       error,
       dashboardStatus,
-      login,
+      completeSignIn,
       logout,
       refreshDashboard,
       setDashboard,
       updateDashboard,
     }),
     [
-      username,
+      authStatus,
+      userId,
       dashboard,
       loading,
       error,
       dashboardStatus,
-      login,
+      completeSignIn,
       logout,
       refreshDashboard,
       updateDashboard,

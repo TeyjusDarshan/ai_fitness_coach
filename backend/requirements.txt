@@ -6,3 +6,4 @@ langchain-core==1.6.5
 python-dotenv==1.2.2
 requests==2.34.2
 supabase==2.31.0
+webauthn==3.0.1

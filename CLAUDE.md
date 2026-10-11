@@ -4,13 +4,15 @@
 
 Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northeast-1`, Postgres 17.6).
 
-> ⚠️ **RLS is disabled on every table below.** All 14 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_day_analysis` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap pending an auth layer, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+> ⚠️ **RLS is disabled on every table below.** All 18 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `sessions`, `session_exercises`, `session_day_logs`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_day_analysis` hold real per-user data (generated profiles, workout sessions, prescribed exercises, workout-day progress, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+>
+> This includes the passkey-auth tables (`user_passkeys`, `auth_challenges`, `auth_sessions`, `passkey_enrollment_tokens`): the API-level passkey sign-in is only as strong as the secrecy of the publishable key, since anyone holding it can insert an `auth_sessions` row (or their own passkey) for any `user_id` and impersonate that user. Kept this way deliberately (decision 2026-09-27) because the backend's `SUPABASE_KEY` is the publishable key. The fix is to switch the backend (and `workout_analysis_consumer`) to the secret/service-role key, which bypasses RLS, and then enable RLS on these tables.
 
 > The exercise-library schema (`movement_types`, `equipment`, `joints`, `exercises`, `exercise_loaded_joints`, `exercise_relationships`) is sourced from `utilities/workout_builder/data/exercises.csv` and `relationships.csv`, migrated via `utilities/scripts/migrate_exercises_to_supabase.py` (idempotent — safe to re-run after editing the CSVs). Populated as of this writing: 66 exercises, 203 joint links, 110 relationships.
 
 ### Entity overview
 
-`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `user_joint_pain` holds one row per (user, joint) the user has reported pain for; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan; `session_day_analysis` holds one LLM-generated Tanglish summary per (session, day), written by the standalone `workout_analysis_consumer` service (see below).
+`exercises` is the hub table. `movement_types`, `equipment`, and `joints` are lookup tables. `exercise_loaded_joints` is a many-to-many join between `exercises` and `joints`. `exercise_relationships` is a self-referential edge table (progression/regression links between exercises). `user_profiles` holds one generated profile per user; `user_joint_pain` holds one row per (user, joint) the user has reported pain for; `sessions` holds one row per generated workout plan for a user; `session_exercises` is a join table between `sessions` and `exercises` recording the prescribed sets/reps per exercise slot; `session_exercise_set_logs` and `session_exercise_rpe` track per-set rep completion and per-exercise RPE against a `session_exercises` row; `session_day_logs` tracks start/completion timestamps for each individual day within a session's plan; `session_day_analysis` holds one LLM-generated Tanglish summary per (session, day), written by the standalone `workout_analysis_consumer` service (see below). The passkey-auth tables — `user_passkeys`, `auth_sessions`, `passkey_enrollment_tokens`, `auth_challenges` — hang off `user_profiles` (see "Passkey authentication tables" below).
 
 ```
 movement_types ─┐
@@ -84,6 +86,7 @@ Populated by the Flask `/workout-plan` endpoint (`backend/app.py`) via `WorkoutP
 | `profile` | jsonb | full generated profile (`demographics`, `goals`, `experience`, `health`, `availability`, etc. — see `agents/mock_data_v1.py` for the shape) |
 | `created_at` | timestamptz, default `now()` | |
 | `updated_at` | timestamptz, default `now()` | bumped on every upsert |
+| `webauthn_user_handle` | text, nullable, unique | random 32-byte WebAuthn `user.id` (base64url), created on first passkey enrollment by `AuthRepository.get_or_create_user_handle`; shared by all of the user's passkeys and checked against `userHandle` at sign-in |
 
 ### `user_joint_pain` — reported pain per (user, joint)
 
@@ -197,6 +200,30 @@ One row per day of a session that's been marked complete. Written by the standal
 
 Unique: (`session_id`, `day_number`) — makes the consumer's write an idempotent upsert, so redelivering an already-processed Kafka message overwrites rather than duplicates.
 
+### Passkey authentication tables
+
+Written by `AuthRepository` (`backend/repository/auth_repository.py`) via the passkey endpoints in `backend/controllers/auth_controller.py`; session cookies and route guards live in `backend/auth.py`. Enrollment is coach-issued: `POST /api/admin/users/<user_id>/enrollment-link` (requires `X-Admin-Key`) mints a one-time link; the user opens it in the PWA and creates a passkey. Session and enrollment tokens are stored only as SHA-256 hashes. All `user_id` FKs → `user_profiles.user_id` `ON DELETE CASCADE`, indexed.
+
+**`user_passkeys`** — one row per registered passkey.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `user_id` | text, FK | |
+| `credential_id` | text, unique | base64url credential id — looked up on every sign-in |
+| `public_key` | text | base64url COSE public key |
+| `sign_count` | int8, default 0 | synced iCloud/Google passkeys always report 0 |
+| `transports` | text[], nullable | as reported by the browser (e.g. `internal`, `hybrid`) |
+| `aaguid` | text, nullable | authenticator model id |
+| `backed_up` | bool, default `false` | whether the passkey is synced (backup state) |
+| `created_at` / `last_used_at` | timestamptz | |
+
+**`auth_challenges`** — pending WebAuthn challenges (5-minute expiry). Each `/verify` call reads the challenge back out of the credential's `clientDataJSON` and deletes the matching row in a single `DELETE`, so a challenge works at most once. Columns: `id`, `challenge` (text, unique, base64url), `purpose` (check ∈ `registration, authentication`), `user_id` (nullable — null for sign-in, since sign-in is username-less), `expires_at`, `created_at`. Expired rows are deleted opportunistically on each `POST /api/auth/login/options`.
+
+**`auth_sessions`** — signed-in sessions behind the `fc_session` HttpOnly cookie (30-day expiry). Columns: `id`, `user_id`, `token_hash` (text, unique), `created_at`, `expires_at`, `last_seen_at` (bumped by `GET /api/auth/me`). Deleted on logout.
+
+**`passkey_enrollment_tokens`** — coach-issued one-time sign-up links (48-hour expiry). Columns: `id`, `user_id`, `token_hash` (text, unique), `expires_at`, `used_at` (nullable — set once by a conditional `UPDATE` when enrollment succeeds), `created_at`. Minting a new link deletes that user's older unused ones.
+
 ### Notes on FK delete behavior
 
-`movement_type_id` and `equipment_id` on `exercises`, `exercise_id` on `session_exercises`, and `joint_id` on `user_joint_pain`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions` and on `user_joint_pain` is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions` and `user_joint_pain` rows; `sessions` in turn cascades to `session_exercises`, `session_day_logs`, and `session_day_analysis` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across every child table. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. `sessions.parent_session_id` (self-referential) is the one exception to the "no cascade blocks delete" rule: it's `ON DELETE SET NULL`, so deleting a parent session merely nulls out its children's `parent_session_id` rather than being blocked or cascading further. Indexes exist on all FK columns.
+`movement_type_id` and `equipment_id` on `exercises`, `exercise_id` on `session_exercises`, and `joint_id` on `user_joint_pain`, have no cascade, so deleting a referenced row is blocked while referenced. `user_id` on `sessions`, `user_joint_pain`, and the four passkey-auth tables is `ON DELETE CASCADE` — deleting a `user_profiles` row cascades to that user's `sessions`, `user_joint_pain`, passkeys, auth sessions, enrollment tokens and pending challenges; `sessions` in turn cascades to `session_exercises`, `session_day_logs`, and `session_day_analysis` via `session_id`, and `session_exercises` cascades further to `session_exercise_set_logs` and `session_exercise_rpe` via `session_exercise_id`. So deleting a `user_profiles` row transitively deletes all of that user's data across every child table. The join/edge tables (`exercise_loaded_joints`, `exercise_relationships`) cascade on delete from `exercises`. `sessions.parent_session_id` (self-referential) is the one exception to the "no cascade blocks delete" rule: it's `ON DELETE SET NULL`, so deleting a parent session merely nulls out its children's `parent_session_id` rather than being blocked or cascading further. Indexes exist on all FK columns.

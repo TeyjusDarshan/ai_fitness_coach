@@ -37,8 +37,8 @@ export function DashboardScreen() {
     return (
       <div className="screen">
         <div className="error-banner">{error}</div>
-        <button className="btn-secondary" onClick={logout}>
-          Try a different username
+        <button className="btn-secondary" onClick={() => void logout()}>
+          Sign out
         </button>
       </div>
     )

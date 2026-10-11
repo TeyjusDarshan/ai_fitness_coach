@@ -6,7 +6,7 @@ import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDurati
 import type { DayCompleteSummary } from '../types'
 
 export function SummaryScreen() {
-  const { dashboard, username, refreshDashboard } = useAppState()
+  const { dashboard, userId, refreshDashboard } = useAppState()
   const navigate = useNavigate()
   const { dayNumber } = useParams()
   const dayNum = Number(dayNumber)
@@ -30,8 +30,8 @@ export function SummaryScreen() {
     } catch {
       // No unfinished session left to fetch — e.g. this was the plan's last
       // remaining day and it just auto-completed the whole plan. Navigate
-      // anyway; the dashboard screen's own error state (with a "try a
-      // different username" fallback) takes over from here.
+      // anyway; the dashboard screen's own error state (with a "Sign out"
+      // fallback) takes over from here.
     }
     navigate('/', { replace: true })
   }
@@ -59,7 +59,7 @@ export function SummaryScreen() {
 
   function handleShareWithCoach() {
     if (!day || !summary || !dashboard) return
-    const message = buildCoachShareMessage(day, summary, username, dashboard.session_id)
+    const message = buildCoachShareMessage(day, summary, userId, dashboard.session_id)
     window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
   }
 
@@ -73,7 +73,7 @@ export function SummaryScreen() {
         {summary.plan_completed && (
           <p className="summary-card__plan-complete">You've completed your whole plan! 🎉</p>
         )}
-        <div className="summary-card__name">{username ? capitalize(username) : ''}</div>
+        <div className="summary-card__name">{userId ? capitalize(userId) : ''}</div>
         <div className="summary-card__avatar" aria-hidden>🙂</div>
 
         <dl className="summary-card__stats">

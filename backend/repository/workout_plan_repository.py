@@ -176,6 +176,16 @@ class WorkoutPlanRepository:
         )
         return bool(rows)
 
+    def get_session_owner(self, session_id: int) -> Optional[str]:
+        rows = (
+            self.client.table("sessions")
+            .select("user_id")
+            .eq("id", session_id)
+            .execute()
+            .data
+        )
+        return rows[0]["user_id"] if rows else None
+
     def upsert_joint_pain(self, user_id: str, joint_pains: List[Dict[str, Any]]) -> List[dict]:
         """Upsert one or more (user, joint) pain_level rows into user_joint_pain.
 
