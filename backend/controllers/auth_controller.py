@@ -99,15 +99,20 @@ def create_enrollment_link(user_id):
     if auth_repo.get_user_auth_row(user_id) is None:
         return jsonify({"error": f"User {user_id} not found."}), 404
 
+    return jsonify(mint_enrollment_link(user_id)), 200
+
+
+def mint_enrollment_link(user_id: str) -> dict:
+    """Store a fresh one-time enrollment token for user_id and return its link."""
     token = secrets.token_urlsafe(32)
     expires_at = utcnow() + ENROLLMENT_TTL
     auth_repo.create_enrollment_token(user_id, hash_token(token), expires_at)
 
     base_url = os.environ.get("APP_BASE_URL", request.host_url).rstrip("/")
-    return jsonify({
+    return {
         "url": f"{base_url}/enroll?token={token}",
         "expires_at": expires_at.isoformat(),
-    }), 200
+    }
 
 
 @auth_bp.post("/api/auth/register/options")

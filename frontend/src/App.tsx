@@ -7,6 +7,7 @@ import { DashboardScreen } from './screens/DashboardScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
+import { AdminScreen } from './screens/admin/AdminScreen'
 
 function Spinner() {
   return (
@@ -59,6 +60,7 @@ function App() {
         }
       />
       <Route path="/enroll" element={<EnrollScreen />} />
+      <Route path="/admin" element={<AdminScreen />} />
       <Route
         path="/"
         element={

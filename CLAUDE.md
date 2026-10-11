@@ -78,7 +78,7 @@ Unique: (`from_exercise_id`, `to_exercise_id`, `type`).
 
 ### `user_profiles` — generated client profile per user
 
-Populated by the Flask `/workout-plan` endpoint (`backend/app.py`) via `WorkoutPlanRepository.upsert_user_profile`. **Upsert-by-`user_id`, not versioned** — each new generation for a user overwrites the previous profile; there is no history table.
+Populated via `WorkoutPlanRepository.upsert_user_profile` by either the Flask `/workout-plan` endpoint (`backend/app.py`) or the coach admin flow's `POST /api/admin/users/profile` (`backend/controllers/admin_plan_controller.py`, driven by the PWA's `/admin` screen), both of which run `generate_user_profile` (preprocessor agent) on the coach's free-form client text. **Upsert-by-`user_id`, not versioned** — each new generation for a user overwrites the previous profile; there is no history table.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -105,7 +105,7 @@ Unique: (`user_id`, `joint_id`) — makes `upsert_joint_pain` an idempotent upse
 
 ### `sessions` — one row per generated workout plan
 
-Populated by `WorkoutPlanRepository.create_session` (brand-new plan) or `WorkoutPlanRepository.create_progressed_session` (progress-plan flow — carries forward a completed session's exercises) after a successful generation. Plan-level metadata only — the per-exercise prescriptions live in `session_exercises`.
+Populated by `WorkoutPlanRepository.create_session` (brand-new plan — either agent-generated via `/workout-plan`, or hand-built by the coach in the `/admin` planner and saved via `POST /api/admin/users/<user_id>/initial-plan`, which refuses with 409 if the user already has an unfinished session and sets `plan_selection_reason` to "Built manually by coach") or `WorkoutPlanRepository.create_progressed_session` (progress-plan flow — carries forward a completed session's exercises) after a successful generation. Plan-level metadata only — the per-exercise prescriptions live in `session_exercises`.
 
 | Column | Type | Notes |
 |---|---|---|

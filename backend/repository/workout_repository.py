@@ -50,6 +50,17 @@ class WorkoutRepository:
         rows = query.execute().data
         return [self._normalize_exercise(row) for row in rows]
 
+    def list_exercises(self) -> list[dict]:
+        """Return the whole exercise library, ordered by name."""
+        rows = (
+            self.client.table("exercises")
+            .select("*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name))")
+            .order("name")
+            .execute()
+            .data
+        )
+        return [self._normalize_exercise(row) for row in rows]
+
     def get_progressions_or_regressions(self, exercise_id: int, direction: str) -> Optional[list[dict]]:
         """Return the progression/regression exercises linked to exercise_id.
 

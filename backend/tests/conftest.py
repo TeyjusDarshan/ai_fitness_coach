@@ -6,7 +6,12 @@ import pytest
 # Modules that build a Supabase-backed repository at import time; dropped
 # from sys.modules around each test so every test imports them fresh under
 # the mocked create_client instead of reusing a previous test's instances.
-_APP_MODULES = ("backend.app", "backend.auth", "backend.controllers.auth_controller")
+_APP_MODULES = (
+    "backend.app",
+    "backend.auth",
+    "backend.controllers.auth_controller",
+    "backend.controllers.admin_plan_controller",
+)
 
 TEST_SESSION_TOKEN = "test-session-token"
 
@@ -31,6 +36,7 @@ def app_module():
     _drop_app_modules()
     with patch("backend.repository.workout_plan_repository.create_client", return_value=MagicMock()), \
          patch("backend.repository.auth_repository.create_client", return_value=MagicMock()), \
+         patch("backend.repository.workout_repository.create_client", return_value=MagicMock()), \
          patch("backend.kafka_producer.client.Producer", return_value=MagicMock()), \
          patch("whatsapp_client.client.WhatsAppClient.__init__", return_value=None):
         import backend.app as module

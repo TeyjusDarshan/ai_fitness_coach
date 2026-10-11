@@ -18,6 +18,7 @@ from flask import Flask, g, jsonify, request
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
 from backend.auth import require_admin, require_auth
+from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
@@ -25,6 +26,7 @@ from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRep
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
 app.register_blueprint(auth_bp)
+app.register_blueprint(admin_plan_bp)
 plan_repo = WorkoutPlanRepository()
 
 
