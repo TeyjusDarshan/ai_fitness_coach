@@ -1,23 +1,30 @@
-/* Apple-inspired design tokens, extended with the mobile card/checkmark/
-   timer-ring language from the product mockup. */
+/* Warm cream + forest-green design tokens, from the product mockup: soft
+   rounded cards, coloured status badges, dark-green primary actions. */
 
 :root {
-  --ink: #1d1d1f;
-  --ink-secondary: #86868b;
-  --footnote: #6e6e73;
-  --surface: #ffffff;
-  --surface-alt: #f5f5f7;
-  --hairline: #d2d2d7;
-  --accent: #0071e3;
-  --accent-hover: #0077ed;
-  --success: #34c759;
-  --warning: #ff9f0a;
+  --bg: #f6f1e7;
+  --ink: #1e2b24;
+  --ink-secondary: #6f766c;
+  --footnote: #6f766c;
+  --heading: #17402f;
+  --surface: #fffdf8;
+  --surface-alt: #f0eadc;
+  --hairline: #e2dac8;
+  --accent: #1f5c45;
+  --accent-hover: #184a37;
+  --accent-soft: #e4efe7;
+  --success: #2e8b57;
+  --danger: #c0503a;
+  --danger-soft: #fbe4dc;
+  --info: #2f6fb3;
+  --info-soft: #e6f0fa;
+  --warning: #e8a33d;
 
-  --radius-lg: 20px;
-  --radius-md: 14px;
+  --radius-lg: 22px;
+  --radius-md: 16px;
   --radius-pill: 980px;
 
-  --shadow-card: 0 2px 12px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 4px 16px rgba(60, 50, 30, 0.08);
 }
 
 * {
@@ -34,7 +41,7 @@ body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Helvetica, Arial,
     sans-serif;
-  background: var(--surface-alt);
+  background: var(--bg);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   /* iOS PWA safe-area support */
@@ -53,8 +60,9 @@ body {
 
 .screen-title {
   font-size: 28px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: -0.015em;
+  color: var(--heading);
   margin: 0 0 20px;
 }
 
@@ -68,15 +76,16 @@ button {
   justify-content: center;
   gap: 6px;
   font-size: 17px;
-  font-weight: 500;
+  font-weight: 600;
   color: #fff;
   background: var(--accent);
   border: none;
   border-radius: var(--radius-pill);
-  padding: 14px 22px;
+  padding: 15px 22px;
   cursor: pointer;
   transition: background 0.2s ease;
   width: 100%;
+  box-shadow: 0 4px 12px rgba(31, 92, 69, 0.25);
 }
 .btn-primary:hover {
   background: var(--accent-hover);
@@ -91,35 +100,41 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--ink);
-  background: #fff;
-  border: 1.5px solid var(--hairline);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--heading);
+  background: transparent;
+  border: 1.5px solid var(--accent);
   border-radius: var(--radius-pill);
   padding: 12px 20px;
   cursor: pointer;
   width: 100%;
 }
 
-.btn-whatsapp {
+.back-link {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
+  gap: 4px;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--heading);
   font-size: 17px;
   font-weight: 500;
-  color: #fff;
-  background: #25d366;
-  border: none;
-  border-radius: var(--radius-pill);
-  padding: 14px 22px;
+  padding: 4px 0;
+  margin-bottom: 12px;
   cursor: pointer;
-  transition: background 0.2s ease;
-  width: 100%;
 }
-.btn-whatsapp:hover {
-  background: #1ebe5b;
+
+.chip {
+  display: inline-block;
+  align-self: flex-start;
+  background: var(--accent-soft);
+  color: var(--heading);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .btn-link {

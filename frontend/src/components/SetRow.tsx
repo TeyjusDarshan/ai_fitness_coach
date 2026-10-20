@@ -1,3 +1,5 @@
+import { Icon } from './Icon'
+
 interface Props {
   index: number
   targetReps: number
@@ -11,7 +13,7 @@ export function SetRow({ index, targetReps, reps, confirmed, onChange, onConfirm
   return (
     <div className="set-row">
       <span className="set-row__label">
-        Set {index + 1}
+        <span className="set-row__title">Set {index + 1}</span>
         {targetReps ? <span className="set-row__target">Target {targetReps} reps</span> : null}
       </span>
 
@@ -43,7 +45,7 @@ export function SetRow({ index, targetReps, reps, confirmed, onChange, onConfirm
           aria-pressed={confirmed}
           onClick={onConfirm}
         >
-          ✓
+          <Icon name="check" size={18} />
         </button>
       </div>
     </div>

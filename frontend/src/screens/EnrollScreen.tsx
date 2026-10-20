@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { browserSupportsWebAuthn } from '@simplewebauthn/browser'
 import { ApiError } from '../api'
 import { enrollPasskey, fetchRegistrationOptions, passkeyErrorMessage, type RegistrationOptions } from '../auth'
+import { Illustration } from '../components/Illustration'
 import { useAppState } from '../state/AppStateContext'
 
 const INVALID_LINK_MESSAGE = 'This sign-up link is invalid or has expired. Ask your coach for a new one.'
@@ -75,7 +76,7 @@ export function EnrollScreen() {
   return (
     <div className="screen login-screen">
       <div className="login-screen__brand">
-        <div className="login-screen__logo" aria-hidden>🏋️</div>
+        <Illustration className="login-screen__art" />
         <h1 className="screen-title">Set up sign-in</h1>
         <p className="login-screen__subtitle">
           Create a passkey to sign in with Face ID, Touch ID or your fingerprint — no password needed.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill } from '@simplewebauthn/browser'
 import { fetchLoginOptions, passkeyErrorMessage, signInWithPasskey, type LoginOptions } from '../auth'
+import { Illustration } from '../components/Illustration'
 import { useAppState } from '../state/AppStateContext'
 
 // Server-side challenges expire after 5 minutes; refresh a little before.
@@ -77,7 +78,7 @@ export function LoginScreen() {
   return (
     <div className="screen login-screen">
       <div className="login-screen__brand">
-        <div className="login-screen__logo" aria-hidden>🏋️</div>
+        <Illustration className="login-screen__art" />
         <h1 className="screen-title">AI Fitness Coach</h1>
         <p className="login-screen__subtitle">Sign in with your passkey to see your weekly plan.</p>
       </div>

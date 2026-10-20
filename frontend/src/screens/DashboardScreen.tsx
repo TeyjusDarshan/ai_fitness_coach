@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { HeroHeader } from '../components/HeroHeader'
 import { WorkoutPanel } from '../components/WorkoutPanel'
 import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
@@ -41,6 +42,7 @@ export function DashboardScreen() {
 
   return (
     <div className="screen">
+      <HeroHeader />
       <h1 className="screen-title">Your Workouts</h1>
       {startError && <div className="error-banner">{startError}</div>}
       <div className="workout-list">

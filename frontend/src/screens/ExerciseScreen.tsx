@@ -3,6 +3,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { SetRow } from '../components/SetRow'
 import { EffortSlider, DEFAULT_RPE } from '../components/EffortSlider'
+import { Icon } from '../components/Icon'
 import { useAppState } from '../state/AppStateContext'
 import { logSet, logRpe } from '../api'
 import { flattenExercises, targetRepsForSet, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
@@ -119,6 +120,7 @@ export function ExerciseScreen() {
     <div className="screen">
       <VideoPlayer videoUrl={exercise.video_url} />
       <h1 className="screen-title exercise-name">{exercise.name}</h1>
+      {exercise.slot && <span className="chip">{exercise.slot}</span>}
 
       <div className="card set-list">
         {repCounts.map((reps, i) => {
@@ -140,7 +142,7 @@ export function ExerciseScreen() {
       <EffortSlider rpe={exercise.rpe} onChange={handleRpeChange} />
 
       <button className="btn-primary begin-next-btn" onClick={handleBeginNext}>
-        Begin Next Workout
+        Begin Next Workout <Icon name="chevronRight" size={18} />
       </button>
     </div>
   )

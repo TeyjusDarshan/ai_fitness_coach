@@ -1,3 +1,5 @@
+import { Icon } from './Icon'
+
 // Simplified 3-point front end for the 1-10 RPE scale the backend stores —
 // each label maps to a representative value rather than exposing all 10.
 export const LEVELS = [
@@ -27,7 +29,10 @@ export function EffortSlider({ rpe, onChange }: Props) {
 
   return (
     <div className="effort-slider">
-      <span className="effort-slider__title">How hard was this exercise?</span>
+      <span className="effort-slider__title">
+        <Icon name="activity" size={18} />
+        How hard was this exercise?
+      </span>
       <input
         type="range"
         className="effort-slider__input"

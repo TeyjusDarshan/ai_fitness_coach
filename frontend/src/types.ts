@@ -5,6 +5,7 @@ export interface SetLog {
 
 export interface ExerciseEntry {
   id: number
+  category: 'primary' | 'secondary'
   slot: string | null
   exercise_id: number
   name: string

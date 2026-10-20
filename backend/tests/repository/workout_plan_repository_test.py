@@ -663,7 +663,9 @@ def test_unfinished_plan_lists_its_workouts_in_date_order_with_names_and_exercis
         (15, 5, "Full Body (Unilateral & Work Capacity)", "2026-10-16"),
     ]
     assert workouts[0]["completed_at"] == "2026-10-12T10:30:00+00:00"
-    assert [e["name"] for e in workouts[2]["exercises"]] == ["Squat", "Plank"]  # primary first
+    assert [(e["name"], e["category"]) for e in workouts[2]["exercises"]] == [
+        ("Squat", "primary"), ("Plank", "secondary"),
+    ]
 
 
 def test_previous_plan_workouts_come_from_the_last_completed_plan_other_than_the_current_one():

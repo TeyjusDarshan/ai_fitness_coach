@@ -957,6 +957,7 @@ class WorkoutPlanRepository:
         exercise = WorkoutRepository._normalize_exercise(row["exercises"])
         return {
             "id": row["id"],
+            "category": row.get("category"),
             "slot": row.get("slot_label"),
             "exercise_id": exercise["id"],
             "name": exercise["name"],

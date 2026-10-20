@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import { completeSession } from '../api'
+import { Icon } from '../components/Icon'
 import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDuration } from '../utils'
 import type { DayCompleteSummary } from '../types'
 
@@ -67,50 +68,84 @@ export function SummaryScreen() {
 
   return (
     <div className="screen summary-screen">
-      <div className="card summary-card">
-        <div className="summary-card__confetti" aria-hidden>
-          🎉 🎊 🎉
+      <div className="summary-card">
+        <div className="summary-card__trophy">
+          <span className="summary-card__confetti" aria-hidden>
+            {Array.from({ length: 10 }, (_, i) => (
+              <span key={i} className={`confetti confetti--${i}`} />
+            ))}
+          </span>
+          <Laurel side="left" />
+          <span className="summary-card__cup">
+            <Icon name="trophy" size={76} />
+          </span>
+          <Laurel side="right" />
         </div>
-        <h1 className="summary-card__title">CONGRATULATIONS!</h1>
+        <h1 className="summary-card__title">Congratulations!</h1>
         {summary.plan_completed && (
-          <p className="summary-card__plan-complete">You've completed your whole plan! 🎉</p>
+          <p className="summary-card__plan-complete">You've completed your whole plan!</p>
         )}
-        <div className="summary-card__name">{userId ? capitalize(userId) : ''}</div>
-        <div className="summary-card__avatar" aria-hidden>🙂</div>
+        {userId && <div className="summary-card__name">{capitalize(userId)}</div>}
+        <div className="summary-card__avatar" aria-hidden>
+          🙂
+        </div>
+        <div className="summary-card__well-done">Well done!</div>
+        <p className="summary-card__motto">
+          Small steps every day
+          <br />
+          lead to big changes.
+        </p>
 
         <dl className="summary-card__stats">
           <div className="summary-card__stat">
-            <dt>Total Time:</dt>
+            <dt>
+              <Icon name="clock" size={18} />
+              Total Time:
+            </dt>
             <dd>{formatDuration(summary.total_time_seconds)}</dd>
           </div>
           <div className="summary-card__stat">
-            <dt>Exercises Completed:</dt>
+            <dt>
+              <Icon name="dumbbell" size={18} />
+              Exercises Completed:
+            </dt>
             <dd>{summary.exercises_completed}</dd>
           </div>
           <div className="summary-card__stat">
-            <dt>Sets:</dt>
+            <dt>
+              <Icon name="layers" size={18} />
+              Sets:
+            </dt>
             <dd>{summary.sets_completed}</dd>
-          </div>
-          <div className="summary-card__stat">
-            <dt>Avg. Rest:</dt>
-            <dd>Placeholder</dd>
-          </div>
-          <div className="summary-card__stat">
-            <dt>Pace:</dt>
-            <dd>Placeholder</dd>
           </div>
         </dl>
       </div>
 
       {day && (
-        <button className="btn-whatsapp" onClick={handleShareWithCoach}>
+        <button className="btn-primary" onClick={handleShareWithCoach}>
+          <Icon name="share" size={18} />
           Share Session with Coach
         </button>
       )}
 
-      <button className="btn-primary" onClick={handleBackToDashboard}>
+      <button className="btn-secondary" onClick={handleBackToDashboard}>
         Back to Dashboard
       </button>
     </div>
+  )
+}
+
+// A sprig of leaves either side of the trophy.
+function Laurel({ side }: { side: 'left' | 'right' }) {
+  return (
+    <svg viewBox="0 0 30 60" className={`laurel laurel--${side}`} aria-hidden>
+      <path d="M22 58C10 46 6 30 12 6" stroke="#5f9b78" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      {[12, 24, 36, 48].map((y) => (
+        <g key={y}>
+          <ellipse cx={y < 30 ? 6 : 9} cy={y} rx="6" ry="3" transform={`rotate(-35 ${y < 30 ? 6 : 9} ${y})`} fill="#7fb38c" />
+          <ellipse cx={y < 30 ? 17 : 21} cy={y - 4} rx="6" ry="3" transform={`rotate(35 ${y < 30 ? 17 : 21} ${y - 4})`} fill="#9cc49f" />
+        </g>
+      ))}
+    </svg>
   )
 }
