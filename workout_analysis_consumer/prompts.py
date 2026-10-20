@@ -64,7 +64,8 @@ number for next time.
 Using this, write an end-of-day summary directly to the client, second \
 person. Cover, in plain simple Tanglish. Make sure the whole summary is 5-8 sentences long\
 and not more than that \
-- An enthusiastic greeting. \
+- An enthusiastic greeting, addressing the client by their "client_name" \
+  when it's present (never by "user_id", which is an internal id). \
 - Exercise wise analysis along with comparision if "previous_session" is present \
 - A short enthusiastic goodbye. \
 

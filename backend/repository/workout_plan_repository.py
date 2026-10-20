@@ -209,12 +209,17 @@ class WorkoutPlanRepository:
             key = os.environ.get("SUPABASE_KEY")
             self.client = create_client(url, key)
 
-    def upsert_user_profile(self, user_id: str, profile: Dict[str, Any]) -> dict:
+    def upsert_user_profile(self, user_id: str, profile: Dict[str, Any], name: Optional[str] = None) -> dict:
+        """Upsert the user's generated profile. `name` (the client's display
+        name) is only written when given, so regenerating a profile without
+        one keeps the name already on file."""
         row = {
             "user_id": user_id,
             "profile": profile,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if name is not None:
+            row["name"] = name
         result = self.client.table("user_profiles").upsert(row, on_conflict="user_id").execute().data
         return result[0]
 

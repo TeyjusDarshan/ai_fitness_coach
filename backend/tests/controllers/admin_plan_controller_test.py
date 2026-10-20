@@ -84,15 +84,17 @@ def test_profile_generates_and_upserts_with_callers_user_id(admin):
 
     response = client.post(
         "/api/admin/users/profile",
-        json={"user_id": "usr_new", "raw_user_text": "52yo, sore knee"},
+        json={"user_id": "usr_new", "name": "  Asha Raman ", "raw_user_text": "52yo, sore knee"},
         headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 200
     expected = {"user_id": "usr_new", "goals": {}}
-    assert response.get_json() == {"user_id": "usr_new", "profile": expected, "user_created": True}
+    assert response.get_json() == {
+        "user_id": "usr_new", "name": "Asha Raman", "profile": expected, "user_created": True,
+    }
     controller.generate_user_profile.assert_called_once_with("52yo, sore knee")
-    controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected)
+    controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected, "Asha Raman")
 
 
 def test_profile_for_existing_user_reports_not_created(admin):
@@ -100,7 +102,7 @@ def test_profile_for_existing_user_reports_not_created(admin):
     controller.plan_repo.user_exists.return_value = True
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 200
@@ -112,7 +114,7 @@ def test_profile_conflicts_with_unfinished_plan_before_calling_llm(admin):
     controller.plan_repo.get_unfinished_plan.return_value = {"id": 5, "completed": False, "plan": {}}
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 409
@@ -126,7 +128,7 @@ def test_profile_preprocessor_failure_returns_502(admin):
     controller.generate_user_profile.side_effect = ValueError("bad json")
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 502
@@ -138,20 +140,24 @@ def test_profile_save_failure_returns_500(admin):
     controller.plan_repo.upsert_user_profile.side_effect = RuntimeError("db unreachable")
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 500
 
 
 @pytest.mark.parametrize("body", [
-    {"raw_user_text": "x"},
-    {"user_id": "", "raw_user_text": "x"},
-    {"user_id": "has space", "raw_user_text": "x"},
-    {"user_id": "x" * 65, "raw_user_text": "x"},
-    {"user_id": 123, "raw_user_text": "x"},
-    {"user_id": "usr_new"},
-    {"user_id": "usr_new", "raw_user_text": "   "},
+    {"name": "Asha", "raw_user_text": "x"},
+    {"user_id": "", "name": "Asha", "raw_user_text": "x"},
+    {"user_id": "has space", "name": "Asha", "raw_user_text": "x"},
+    {"user_id": "x" * 65, "name": "Asha", "raw_user_text": "x"},
+    {"user_id": 123, "name": "Asha", "raw_user_text": "x"},
+    {"user_id": "usr_new", "raw_user_text": "x"},
+    {"user_id": "usr_new", "name": "   ", "raw_user_text": "x"},
+    {"user_id": "usr_new", "name": "x" * 101, "raw_user_text": "x"},
+    {"user_id": "usr_new", "name": 7, "raw_user_text": "x"},
+    {"user_id": "usr_new", "name": "Asha"},
+    {"user_id": "usr_new", "name": "Asha", "raw_user_text": "   "},
 ])
 def test_profile_rejects_invalid_payload(admin, body):
     client, controller = admin

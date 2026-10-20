@@ -676,3 +676,28 @@ def test_previous_plan_workouts_come_from_the_last_completed_plan_other_than_the
 
     assert [w["session_id"] for w in repo.get_previous_plan_workouts("usr_1", before_plan_id=8)] == [11]
     assert repo.get_previous_plan_workouts("usr_1", before_plan_id=7) == []
+
+
+def test_upsert_user_profile_writes_name_only_when_given():
+    client = FakeSupabaseClient()
+    upserts = []
+    client.table = lambda name: _RecordingUpsert(upserts)
+    repo = _repo(client)
+
+    repo.upsert_user_profile("usr_1", {"goals": {}}, "Asha")
+    repo.upsert_user_profile("usr_1", {"goals": {}})
+
+    assert upserts[0]["name"] == "Asha"
+    assert "name" not in upserts[1]
+
+
+class _RecordingUpsert:
+    def __init__(self, upserts):
+        self.upserts = upserts
+
+    def upsert(self, row, **_kwargs):
+        self.upserts.append(row)
+        return self
+
+    def execute(self):
+        return FakeResponse([self.upserts[-1]])

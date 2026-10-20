@@ -4,9 +4,10 @@ import { generateProfile, type ClientProfile, type ProfileResult } from '../../a
 import { humanize } from './planDraft'
 
 const USER_ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
+const MAX_NAME_LENGTH = 100
 
-// Step 1: user id + the coach's free-form notes -> preprocessor agent ->
-// upserted user_profiles row.
+// Step 1: user id + client name + the coach's free-form notes ->
+// preprocessor agent -> upserted user_profiles row.
 export function ProfileStep({
   adminKey,
   result,
@@ -21,12 +22,14 @@ export function ProfileStep({
   onUnauthorized: () => void
 }) {
   const [userId, setUserId] = useState(result?.user_id ?? '')
+  const [name, setName] = useState(result?.name ?? '')
   const [rawText, setRawText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const userIdValid = USER_ID_PATTERN.test(userId.trim())
-  const canGenerate = userIdValid && rawText.trim() !== '' && !generating
+  const nameValid = name.trim() !== '' && name.trim().length <= MAX_NAME_LENGTH
+  const canGenerate = userIdValid && nameValid && rawText.trim() !== '' && !generating
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -34,7 +37,7 @@ export function ProfileStep({
     setGenerating(true)
     setError(null)
     try {
-      onGenerated(await generateProfile(adminKey, userId.trim(), rawText))
+      onGenerated(await generateProfile(adminKey, userId.trim(), name.trim(), rawText))
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onUnauthorized()
@@ -66,6 +69,19 @@ export function ProfileStep({
           )}
         </label>
         <label className="admin__field">
+          <span>Client name</span>
+          <input
+            className="login-screen__input"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Lakshmi Narayanan"
+            autoComplete="off"
+            maxLength={MAX_NAME_LENGTH}
+            disabled={generating}
+          />
+          <small className="admin__hint">Shown to the client in the app and on workout summaries.</small>
+        </label>
+        <label className="admin__field">
           <span>About the client</span>
           <textarea
             className="login-screen__input admin__textarea"
@@ -86,7 +102,7 @@ export function ProfileStep({
       {result && !generating && (
         <section className="card admin__section">
           <h2 className="admin__section-title">
-            Profile for {result.user_id}
+            Profile for {result.name} ({result.user_id})
             <span className="admin__pill">{result.user_created ? 'new user' : 'updated'}</span>
           </h2>
           <ProfileSummary profile={result.profile} />

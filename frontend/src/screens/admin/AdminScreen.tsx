@@ -219,7 +219,9 @@ function OnboardingFlow({
           onUnauthorized={onUnauthorized}
         />
       )}
-      {stage === 'saved' && saved && <PlanSavedCard result={saved} onStartOver={startOver} />}
+      {stage === 'saved' && saved && (
+        <PlanSavedCard result={saved} clientName={profile?.name ?? saved.user_id} onStartOver={startOver} />
+      )}
     </div>
   )
 }

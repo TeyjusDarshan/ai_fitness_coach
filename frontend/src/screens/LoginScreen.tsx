@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { browserSupportsWebAuthn, browserSupportsWebAuthnAutofill } from '@simplewebauthn/browser'
-import { fetchLoginOptions, passkeyErrorMessage, signInWithPasskey, type LoginOptions } from '../auth'
+import { fetchLoginOptions, passkeyErrorMessage, signInWithPasskey, type LoginOptions, type Me } from '../auth'
 import { Illustration } from '../components/Illustration'
 import { useAppState } from '../state/AppStateContext'
 
@@ -23,8 +23,8 @@ export function LoginScreen() {
   }, [])
 
   const finishSignIn = useCallback(
-    (userId: string) => {
-      completeSignIn(userId)
+    (me: Me) => {
+      completeSignIn(me)
       navigate('/', { replace: true })
     },
     [completeSignIn, navigate],
@@ -46,7 +46,7 @@ export function LoginScreen() {
       if (!autofill || cancelled) return
       try {
         const me = await signInWithPasskey(await fetchLoginOptions(), true)
-        if (!cancelled) finishSignIn(me.user_id)
+        if (!cancelled) finishSignIn(me)
       } catch (e) {
         const message = passkeyErrorMessage(e)
         if (message && !cancelled) setError(message)
@@ -64,7 +64,7 @@ export function LoginScreen() {
     setError(null)
     try {
       const me = await signInWithPasskey(options)
-      finishSignIn(me.user_id)
+      finishSignIn(me)
     } catch (err) {
       setError(passkeyErrorMessage(err))
       // The challenge may have been used up; get a fresh one for a retry.

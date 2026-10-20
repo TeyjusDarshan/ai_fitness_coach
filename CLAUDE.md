@@ -86,6 +86,7 @@ Populated via `WorkoutPlanRepository.upsert_user_profile` by either the Flask `/
 | `profile` | jsonb | full generated profile (`demographics`, `goals`, `experience`, `health`, `availability`, etc. — see `agents/mock_data_v1.py` for the shape) |
 | `created_at` | timestamptz, default `now()` | |
 | `updated_at` | timestamptz, default `now()` | bumped on every upsert |
+| `name` | text, nullable | client display name, entered by the coach on the `/admin` intake step (required there; optional `name` on `POST /workout-plan`). Shown in place of `user_id` wherever the user is named: the PWA (returned by `/api/auth/me` and sign-in), the coach share message, the admin screens, the passkey's display name, and the analysis consumer's greeting (`client_name`). Only overwritten when a new name is given. NULL for users created before it existed — the PWA falls back to `user_id` |
 | `webauthn_user_handle` | text, nullable, unique | random 32-byte WebAuthn `user.id` (base64url), created on first passkey enrollment by `AuthRepository.get_or_create_user_handle`; shared by all of the user's passkeys and checked against `userHandle` at sign-in |
 
 ### `user_joint_pain` — reported pain per (user, joint)

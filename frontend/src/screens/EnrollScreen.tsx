@@ -42,7 +42,7 @@ export function EnrollScreen() {
     setError(null)
     try {
       const me = await enrollPasskey(token, options)
-      completeSignIn(me.user_id)
+      completeSignIn(me)
       navigate('/', { replace: true })
     } catch (e) {
       setError(passkeyErrorMessage(e))

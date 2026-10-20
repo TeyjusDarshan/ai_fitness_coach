@@ -70,7 +70,7 @@ export function ReviewStep({
       <section className="card admin__section">
         <h2 className="admin__section-title">3 · Review</h2>
         <p className="admin__muted">
-          {template.label} for <strong>{profile.user_id}</strong>, starting{' '}
+          {template.label} for <strong>{profile.name}</strong>, starting{' '}
           <strong>{formatDayDate(startDate)}</strong>
         </p>
         <ProfileSummary profile={profile.profile} />
@@ -154,7 +154,15 @@ export function ReviewStep({
   )
 }
 
-export function PlanSavedCard({ result, onStartOver }: { result: InitialPlanResult; onStartOver: () => void }) {
+export function PlanSavedCard({
+  result,
+  clientName,
+  onStartOver,
+}: {
+  result: InitialPlanResult
+  clientName: string
+  onStartOver: () => void
+}) {
   const [copied, setCopied] = useState(false)
 
   async function copyLink() {
@@ -171,7 +179,7 @@ export function PlanSavedCard({ result, onStartOver }: { result: InitialPlanResu
     <section className="card admin__section">
       <h2 className="admin__section-title">Plan saved</h2>
       <p>
-        <strong>{result.user_id}</strong>’s first plan is live as plan #{result.plan_id}.
+        <strong>{clientName}</strong>’s first plan is live as plan #{result.plan_id}.
       </p>
       {result.enrollment ? (
         <>

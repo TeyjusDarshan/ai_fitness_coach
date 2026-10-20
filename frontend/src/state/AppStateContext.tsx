@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { fetchDashboard, setUnauthorizedHandler } from '../api'
-import { fetchMe, logoutRequest } from '../auth'
+import { fetchMe, logoutRequest, type Me } from '../auth'
 import type { Dashboard } from '../types'
 
 type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
@@ -18,11 +18,14 @@ export type AuthStatus = 'checking' | 'signedIn' | 'signedOut'
 interface AppState {
   authStatus: AuthStatus
   userId: string | null
+  // What to call the user on screen: their name, or their user_id if they
+  // don't have one on file.
+  displayName: string | null
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
   dashboardStatus: DashboardStatus
-  completeSignIn: (userId: string) => void
+  completeSignIn: (me: Me) => void
   logout: () => Promise<void>
   refreshDashboard: () => Promise<void>
   setDashboard: (dashboard: Dashboard) => void
@@ -36,6 +39,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // boot we ask the server who (if anyone) is signed in.
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [userId, setUserId] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string | null>(null)
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +55,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const resetToSignedOut = useCallback(() => {
     setUserId(null)
+    setUserName(null)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -62,14 +67,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     fetchMe()
       .then((me) => {
         setUserId(me.user_id)
+        setUserName(me.name)
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
     return () => setUnauthorizedHandler(null)
   }, [resetToSignedOut])
 
-  const completeSignIn = useCallback((signedInUserId: string) => {
-    setUserId(signedInUserId)
+  const completeSignIn = useCallback((me: Me) => {
+    setUserId(me.user_id)
+    setUserName(me.name)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -117,6 +124,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     () => ({
       authStatus,
       userId,
+      displayName: userName ?? userId,
       dashboard,
       loading,
       error,
@@ -130,6 +138,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     [
       authStatus,
       userId,
+      userName,
       dashboard,
       loading,
       error,

@@ -9,6 +9,9 @@ import { request } from './api'
 
 export interface Me {
   user_id: string
+  // The coach-entered display name; null for users created before names
+  // were recorded.
+  name: string | null
 }
 
 export type RegistrationOptions = PublicKeyCredentialCreationOptionsJSON

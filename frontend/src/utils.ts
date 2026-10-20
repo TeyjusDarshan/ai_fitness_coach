@@ -109,10 +109,10 @@ function effortLabel(rpe: number | null): string {
 export function buildCoachShareMessage(
   day: DashboardDay,
   summary: DayCompleteSummary,
-  username: string | null,
+  clientName: string | null,
 ): string {
   const lines: string[] = [`*Workout Summary — ${day.day_label} (${day.split_name})*`]
-  if (username) lines.push(`Client: ${capitalize(username)}`)
+  if (clientName) lines.push(`Client: ${capitalize(clientName)}`)
   lines.push(`Session ID: ${summary.session_id}`, `Day: ${day.day_number}`)
   lines.push(
     '',

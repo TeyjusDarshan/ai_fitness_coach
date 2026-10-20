@@ -100,12 +100,13 @@ class AnalysisRepository:
 
         profile_rows = (
             self.client.table("user_profiles")
-            .select("profile")
+            .select("profile, name")
             .eq("user_id", user_id)
             .execute()
             .data
         )
         profile = profile_rows[0]["profile"] if profile_rows else None
+        client_name = profile_rows[0].get("name") if profile_rows else None
 
         joint_pain_rows = (
             self.client.table("user_joint_pain")
@@ -120,6 +121,7 @@ class AnalysisRepository:
             "plan_id": session["plan_id"],
             "day_number": day_number,
             "user_id": user_id,
+            "client_name": client_name,
             "plan_type": plan["plan_type"],
             "user_profile": profile,
             "joint_pain": [

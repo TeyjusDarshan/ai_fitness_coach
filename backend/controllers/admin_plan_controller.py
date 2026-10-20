@@ -27,6 +27,7 @@ plan_repo = WorkoutPlanRepository()
 exercise_repo = WorkoutRepository()
 
 USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
+MAX_NAME_LENGTH = 100
 MAX_SETS = 10
 MAX_REPS = 100
 MANUAL_PLAN_REASON = "Built manually by coach"
@@ -71,10 +72,14 @@ def _parse_start_date(value):
 def create_profile():
     body = request.get_json(silent=True) or {}
     user_id = body.get("user_id")
+    name = body.get("name")
     raw_user_text = body.get("raw_user_text")
 
     if not isinstance(user_id, str) or not USER_ID_PATTERN.match(user_id):
         return jsonify({"error": "'user_id' must be 1-64 letters, digits, '_', '-' or '.'."}), 400
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_NAME_LENGTH:
+        return jsonify({"error": f"'name' is required (max {MAX_NAME_LENGTH} characters)."}), 400
+    name = name.strip()
     if not isinstance(raw_user_text, str) or not raw_user_text.strip():
         return jsonify({"error": "'raw_user_text' is required."}), 400
 
@@ -95,12 +100,12 @@ def create_profile():
     profile["user_id"] = user_id
 
     try:
-        plan_repo.upsert_user_profile(user_id, profile)
+        plan_repo.upsert_user_profile(user_id, profile, name)
     except Exception:
         logger.exception("Failed to upsert profile for user_id=%s", user_id)
         return jsonify({"error": "Failed to save the client profile."}), 500
 
-    return jsonify({"user_id": user_id, "profile": profile, "user_created": user_created}), 200
+    return jsonify({"user_id": user_id, "name": name, "profile": profile, "user_created": user_created}), 200
 
 
 @admin_plan_bp.get("/api/admin/plan-builder")

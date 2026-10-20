@@ -36,6 +36,7 @@ def env(app_module, monkeypatch):
         "consume_enrollment_token",
     ):
         monkeypatch.setattr(auth.auth_repo, name, MagicMock())
+    auth.auth_repo.get_user_auth_row.return_value = {"user_id": "usr_1", "name": "Asha", "webauthn_user_handle": None}
     return app_module.app.test_client(), auth, controller
 
 
@@ -75,7 +76,7 @@ def test_enrollment_link_unknown_user_is_404(env):
 
 def test_enrollment_link_stores_only_the_token_hash(env):
     client, auth, _ = env
-    auth.auth_repo.get_user_auth_row.return_value = {"user_id": "usr_1", "webauthn_user_handle": None}
+    auth.auth_repo.get_user_auth_row.return_value = {"user_id": "usr_1", "name": "Asha", "webauthn_user_handle": None}
 
     response = client.post("/api/admin/users/usr_1/enrollment-link", headers={"X-Admin-Key": ADMIN_KEY})
 
@@ -142,7 +143,7 @@ def test_register_verify_success_stores_passkey_and_signs_in(env, monkeypatch):
     })
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "registration")
     stored = auth.auth_repo.add_passkey.call_args.args[0]
     assert stored["user_id"] == "usr_1"
@@ -206,7 +207,7 @@ def _known_passkey(auth):
         "user_id": "usr_1", "credential_id": "cred-1",
         "public_key": bytes_to_base64url(b"public-key"), "sign_count": 0,
     }
-    auth.auth_repo.get_user_auth_row.return_value = {"user_id": "usr_1", "webauthn_user_handle": USER_HANDLE}
+    auth.auth_repo.get_user_auth_row.return_value = {"user_id": "usr_1", "name": "Asha", "webauthn_user_handle": USER_HANDLE}
 
 
 def test_login_options_are_discoverable_and_store_challenge(env):
@@ -233,7 +234,7 @@ def test_login_verify_success_updates_sign_count_and_signs_in(env, monkeypatch):
     response = client.post("/api/auth/login/verify", json={"credential": _login_credential()})
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "authentication")
     auth.auth_repo.update_passkey_usage.assert_called_once_with("cred-1", 0)
     assert _session_cookie(response) is not None
@@ -306,7 +307,7 @@ def test_me_returns_signed_in_user(env):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
     auth.auth_repo.get_active_session.assert_called_once_with(auth.hash_token("tok"))
 
 

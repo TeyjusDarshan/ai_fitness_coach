@@ -111,7 +111,7 @@ def _plan_response(existing):
     return response
 
 
-def _persist_generated_plan(user_id, profile, plan, start_date, max_attempts=2):
+def _persist_generated_plan(user_id, profile, plan, start_date, name=None, max_attempts=2):
     """Upsert the profile and insert the new plan, retrying once on failure.
 
     Safe to repeat: the profile upsert overwrites, and if a failed attempt
@@ -121,7 +121,7 @@ def _persist_generated_plan(user_id, profile, plan, start_date, max_attempts=2):
     last_exc = None
     for attempt in range(max_attempts):
         try:
-            plan_repo.upsert_user_profile(user_id, profile)
+            plan_repo.upsert_user_profile(user_id, profile, name)
             return plan_repo.create_plan(user_id, plan, start_date)
         except Exception as e:
             last_exc = e
@@ -139,6 +139,11 @@ def create_workout_plan():
 
     if not user_id or not raw_user_text:
         return jsonify({"error": "Both 'userid' and 'raw_user_text' are required."}), 400
+    # Optional client display name; left unchanged on an existing user when omitted.
+    name = body.get("name")
+    if name is not None and (not isinstance(name, str) or not name.strip()):
+        return jsonify({"error": "'name' must be a non-empty string."}), 400
+    name = name.strip() if name else None
 
     start_date = app_today()
     if body.get("start_date") is not None:
@@ -167,7 +172,7 @@ def create_workout_plan():
         return jsonify(plan), 500
 
     try:
-        _persist_generated_plan(user_id, profile, plan, start_date)
+        _persist_generated_plan(user_id, profile, plan, start_date, name)
     except Exception:
         app.logger.exception("Failed to persist generated plan for user_id=%s", user_id)
         return jsonify({"error": "Failed to save generated workout after retrying."}), 500

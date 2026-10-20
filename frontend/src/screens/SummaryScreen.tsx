@@ -7,7 +7,7 @@ import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDurati
 import type { DayCompleteSummary } from '../types'
 
 export function SummaryScreen() {
-  const { dashboard, userId, refreshDashboard } = useAppState()
+  const { dashboard, displayName, refreshDashboard } = useAppState()
   const navigate = useNavigate()
   const { dayNumber } = useParams()
   const dayNum = Number(dayNumber)
@@ -62,7 +62,7 @@ export function SummaryScreen() {
 
   function handleShareWithCoach() {
     if (!day || !summary || !dashboard) return
-    const message = buildCoachShareMessage(day, summary, userId)
+    const message = buildCoachShareMessage(day, summary, displayName)
     window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
   }
 
@@ -85,7 +85,7 @@ export function SummaryScreen() {
         {summary.plan_completed && (
           <p className="summary-card__plan-complete">You've completed your whole plan!</p>
         )}
-        {userId && <div className="summary-card__name">{capitalize(userId)}</div>}
+        {displayName && <div className="summary-card__name">{capitalize(displayName)}</div>}
         <div className="summary-card__avatar" aria-hidden>
           🙂
         </div>

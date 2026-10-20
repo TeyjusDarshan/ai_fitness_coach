@@ -68,6 +68,7 @@ export interface ClientProfile {
 
 export interface ProfileResult {
   user_id: string
+  name: string
   profile: ClientProfile
   user_created: boolean
 }
@@ -134,10 +135,15 @@ export function fetchPlanBuilderOptions(adminKey: string): Promise<PlanBuilderOp
   return adminRequest(adminKey, '/admin/plan-builder')
 }
 
-export function generateProfile(adminKey: string, userId: string, rawUserText: string): Promise<ProfileResult> {
+export function generateProfile(
+  adminKey: string,
+  userId: string,
+  name: string,
+  rawUserText: string,
+): Promise<ProfileResult> {
   return adminRequest(adminKey, '/admin/users/profile', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, raw_user_text: rawUserText }),
+    body: JSON.stringify({ user_id: userId, name, raw_user_text: rawUserText }),
   })
 }
 

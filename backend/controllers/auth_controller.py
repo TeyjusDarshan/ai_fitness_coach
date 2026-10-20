@@ -89,6 +89,16 @@ def _registering_user(body: dict):
     return user_id, None
 
 
+def _signed_in_user(user_id: str, name: Optional[str] = None) -> dict:
+    """The {user_id, name} body sign-in and /me return. `name` is the
+    coach-entered display name, or None for a user who doesn't have one yet
+    (the PWA then shows the user_id)."""
+    if name is None:
+        row = auth_repo.get_user_auth_row(user_id)
+        name = row.get("name") if row else None
+    return {"user_id": user_id, "name": name}
+
+
 def _json_options(options) -> Response:
     return Response(options_to_json(options), mimetype="application/json")
 
@@ -123,12 +133,14 @@ def registration_options():
         return error
 
     user_handle = auth_repo.get_or_create_user_handle(user_id)
+    # Shown in the device's passkey picker; user_name stays the stable id.
+    display_name = _signed_in_user(user_id)["name"] or user_id
     options = generate_registration_options(
         rp_id=rp_id(),
         rp_name=rp_name(),
         user_id=base64url_to_bytes(user_handle),
         user_name=user_id,
-        user_display_name=user_id,
+        user_display_name=display_name,
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.REQUIRED,
             user_verification=UserVerificationRequirement.REQUIRED,
@@ -191,7 +203,7 @@ def registration_verify():
         "backed_up": verified.credential_backed_up,
     })
 
-    response = jsonify({"user_id": user_id})
+    response = jsonify(_signed_in_user(user_id))
     start_session(response, user_id)
     return response, 200
 
@@ -246,7 +258,7 @@ def authentication_verify():
 
     auth_repo.update_passkey_usage(passkey["credential_id"], verified.new_sign_count)
 
-    response = jsonify({"user_id": passkey["user_id"]})
+    response = jsonify(_signed_in_user(passkey["user_id"], profile.get("name")))
     start_session(response, passkey["user_id"])
     return response, 200
 
@@ -255,7 +267,7 @@ def authentication_verify():
 @require_auth
 def me():
     auth_repo.touch_session(hash_token(request.cookies[SESSION_COOKIE]))
-    return jsonify({"user_id": g.user_id}), 200
+    return jsonify(_signed_in_user(g.user_id)), 200
 
 
 @auth_bp.post("/api/auth/logout")
