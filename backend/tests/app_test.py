@@ -32,12 +32,13 @@ def _summary(plan_completed=False):
     }
 
 
-def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-13"):
+def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-13", completed_at=None):
     monkeypatch.setattr(app_module.plan_repo, "get_session", MagicMock(return_value={
         "id": 42,
         "plan_id": 7,
         "day_number": 2,
         "scheduled_date": scheduled_date,
+        "completed_at": completed_at,
         "plans": {"user_id": owner, "plan_type": "3_day", "completed": False},
     }))
 
@@ -89,11 +90,32 @@ def test_start_session_on_its_date_starts_it(app_module, sign_in, monkeypatch):
     app_module.plan_repo.start_session.assert_called_once_with(42)
 
 
-def test_start_session_after_its_date_is_still_allowed(app_module, sign_in, monkeypatch):
-    _session_42(app_module, monkeypatch, scheduled_date="2026-10-11")
-    monkeypatch.setattr(app_module.plan_repo, "start_session", MagicMock(return_value={"id": 42}))
+@pytest.mark.parametrize("method, path, body, repo_method", [
+    ("post", "/api/sessions/42/start", None, "start_session"),
+    ("patch", "/api/sessions/42/exercises/7/sets/1", {"completed_reps": 10}, "log_set"),
+    ("patch", "/api/sessions/42/exercises/7/rpe", {"rpe": 8}, "log_rpe"),
+    ("post", "/api/sessions/42/complete", None, "complete_session"),
+])
+def test_uncompleted_session_after_its_date_is_missed(app_module, sign_in, monkeypatch, method, path, body, repo_method):
+    _session_42(app_module, monkeypatch, scheduled_date="2026-10-12")
+    monkeypatch.setattr(app_module.plan_repo, repo_method, MagicMock())
 
-    assert sign_in("usr_1").post("/api/sessions/42/start").status_code == 200
+    response = getattr(sign_in("usr_1"), method)(path, json=body)
+
+    assert response.status_code == 409
+    assert response.get_json() == {
+        "error": "This workout was missed.",
+        "scheduled_date": "2026-10-12",
+        "missed": True,
+    }
+    getattr(app_module.plan_repo, repo_method).assert_not_called()
+
+
+def test_completed_session_after_its_date_can_still_be_reopened(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, scheduled_date="2026-10-12", completed_at="2026-10-12T10:30:00+00:00")
+    monkeypatch.setattr(app_module.plan_repo, "complete_session", MagicMock(return_value=_summary()))
+
+    assert sign_in("usr_1").post("/api/sessions/42/complete").status_code == 200
 
 
 @pytest.mark.parametrize("method, path, body, repo_method", [
@@ -165,4 +187,40 @@ def test_dashboard_dates_and_locks_each_day(app_module, sign_in, monkeypatch):
         (1, 11, "2026-10-12", "completed", False),
         (2, None, "2026-10-13", "rest", False),
         (3, 13, "2026-10-14", "next", True),
+    ]
+
+
+def test_dashboard_marks_a_missed_day_and_moves_next_past_it(app_module, sign_in, monkeypatch):
+    sessions = {
+        1: {"id": 11, "scheduled_date": "2026-10-12", "started_at": "x", "completed_at": None},
+        2: {"id": 12, "scheduled_date": "2026-10-13", "started_at": None, "completed_at": None},
+        4: {"id": 14, "scheduled_date": "2026-10-15", "started_at": None, "completed_at": None},
+    }
+    plan = {
+        "plan_type": "4_day",
+        "plan_selection_reason": None,
+        "medical_clearance_warning": None,
+        "coach_notes": None,
+        "safety_summary": None,
+        "schedule": [
+            _schedule_day(1, False, 11, "2026-10-12"),
+            _schedule_day(2, False, 12, "2026-10-13"),
+            _schedule_day(3, True),
+            _schedule_day(4, False, 14, "2026-10-15"),
+        ],
+    }
+    monkeypatch.setattr(
+        app_module.plan_repo,
+        "get_unfinished_plan",
+        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions}),
+    )
+    monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
+
+    data = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()
+
+    assert [(d["day_number"], d["status"], d["locked"]) for d in data["days"]] == [
+        (1, "missed", False),
+        (2, "next", False),
+        (3, "rest", False),
+        (4, "upcoming", True),
     ]

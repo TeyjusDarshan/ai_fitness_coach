@@ -24,6 +24,7 @@ export function DayRow({ day, timerLabel, onStart }: Props) {
       </div>
 
       {status === 'completed' && <span className="day-row__check" aria-label="Completed">✓</span>}
+      {status === 'missed' && <span className="day-row__missed">Missed</span>}
       {status === 'next' && !locked && (
         <button className="day-row__start" onClick={onStart}>
           Start <span aria-hidden>›</span>

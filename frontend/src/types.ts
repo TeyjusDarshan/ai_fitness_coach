@@ -21,7 +21,9 @@ export interface ExerciseEntry {
   rpe: number | null
 }
 
-export type DayStatus = 'rest' | 'completed' | 'next' | 'upcoming'
+// 'missed': a training day whose date passed without it being completed —
+// it can't be started any more, and its exercises repeat next week.
+export type DayStatus = 'rest' | 'completed' | 'missed' | 'next' | 'upcoming'
 
 export interface DashboardDay {
   day_number: number

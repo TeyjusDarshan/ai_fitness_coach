@@ -31,10 +31,13 @@ PROGRESSION_EXERCISE_SELECT = (
     "id, exercise_id, category, slot_label, sets, reps, rep_range, note, "
     "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
-PROGRESSION_SESSIONS_SELECT = f"id, day_number, scheduled_date, session_exercises({PROGRESSION_EXERCISE_SELECT})"
+PROGRESSION_SESSIONS_SELECT = (
+    f"id, day_number, scheduled_date, completed_at, session_exercises({PROGRESSION_EXERCISE_SELECT})"
+)
 
 # Each auto-progressed plan's sessions land one week after the same day of
-# the plan it was progressed from.
+# the plan it was progressed from (or start today, if that's already past —
+# see create_progressed_plan).
 PROGRESSION_SCHEDULE_OFFSET = timedelta(days=7)
 
 # Autoregulated-progression constants — see _compute_progressed_reps.
@@ -66,13 +69,27 @@ def scheduled_date_for(start_date: date, day_number: int) -> date:
     return start_date + timedelta(days=day_number - 1)
 
 
+def is_session_missed(session: dict, today: date) -> bool:
+    """A session is missed once its scheduled_date has passed without it being
+    completed — including one that was started (sets logged) but never
+    finished. Derived, never stored: a missed session can't be started or
+    logged any more, and counts as resolved for closing out its plan."""
+    return not session.get("completed_at") and date.fromisoformat(session["scheduled_date"]) < today
+
+
 def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
     """Pull each session's nested session_exercises rows out into one list,
-    tagging every row with its session's day_number, ordered by day then id."""
+    tagging every row with its session's day_number and whether that session
+    was missed (never completed — by the time a plan is progressed, every
+    uncompleted session is a missed one), ordered by day then id."""
     rows = []
     for session in sorted(sessions, key=lambda s: s["day_number"]):
         for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
-            rows.append({**row, "day_number": session["day_number"]})
+            rows.append({
+                **row,
+                "day_number": session["day_number"],
+                "missed": not session.get("completed_at"),
+            })
     return rows
 
 
@@ -142,12 +159,19 @@ def _compute_progressed_reps(
     is always treated as RPE 10 regardless of what was reported — an injury
     caps volume outright, the same way a missing RPE can't be trusted to
     justify progressing.
+
+    An exercise from a missed session (see is_session_missed) carries its
+    targets forward unchanged rather than taking the missing-RPE path: the
+    user didn't struggle with it, they just didn't do it. An injury still
+    overrides this.
     """
     sets = exercise_row.get("sets") or 1
     target_reps = _parse_target_reps(exercise_row.get("reps"), sets)
 
     if injury_multiplier is not None and injury_multiplier < 1.0:
         rpe_bucket = RPE_HARD
+    elif exercise_row.get("missed"):
+        return target_reps
     else:
         reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe")
         rpe_bucket = (
@@ -269,7 +293,16 @@ class WorkoutPlanRepository:
         )
         return rows[0] if rows else None
 
-    def get_unfinished_plan(self, user_id: str) -> Optional[dict]:
+    def get_unfinished_plan(self, user_id: str, close_if_resolved: bool = True) -> Optional[dict]:
+        """The user's unfinished plan with its reconstructed schedule.
+
+        If every one of its sessions is resolved — completed, or missed
+        because its date passed (is_session_missed) — the plan is closed out
+        here and auto-progressed (mark_plan_completed), and the new plan is
+        returned instead. This is what moves a user on from a week whose last
+        session(s) they missed, without any scheduled job. The new plan never
+        starts in the past, so this closes at most one plan per call.
+        """
         plans = (
             self.client.table("plans")
             .select("*")
@@ -285,6 +318,15 @@ class WorkoutPlanRepository:
         plan = plans[0]
 
         sessions = self._fetch_plan_sessions(plan["id"], PLAN_SESSIONS_SELECT)
+        today = app_today()
+        if close_if_resolved and sessions and all(
+            s.get("completed_at") or is_session_missed(s, today) for s in sessions
+        ):
+            # None means a concurrent request closed it first — either way,
+            # re-read whatever is unfinished now.
+            self.mark_plan_completed(plan["id"])
+            return self.get_unfinished_plan(user_id, close_if_resolved=False)
+
         return {
             "id": plan["id"],
             "completed": plan["completed"],
@@ -461,7 +503,13 @@ class WorkoutPlanRepository:
         source_sessions are the source plan's sessions rows (selected with
         PROGRESSION_SESSIONS_SELECT, so each has its session_exercises nested).
         Each new session keeps its source's day_number and is scheduled
-        PROGRESSION_SCHEDULE_OFFSET (one week) after it.
+        PROGRESSION_SCHEDULE_OFFSET (one week) after it — unless that week
+        would start before today (the source plan closed late, e.g. a user
+        returning after a break), in which case the new plan starts today
+        so it isn't born with its sessions already missed.
+
+        Exercises from a missed session carry forward unchanged (see
+        _compute_progressed_reps).
 
         Each exercise's reps target is computed by _compute_progressed_reps,
         using an injury multiplier (_injury_multiplier_for_exercise) in place
@@ -501,13 +549,17 @@ class WorkoutPlanRepository:
             "safety_summary": source_plan.get("safety_summary"),
         }
         plan = self.client.table("plans").insert(plan_row).execute().data[0]
-        session_ids = self._insert_sessions(
-            plan["id"],
-            {
-                s["day_number"]: date.fromisoformat(s["scheduled_date"]) + PROGRESSION_SCHEDULE_OFFSET
+        session_ids = {}
+        if source_sessions:
+            source_start = min(
+                date.fromisoformat(s["scheduled_date"]) - timedelta(days=s["day_number"] - 1)
                 for s in source_sessions
-            },
-        )
+            )
+            start_date = max(source_start + PROGRESSION_SCHEDULE_OFFSET, app_today())
+            session_ids = self._insert_sessions(
+                plan["id"],
+                {s["day_number"]: scheduled_date_for(start_date, s["day_number"]) for s in source_sessions},
+            )
         exercise_rows = _flatten_session_exercises(source_sessions)
 
         user_joint_pain = self._fetch_user_joint_pain(user_id)
@@ -625,10 +677,15 @@ class WorkoutPlanRepository:
         return created
 
     def mark_plan_completed(self, plan_id: int) -> Optional[dict]:
+        """Close out an unfinished plan and auto-progress it. Returns None if
+        the plan doesn't exist or is already completed — the update only
+        matches while completed is false, so two racing closes (e.g. the
+        dashboard's lazy close and complete_session) progress it only once."""
         result = (
             self.client.table("plans")
             .update({"completed": True, "completed_at": datetime.now(timezone.utc).isoformat()})
             .eq("id", plan_id)
+            .eq("completed", False)
             .execute()
             .data
         )
@@ -778,9 +835,10 @@ class WorkoutPlanRepository:
 
         total_time_seconds = int((now - datetime.fromisoformat(started_at)).total_seconds())
 
-        # The plan is done once every one of its sessions is. Skipped when the
-        # plan is already completed (a re-completed session), so it isn't
-        # re-marked and auto-progressed twice.
+        # The plan is done once every one of its sessions is completed or
+        # missed (uncompleted and dated before today — see is_session_missed).
+        # Skipped when the plan is already completed (a re-completed session),
+        # so it isn't re-marked and auto-progressed twice.
         plan_completed = False
         if not (session.get("plans") or {}).get("completed"):
             still_open = (
@@ -788,12 +846,12 @@ class WorkoutPlanRepository:
                 .select("id")
                 .eq("plan_id", session["plan_id"])
                 .is_("completed_at", "null")
+                .gte("scheduled_date", app_today().isoformat())
                 .execute()
                 .data
             )
             if not still_open:
-                self.mark_plan_completed(session["plan_id"])
-                plan_completed = True
+                plan_completed = self.mark_plan_completed(session["plan_id"]) is not None
 
         return {
             "session_id": session_id,

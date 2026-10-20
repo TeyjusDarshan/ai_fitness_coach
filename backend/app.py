@@ -22,7 +22,12 @@ from backend.auth import require_admin, require_auth
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
-from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository, app_today
+from backend.repository.workout_plan_repository import (
+    PainLevel,
+    WorkoutPlanRepository,
+    app_today,
+    is_session_missed,
+)
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
@@ -32,18 +37,27 @@ plan_repo = WorkoutPlanRepository()
 
 
 def _deny_unless_session_open(session_id):
-    """Error response unless the signed-in user owns this session and its
-    scheduled_date has arrived, else None."""
+    """Error response unless the signed-in user owns this session, its
+    scheduled_date has arrived, and it wasn't missed (date passed without
+    being completed), else None. A completed session stays open, so its
+    summary can be re-opened."""
     session = plan_repo.get_session(session_id)
     if session is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404
     if (session.get("plans") or {}).get("user_id") != g.user_id:
         return jsonify({"error": "You don't have access to this session."}), 403
+    today = app_today()
     scheduled = date.fromisoformat(session["scheduled_date"])
-    if scheduled > app_today():
+    if scheduled > today:
         return jsonify({
             "error": f"This workout opens on {scheduled:%a} {scheduled.day} {scheduled:%b}.",
             "scheduled_date": session["scheduled_date"],
+        }), 409
+    if is_session_missed(session, today):
+        return jsonify({
+            "error": "This workout was missed.",
+            "scheduled_date": session["scheduled_date"],
+            "missed": True,
         }), 409
     return None
 
@@ -129,7 +143,7 @@ def complete_plan(plan_id):
         return jsonify({"error": "Failed to mark the plan as completed."}), 500
 
     if updated is None:
-        return jsonify({"error": f"Plan {plan_id} not found."}), 404
+        return jsonify({"error": f"Plan {plan_id} not found or already completed."}), 404
     return jsonify(updated), 200
 
 
@@ -185,6 +199,8 @@ def get_dashboard(user_id):
             status = "rest"
         elif session.get("completed_at"):
             status = "completed"
+        elif is_session_missed(session, today):
+            status = "missed"
         elif not found_next:
             status = "next"
             found_next = True

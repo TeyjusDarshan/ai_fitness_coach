@@ -11,14 +11,30 @@ canned response regardless of arguments.
 from datetime import date
 from typing import Dict, List
 
-from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository
+from backend.repository import workout_plan_repository
+from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository, is_session_missed
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def fixed_today(monkeypatch):
+    """Pin app_today() to the Monday the fixture plans start on (2026-10-12),
+    so none of their sessions count as missed unless a test moves it on."""
+    set_today(monkeypatch, date(2026, 10, 12))
+
+
+def set_today(monkeypatch, today):
+    monkeypatch.setattr(workout_plan_repository, "app_today", lambda: today)
 
 
 class FakeResponse:
     def __init__(self, data):
         self.data = data
+
+
+# Column defaults the real schema fills in on insert, where a test reads the
+# inserted row back through a filter on that column.
+TABLE_DEFAULTS = {"plans": {"completed": False}}
 
 
 class FakeTable:
@@ -32,6 +48,7 @@ class FakeTable:
         self._in = []
         self._ilike = []
         self._is_null = []
+        self._gte = []
         self._insert_rows = None
         self._update = None
 
@@ -55,6 +72,10 @@ class FakeTable:
         self._eq.append((key, value))
         return self
 
+    def gte(self, key, value):
+        self._gte.append((key, value))
+        return self
+
     def in_(self, key, values):
         self._in.append((key, set(values)))
         return self
@@ -74,7 +95,7 @@ class FakeTable:
         if self._insert_rows is not None:
             saved = []
             for row in self._insert_rows:
-                row = dict(row)
+                row = {**TABLE_DEFAULTS.get(self.name, {}), **row}
                 row.setdefault("id", self._next_id())
                 saved.append(row)
             self.inserted.setdefault(self.name, []).extend(saved)
@@ -90,6 +111,8 @@ class FakeTable:
             matched = [r for r in matched if needle in (r.get(key) or "").lower()]
         for key in self._is_null:
             matched = [r for r in matched if r.get(key) is None]
+        for key, value in self._gte:
+            matched = [r for r in matched if r.get(key) is not None and r[key] >= value]
         if self._update is not None:
             for r in matched:
                 r.update(self._update)
@@ -152,10 +175,11 @@ def _source_plan(**overrides):
     return plan
 
 
-def _progress(repo, user_id, source_plan, exercise_rows):
+def _progress(repo, user_id, source_plan, exercise_rows, missed_days=()):
     """create_progressed_plan with the source plan's sessions built from
     exercise_rows: one session per distinct day_number, each scheduled on
-    2026-10-12 + (day_number - 1) with its rows nested."""
+    2026-10-12 + (day_number - 1) with its rows nested. Every session is
+    completed except those whose day_number is in missed_days."""
     sessions = {}
     for row in exercise_rows:
         day_number = row["day_number"]
@@ -163,6 +187,7 @@ def _progress(repo, user_id, source_plan, exercise_rows):
             "id": 500 + day_number,
             "day_number": day_number,
             "scheduled_date": date(2026, 10, 11 + day_number).isoformat(),
+            "completed_at": None if day_number in missed_days else "2026-10-12T10:30:00+00:00",
             "session_exercises": [],
         })
         session["session_exercises"].append({k: v for k, v in row.items() if k != "day_number"})
@@ -483,3 +508,132 @@ def test_start_session_stamps_started_at_only_once():
 
     client.tables["sessions"][0]["started_at"] = "2026-10-14T10:00:00+00:00"
     assert repo.start_session(3)["started_at"] == "2026-10-14T10:00:00+00:00"
+
+
+# --- missed sessions -----------------------------------------------------------
+
+@pytest.mark.parametrize("scheduled_date, completed_at, missed", [
+    ("2026-10-12", None, False),                         # today: still doable
+    ("2026-10-11", None, True),                          # yesterday, never done
+    ("2026-10-11", "2026-10-11T10:30:00+00:00", False),  # yesterday, completed
+    ("2026-10-13", None, False),                         # not yet open
+])
+def test_is_session_missed(scheduled_date, completed_at, missed):
+    session = {"scheduled_date": scheduled_date, "completed_at": completed_at, "started_at": "x"}
+    assert is_session_missed(session, date(2026, 10, 12)) is missed
+
+
+def test_missed_session_carries_its_exercises_forward_unchanged():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    repo = _repo(client)
+
+    exercise_rows = [
+        # Partial logs and no RPE: would fall back to hard (-1) if completed.
+        _row(id=1, day_number=1, reps="10,11,10", session_exercise_rpe=None,
+             session_exercise_set_logs=[{"set_number": 1, "completed_reps": 10}]),
+        _row(id=2, day_number=3, reps="10,10,10", session_exercise_rpe={"rpe": 8}),
+    ]
+
+    _progress(repo, "usr_1", _source_plan(), exercise_rows, missed_days={1})
+
+    missed_row, done_row = client.inserted["session_exercises"]
+    assert (missed_row["exercise_id"], missed_row["reps"], missed_row["rep_range"]) == (100, "10,11,10", "8-12")
+    assert done_row["reps"] == "11,10,10"
+
+
+def test_missed_session_with_joint_pain_still_reduces_reps():
+    client = FakeSupabaseClient()
+    client.seed("user_joint_pain", [{"user_id": "usr_2", "joint_id": 5, "pain_level": "mild"}])
+    client.seed("exercise_loaded_joints", [{"exercise_id": 100, "joint_id": 5, "joint_load": "high"}])
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    repo = _repo(client)
+
+    _progress(repo, "usr_2", _source_plan(), [_row(reps="10,10,10")], missed_days={1})
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "9,9,9"
+
+
+def test_progressed_plan_starts_today_when_a_week_later_has_already_passed(monkeypatch):
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    repo = _repo(client)
+    set_today(monkeypatch, date(2026, 10, 30))
+
+    _progress(repo, "usr_1", _source_plan(), [_row(id=1, day_number=1), _row(id=2, day_number=3)])
+
+    sessions = {s["day_number"]: s["scheduled_date"] for s in client.inserted["sessions"]}
+    assert sessions == {1: "2026-10-30", 3: "2026-11-01"}
+
+
+def _seed_unfinished_plan(client, day_completed_at):
+    """Plan 7 (3_day, starting Mon 2026-10-12) for usr_1, with each training
+    day's completed_at taken from day_completed_at."""
+    client.seed("plans", [{
+        "id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False, "completed_at": None,
+        "plan_selection_reason": None, "medical_clearance_warning": None,
+        "coach_notes": None, "safety_summary": None,
+    }])
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    client.seed("sessions", [
+        {"id": 10 + day, "plan_id": 7, "day_number": day,
+         "scheduled_date": date(2026, 10, 11 + day).isoformat(),
+         "started_at": None, "completed_at": completed_at,
+         "session_exercises": [_row(id=100 + day, reps="10,10,10", session_exercise_rpe={"rpe": 8},
+                                    exercises={"id": 100, "name": "Squat"})]}
+        for day, completed_at in day_completed_at.items()
+    ])
+
+
+def test_get_unfinished_plan_closes_and_progresses_a_plan_whose_sessions_are_all_resolved(monkeypatch):
+    client = FakeSupabaseClient()
+    _seed_unfinished_plan(client, {1: "2026-10-12T10:30:00+00:00", 3: None, 5: None})
+    repo = _repo(client)
+    set_today(monkeypatch, date(2026, 10, 17))  # day 5 (Fri 16th) has passed
+
+    result = repo.get_unfinished_plan("usr_1")
+
+    assert client.tables["plans"][0]["completed"] is True
+    [new_plan] = client.inserted["plans"]
+    assert new_plan["parent_plan_id"] == 7
+    assert result["id"] == new_plan["id"]
+    reps_by_day = {
+        s["day_number"]: row["reps"]
+        for s in client.inserted["sessions"]
+        for row in client.inserted["session_exercises"] if row["session_id"] == s["id"]
+    }
+    assert reps_by_day == {1: "11,10,10", 3: "10,10,10", 5: "10,10,10"}
+
+
+def test_get_unfinished_plan_leaves_a_plan_open_while_a_session_is_still_due(monkeypatch):
+    client = FakeSupabaseClient()
+    _seed_unfinished_plan(client, {1: "2026-10-12T10:30:00+00:00", 3: None, 5: None})
+    repo = _repo(client)
+    set_today(monkeypatch, date(2026, 10, 16))  # day 5 is today
+
+    result = repo.get_unfinished_plan("usr_1")
+
+    assert result["id"] == 7
+    assert client.tables["plans"][0]["completed"] is False
+    assert "plans" not in client.inserted
+
+
+def test_mark_plan_completed_only_progresses_once():
+    client = FakeSupabaseClient()
+    _seed_unfinished_plan(client, {1: "2026-10-12T10:30:00+00:00"})
+    repo = _repo(client)
+
+    assert repo.mark_plan_completed(7) is not None
+    assert repo.mark_plan_completed(7) is None
+    assert len(client.inserted["plans"]) == 1
+
+
+def test_complete_session_completes_the_plan_when_the_other_sessions_were_missed(monkeypatch):
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at=None)
+    repo = _repo(client)
+    set_today(monkeypatch, date(2026, 10, 16))  # day 3 (14th) was missed
+
+    assert repo.complete_session(5)["plan_completed"] is True
+    assert client.tables["plans"][0]["completed"] is True

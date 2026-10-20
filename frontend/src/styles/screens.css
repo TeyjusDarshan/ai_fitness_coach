@@ -88,6 +88,20 @@
   font-weight: 500;
 }
 
+.day-row--missed .day-row__weekday,
+.day-row--missed .day-row__split {
+  color: var(--ink-secondary);
+}
+
+.day-row__missed {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  background: var(--surface-alt);
+  border-radius: var(--radius-pill);
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+
 .day-row__opens {
   font-size: 13px;
   color: var(--ink-secondary);
