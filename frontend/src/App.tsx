@@ -8,6 +8,7 @@ import { ExerciseScreen } from './screens/ExerciseScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
 import { RoutineVideoScreen } from './screens/RoutineVideoScreen'
+import { WorkoutDetailScreen } from './screens/WorkoutDetailScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
 
 function Spinner() {
@@ -67,6 +68,14 @@ function App() {
         element={
           <RequireAuth>
             <DashboardScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/workout/:sessionId"
+        element={
+          <RequireAuth>
+            <WorkoutDetailScreen />
           </RequireAuth>
         }
       />

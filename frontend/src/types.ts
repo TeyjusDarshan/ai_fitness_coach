@@ -44,6 +44,31 @@ export interface DashboardDay {
   secondary: ExerciseEntry[]
 }
 
+// A workout panel's status: 'missed' is a workout whose date passed without
+// it being completed (or one left undone when its plan was closed).
+export type WorkoutStatus = 'completed' | 'missed' | 'scheduled'
+
+// One training day on the dashboard's workout list — the last two past
+// workouts (possibly from the previous plan), then every scheduled one.
+export interface DashboardWorkout {
+  session_id: number
+  plan_id: number
+  day_number: number
+  name: string
+  status: WorkoutStatus
+  // YYYY-MM-DD in the app's timezone: the completion date for a completed
+  // workout, otherwise its scheduled date.
+  date: string
+  scheduled_date: string
+  started_at: string | null
+  completed_at: string | null
+  // The first scheduled workout.
+  is_next: boolean
+  // Scheduled for today — the only workout that can be started.
+  can_start: boolean
+  exercises: ExerciseEntry[]
+}
+
 export interface Dashboard {
   plan_id: number
   plan_type: string
@@ -57,6 +82,7 @@ export interface Dashboard {
   } | null
   session_duration_minutes: number | null
   days: DashboardDay[]
+  workouts: DashboardWorkout[]
 }
 
 export interface DayCompleteSummary {

@@ -125,7 +125,7 @@ Partial unique index `plans_one_unfinished_per_user` on `(user_id)` where `compl
 
 ### `sessions` — one row per training day of a plan
 
-One row per non-rest day of a plan's `DAY_TEMPLATES[plan_type]` schedule (rest days have no row). Created alongside the plan by `create_plan` / `create_progressed_plan`. Drives the PWA dashboard's per-day status (rest / completed / missed / next / upcoming, plus `locked`) and the end-of-day summary screen's Total Time stat.
+One row per non-rest day of a plan's `DAY_TEMPLATES[plan_type]` schedule (rest days have no row). Created alongside the plan by `create_plan` / `create_progressed_plan`. Drives the PWA dashboard and the end-of-day summary screen's Total Time stat. `GET /api/users/<user_id>/dashboard` returns `workouts` — one panel per session: the last two past ones (completed or missed, reaching into the previous completed plan via `get_previous_plan_workouts` early in a new plan), then every scheduled one, each with `status` (completed / missed / scheduled), a display `date` (completion date in `APP_TIMEZONE`, else `scheduled_date`), `is_next`, `can_start` (scheduled for today) and its exercises with set logs and RPE, for the panel's View screen (`/workout/<session_id>`). It also still returns the per-day `days` list (rest / completed / missed / next / upcoming, plus `locked`) that the in-workout screens address by `day_number`.
 
 | Column | Type | Notes |
 |---|---|---|

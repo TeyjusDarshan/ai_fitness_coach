@@ -1,15 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { DayRow } from '../components/DayRow'
-import { startSession } from '../api'
+import { useEffect } from 'react'
+import { WorkoutPanel } from '../components/WorkoutPanel'
 import { useAppState } from '../state/AppStateContext'
-import { firstIncompleteIndex, flattenExercises } from '../utils'
-import type { DashboardDay } from '../types'
+import { useStartWorkout } from '../state/useStartWorkout'
 
 export function DashboardScreen() {
   const { dashboard, loading, error, refreshDashboard, logout } = useAppState()
-  const navigate = useNavigate()
-  const [startError, setStartError] = useState<string | null>(null)
+  const { start, error: startError } = useStartWorkout()
 
   useEffect(() => {
     refreshDashboard().catch(() => {
@@ -17,28 +13,6 @@ export function DashboardScreen() {
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  async function handleStart(day: DashboardDay) {
-    if (day.session_id == null) return
-    setStartError(null)
-    try {
-      await startSession(day.session_id)
-    } catch (e) {
-      // e.g. 409 when the day's scheduled date hasn't arrived in the app's
-      // timezone yet, even though the device clock says it has.
-      setStartError(e instanceof Error ? e.message : 'Could not start this workout.')
-      return
-    }
-    // A fresh session opens with the warm-up video, whose "Start workout"
-    // button leads to the first exercise. Resuming one that already has
-    // logged sets skips straight back to where the user left off.
-    const resuming = flattenExercises(day).some((ex) => ex.set_logs.length > 0)
-    navigate(
-      resuming
-        ? `/day/${day.day_number}/exercise/${firstIncompleteIndex(day)}`
-        : `/day/${day.day_number}/warmup`,
-    )
-  }
 
   if (loading && !dashboard) {
     return (
@@ -67,15 +41,15 @@ export function DashboardScreen() {
 
   return (
     <div className="screen">
-      <h1 className="screen-title">Weekly Calendar</h1>
+      <h1 className="screen-title">Your Workouts</h1>
       {startError && <div className="error-banner">{startError}</div>}
-      <div className="card day-list">
-        {dashboard.days.map((day) => (
-          <DayRow
-            key={day.day_number}
-            day={day}
+      <div className="workout-list">
+        {dashboard.workouts.map((workout) => (
+          <WorkoutPanel
+            key={workout.session_id}
+            workout={workout}
             timerLabel={timerLabel}
-            onStart={() => handleStart(day)}
+            onStart={() => void start(workout)}
           />
         ))}
       </div>

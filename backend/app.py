@@ -25,6 +25,7 @@ from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
     PainLevel,
     WorkoutPlanRepository,
+    app_date,
     app_today,
     is_session_missed,
 )
@@ -60,6 +61,47 @@ def _deny_unless_session_open(session_id):
             "missed": True,
         }), 409
     return None
+
+
+# How many past (completed or missed) workouts the dashboard shows before the
+# upcoming ones, reaching back into the previous plan if need be.
+DASHBOARD_PAST_WORKOUTS = 2
+
+
+def _dashboard_workout(workout, today, plan_closed=False):
+    """A _workout_entries entry with its dashboard status and display date.
+    An uncompleted workout of an already-closed plan counts as missed even if
+    its date hadn't arrived (the coach closed the plan early)."""
+    if workout.get("completed_at"):
+        status = "completed"
+        shown = app_date(workout["completed_at"]).isoformat()
+    else:
+        status = "missed" if plan_closed or is_session_missed(workout, today) else "scheduled"
+        shown = workout["scheduled_date"]
+    return {**workout, "status": status, "date": shown, "is_next": False, "can_start": False}
+
+
+def _dashboard_workouts(user_id, existing, today):
+    """The dashboard's workout panels: the last DASHBOARD_PAST_WORKOUTS past
+    workouts (from the previous plan too, early in a new one), then every
+    workout still scheduled. The first scheduled one is is_next, and only a
+    scheduled workout dated today can_start."""
+    current = [_dashboard_workout(w, today) for w in existing["workouts"]]
+    past = [w for w in current if w["status"] != "scheduled"]
+    upcoming = [w for w in current if w["status"] == "scheduled"]
+    if len(past) < DASHBOARD_PAST_WORKOUTS:
+        previous = [
+            _dashboard_workout(w, today, plan_closed=True)
+            for w in plan_repo.get_previous_plan_workouts(user_id, existing["id"])
+        ]
+        past = previous + past
+    past = past[-DASHBOARD_PAST_WORKOUTS:]
+
+    for workout in upcoming:
+        workout["can_start"] = workout["scheduled_date"] == today.isoformat()
+    if upcoming:
+        upcoming[0]["is_next"] = True
+    return past + upcoming
 
 
 def _plan_response(existing):
@@ -227,6 +269,7 @@ def get_dashboard(user_id):
         "safety_summary": plan["safety_summary"],
         "session_duration_minutes": session_duration_minutes,
         "days": days,
+        "workouts": _dashboard_workouts(user_id, existing, today),
     }), 200
 
 

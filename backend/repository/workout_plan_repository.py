@@ -64,6 +64,14 @@ def app_today() -> date:
     return datetime.now(ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Kolkata"))).date()
 
 
+def app_date(timestamp: str) -> date:
+    """The calendar date, in the app's timezone, of a timestamptz value
+    (e.g. a session's completed_at)."""
+    return datetime.fromisoformat(timestamp).astimezone(
+        ZoneInfo(os.environ.get("APP_TIMEZONE", "Asia/Kolkata"))
+    ).date()
+
+
 def scheduled_date_for(start_date: date, day_number: int) -> date:
     """Day N of a plan falls N-1 days after the plan's start date."""
     return start_date + timedelta(days=day_number - 1)
@@ -331,6 +339,7 @@ class WorkoutPlanRepository:
             "id": plan["id"],
             "completed": plan["completed"],
             "plan": self._reconstruct_plan(plan, sessions),
+            "workouts": self._workout_entries(plan, sessions),
             "sessions": {
                 s["day_number"]: {
                     "id": s["id"],
@@ -363,6 +372,26 @@ class WorkoutPlanRepository:
         ]
         inserted = self.client.table("sessions").insert(rows).execute().data
         return {row["day_number"]: row["id"] for row in inserted}
+
+    def get_previous_plan_workouts(self, user_id: str, before_plan_id: int) -> List[dict]:
+        """The workouts (see _workout_entries) of the user's most recently
+        completed plan other than before_plan_id, so the dashboard can show
+        last week's workouts early in a new plan. [] if there's no such plan."""
+        plans = (
+            self.client.table("plans")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("completed", True)
+            .neq("id", before_plan_id)
+            .order("completed_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        if not plans:
+            return []
+        plan = plans[0]
+        return self._workout_entries(plan, self._fetch_plan_sessions(plan["id"], PLAN_SESSIONS_SELECT))
 
     def get_last_completed_plan(self, user_id: str) -> Optional[dict]:
         plans = (
@@ -897,6 +926,31 @@ class WorkoutPlanRepository:
             "safety_summary": plan["safety_summary"],
             "schedule": schedule,
         }
+
+    @staticmethod
+    def _workout_entries(plan: dict, sessions: List[dict]) -> List[dict]:
+        """One entry per session (training day) of a plan, in date order: its
+        split name from DAY_TEMPLATES, dates, and exercises (primary first,
+        then secondary) with their set logs and RPE. Feeds the dashboard's
+        workout panels and detail screen."""
+        names = {day["day_number"]: day["split_name"] for day in DAY_TEMPLATES[plan["plan_type"]]["schedule"]}
+        entries = []
+        for session in sorted(sessions, key=lambda s: (s["scheduled_date"], s["day_number"])):
+            rows = sorted(
+                session.get("session_exercises") or [],
+                key=lambda r: (r["category"] != "primary", r["id"]),
+            )
+            entries.append({
+                "session_id": session["id"],
+                "plan_id": plan["id"],
+                "day_number": session["day_number"],
+                "name": names.get(session["day_number"]),
+                "scheduled_date": session["scheduled_date"],
+                "started_at": session.get("started_at"),
+                "completed_at": session.get("completed_at"),
+                "exercises": [WorkoutPlanRepository._exercise_entry(row) for row in rows],
+            })
+        return entries
 
     @staticmethod
     def _exercise_entry(row: dict) -> Dict[str, Any]:

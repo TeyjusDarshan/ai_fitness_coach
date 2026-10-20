@@ -173,9 +173,10 @@ def test_dashboard_dates_and_locks_each_day(app_module, sign_in, monkeypatch):
     monkeypatch.setattr(
         app_module.plan_repo,
         "get_unfinished_plan",
-        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions}),
+        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
+    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
 
     response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
 
@@ -212,9 +213,10 @@ def test_dashboard_marks_a_missed_day_and_moves_next_past_it(app_module, sign_in
     monkeypatch.setattr(
         app_module.plan_repo,
         "get_unfinished_plan",
-        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions}),
+        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
+    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
 
     data = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()
 
@@ -224,3 +226,84 @@ def test_dashboard_marks_a_missed_day_and_moves_next_past_it(app_module, sign_in
         (3, "rest", False),
         (4, "upcoming", True),
     ]
+
+
+# --- dashboard workout panels ------------------------------------------------------
+
+def _workout(session_id, plan_id, scheduled_date, completed_at=None, started_at=None, name="Full Body"):
+    return {
+        "session_id": session_id,
+        "plan_id": plan_id,
+        "day_number": session_id % 10,
+        "name": name,
+        "scheduled_date": scheduled_date,
+        "started_at": started_at,
+        "completed_at": completed_at,
+        "exercises": [],
+    }
+
+
+def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts, previous=()):
+    plan = {
+        "plan_type": "4_day",
+        "plan_selection_reason": None,
+        "medical_clearance_warning": None,
+        "coach_notes": None,
+        "safety_summary": None,
+        "schedule": [],
+    }
+    monkeypatch.setattr(
+        app_module.plan_repo,
+        "get_unfinished_plan",
+        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": {}, "workouts": workouts}),
+    )
+    monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
+    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=list(previous)))
+    response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
+    assert response.status_code == 200
+    return response.get_json()["workouts"]
+
+
+def _panels(workouts):
+    return [(w["session_id"], w["status"], w["date"], w["is_next"], w["can_start"]) for w in workouts]
+
+
+def test_dashboard_workouts_show_last_two_past_then_every_scheduled_one(app_module, sign_in, monkeypatch):
+    # TODAY is Tue 2026-10-13.
+    workouts = _dashboard_with_workouts(app_module, sign_in, monkeypatch, [
+        _workout(11, 7, "2026-10-10", completed_at="2026-10-10T04:00:00+00:00"),
+        _workout(12, 7, "2026-10-11"),
+        # 19:00 UTC on the 12th is 00:30 IST on the 13th: shown on the 13th.
+        _workout(13, 7, "2026-10-12", completed_at="2026-10-12T19:00:00+00:00"),
+        _workout(14, 7, "2026-10-13", started_at="2026-10-13T03:00:00+00:00"),
+        _workout(15, 7, "2026-10-15"),
+    ])
+
+    assert _panels(workouts) == [
+        (12, "missed", "2026-10-11", False, False),
+        (13, "completed", "2026-10-13", False, False),
+        (14, "scheduled", "2026-10-13", True, True),
+        (15, "scheduled", "2026-10-15", False, False),
+    ]
+    app_module.plan_repo.get_previous_plan_workouts.assert_not_called()
+
+
+def test_dashboard_workouts_reach_back_into_the_previous_plan(app_module, sign_in, monkeypatch):
+    workouts = _dashboard_with_workouts(
+        app_module, sign_in, monkeypatch,
+        [_workout(21, 7, "2026-10-14"), _workout(22, 7, "2026-10-15")],
+        previous=[
+            _workout(1, 6, "2026-10-08", completed_at="2026-10-08T04:00:00+00:00"),
+            _workout(2, 6, "2026-10-09", completed_at="2026-10-09T04:00:00+00:00"),
+            # Never done and dated after today: the coach closed plan 6 early.
+            _workout(3, 6, "2026-10-14"),
+        ],
+    )
+
+    assert _panels(workouts) == [
+        (2, "completed", "2026-10-09", False, False),
+        (3, "missed", "2026-10-14", False, False),
+        (21, "scheduled", "2026-10-14", True, False),
+        (22, "scheduled", "2026-10-15", False, False),
+    ]
+    app_module.plan_repo.get_previous_plan_workouts.assert_called_once_with("usr_1", 7)

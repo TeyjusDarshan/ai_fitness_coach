@@ -1,6 +1,13 @@
 import { LEVELS, levelIndexForRpe } from './components/EffortSlider'
 import { COACH_WHATSAPP_NUMBER } from './constants'
-import type { Dashboard, DashboardDay, DayCompleteSummary, ExerciseEntry } from './types'
+import type {
+  Dashboard,
+  DashboardDay,
+  DashboardWorkout,
+  DayCompleteSummary,
+  ExerciseEntry,
+  WorkoutStatus,
+} from './types'
 
 export function flattenExercises(day: DashboardDay): ExerciseEntry[] {
   return [...day.primary, ...day.secondary]
@@ -153,4 +160,15 @@ export function formatDayDate(isoDate: string): string {
     day: 'numeric',
     month: 'short',
   })
+}
+
+export const WORKOUT_STATUS_LABELS: Record<WorkoutStatus, string> = {
+  completed: 'Completed',
+  missed: 'Missed',
+  scheduled: 'Scheduled',
+}
+
+// The only startable workout is today's, so can_start doubles as "is today".
+export function workoutDateLabel(workout: DashboardWorkout): string {
+  return workout.can_start ? 'Today' : formatDayDate(workout.date)
 }

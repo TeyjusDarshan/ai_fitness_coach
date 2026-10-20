@@ -49,6 +49,7 @@ class FakeTable:
         self._ilike = []
         self._is_null = []
         self._gte = []
+        self._neq = []
         self._insert_rows = None
         self._update = None
 
@@ -70,6 +71,10 @@ class FakeTable:
 
     def eq(self, key, value):
         self._eq.append((key, value))
+        return self
+
+    def neq(self, key, value):
+        self._neq.append((key, value))
         return self
 
     def gte(self, key, value):
@@ -111,6 +116,8 @@ class FakeTable:
             matched = [r for r in matched if needle in (r.get(key) or "").lower()]
         for key in self._is_null:
             matched = [r for r in matched if r.get(key) is None]
+        for key, value in self._neq:
+            matched = [r for r in matched if r.get(key) != value]
         for key, value in self._gte:
             matched = [r for r in matched if r.get(key) is not None and r[key] >= value]
         if self._update is not None:
@@ -637,3 +644,33 @@ def test_complete_session_completes_the_plan_when_the_other_sessions_were_missed
 
     assert repo.complete_session(5)["plan_completed"] is True
     assert client.tables["plans"][0]["completed"] is True
+
+
+# --- dashboard workouts ---------------------------------------------------------
+
+def test_unfinished_plan_lists_its_workouts_in_date_order_with_names_and_exercises():
+    client = FakeSupabaseClient()
+    _seed_unfinished_plan(client, {5: None, 1: "2026-10-12T10:30:00+00:00", 3: None})
+    secondary = _row(id=90, category="secondary", exercises={"id": 101, "name": "Plank"})
+    client.tables["sessions"][0]["session_exercises"].insert(0, secondary)  # day 5
+    repo = _repo(client)
+
+    workouts = repo.get_unfinished_plan("usr_1")["workouts"]
+
+    assert [(w["session_id"], w["day_number"], w["name"], w["scheduled_date"]) for w in workouts] == [
+        (11, 1, "Full Body", "2026-10-12"),
+        (13, 3, "Full Body", "2026-10-14"),
+        (15, 5, "Full Body (Unilateral & Work Capacity)", "2026-10-16"),
+    ]
+    assert workouts[0]["completed_at"] == "2026-10-12T10:30:00+00:00"
+    assert [e["name"] for e in workouts[2]["exercises"]] == ["Squat", "Plank"]  # primary first
+
+
+def test_previous_plan_workouts_come_from_the_last_completed_plan_other_than_the_current_one():
+    client = FakeSupabaseClient()
+    _seed_unfinished_plan(client, {1: "2026-10-12T10:30:00+00:00"})
+    client.tables["plans"][0]["completed"] = True
+    repo = _repo(client)
+
+    assert [w["session_id"] for w in repo.get_previous_plan_workouts("usr_1", before_plan_id=8)] == [11]
+    assert repo.get_previous_plan_workouts("usr_1", before_plan_id=7) == []
