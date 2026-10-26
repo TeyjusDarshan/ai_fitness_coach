@@ -83,8 +83,6 @@ id,from_exercise_id,to_exercise_id,type,reason
 82,49,50,progression,RIR > 3 and hit rep ceiling
 83,50,51,progression,RIR > 3 and hit rep ceiling
 84,51,52,progression,RIR > 3 and hit rep ceiling
-85,49,53,regression,Lack of strength
-86,53,49,progression,RIR > 3 and hit rep ceiling
 87,50,54,regression,Lack of strength
 88,54,50,progression,RIR > 3 and hit rep ceiling
 89,50,49,regression,Lack of form
