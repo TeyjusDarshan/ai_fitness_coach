@@ -6,7 +6,11 @@ Populates, in order: movement_types, equipment, joints (lookups) -> exercises
 semicolon-delimited loaded_joints column) -> exercise_relationships (from
 relationships.csv).
 
-All writes are upserts, so the script is safe to re-run.
+All writes are upserts, so the script is safe to re-run. exercise_relationships
+is synced to match relationships.csv exactly: edges deleted on the Workout
+Builder board (or whose type was changed) are deleted from Supabase too.
+"alternatives" edges are board-only and are skipped — the table only allows
+progression/regression.
 
 Usage:
     python3 utilities/scripts/migrate_exercises_to_supabase.py [--dry-run]
@@ -33,6 +37,39 @@ SEQUENCE_RESYNC_SQL = """\
 SELECT setval(pg_get_serial_sequence('exercises', 'id'), (SELECT MAX(id) FROM exercises));
 SELECT setval(pg_get_serial_sequence('exercise_relationships', 'id'), (SELECT MAX(id) FROM exercise_relationships));
 """
+
+
+# The exercise_relationships.type check constraint.
+DB_RELATIONSHIP_TYPES = ("progression", "regression")
+
+
+def _relationship_key(record):
+    return (record["from_exercise_id"], record["to_exercise_id"], record["type"])
+
+
+def stale_relationships(client, relationship_records):
+    """exercise_relationships rows that are no longer in relationships.csv."""
+    wanted = {_relationship_key(r) for r in relationship_records}
+    existing = client.table("exercise_relationships").select(
+        "id, from_exercise_id, to_exercise_id, type"
+    ).execute().data
+    return [row for row in existing if _relationship_key(row) not in wanted]
+
+
+def warn_ambiguous_edges(relationship_records):
+    """Plan progression follows one progression edge and one "lack of
+    strength" regression edge per exercise; with several, which one it
+    takes is arbitrary."""
+    groups = {}
+    for r in relationship_records:
+        if r["type"] == "progression":
+            groups.setdefault((r["from_exercise_id"], "progression"), []).append(r["to_exercise_id"])
+        elif "lack of strength" in (r["reason"] or "").lower():
+            groups.setdefault((r["from_exercise_id"], "lack-of-strength regression"), []).append(r["to_exercise_id"])
+    for (from_id, kind), to_ids in sorted(groups.items()):
+        if len(to_ids) > 1:
+            print(f"WARNING: exercise {from_id} has {len(to_ids)} {kind} edges (to {to_ids}); "
+                  "plan progression will pick one arbitrarily")
 
 
 def _split(value):
@@ -98,6 +135,9 @@ def build_records(exercise_rows, relationship_rows, movement_type_ids, equipment
         for joint_name in _split(row["loaded_joints"]):
             joint_links.append({"exercise_id": ex_id, "joint_id": joint_ids[joint_name]})
 
+    skipped = [row for row in relationship_rows if row["type"] not in DB_RELATIONSHIP_TYPES]
+    if skipped:
+        print(f"Skipping {len(skipped)} relationship(s) with a type other than progression/regression")
     relationship_records = [
         {
             "from_exercise_id": _to_int(row["from_exercise_id"]),
@@ -106,6 +146,7 @@ def build_records(exercise_rows, relationship_rows, movement_type_ids, equipment
             "reason": row["reason"] or None,
         }
         for row in relationship_rows
+        if row["type"] in DB_RELATIONSHIP_TYPES
     ]
 
     return exercise_records, joint_links, relationship_records
@@ -130,11 +171,17 @@ def migrate(client, dry_run):
             exercise_rows, relationship_rows,
             {n: None for n in movement_types}, {n: None for n in equipment_names}, {n: None for n in joint_names},
         )
+        warn_ambiguous_edges(relationship_records)
         print(
             f"Dry run — would upsert {len(exercise_records)} exercises, "
             f"{len(joint_links)} exercise_loaded_joints rows, "
             f"{len(relationship_records)} exercise_relationships rows. No writes performed."
         )
+        if client is not None:
+            stale = stale_relationships(client, relationship_records)
+            print(f"Would delete {len(stale)} exercise_relationships rows no longer in the CSV:")
+            for row in stale:
+                print(f"  {row['from_exercise_id']} -> {row['to_exercise_id']} ({row['type']})")
         return
 
     movement_type_ids = upsert_lookup(client, "movement_types", movement_types)
@@ -144,6 +191,7 @@ def migrate(client, dry_run):
     exercise_records, joint_links, relationship_records = build_records(
         exercise_rows, relationship_rows, movement_type_ids, equipment_ids, joint_ids,
     )
+    warn_ambiguous_edges(relationship_records)
 
     print(f"Upserting {len(exercise_records)} exercises...")
     client.table("exercises").upsert(exercise_records, on_conflict="id").execute()
@@ -156,6 +204,11 @@ def migrate(client, dry_run):
         relationship_records, on_conflict="from_exercise_id,to_exercise_id,type"
     ).execute()
 
+    stale = stale_relationships(client, relationship_records)
+    if stale:
+        print(f"Deleting {len(stale)} exercise_relationships rows no longer in the CSV...")
+        client.table("exercise_relationships").delete().in_("id", [row["id"] for row in stale]).execute()
+
     print("Migration complete.")
     print("\nExplicit ids were inserted into exercises/exercise_relationships — resync their")
     print("identity sequences before relying on auto-generated ids for new rows:\n")
@@ -166,7 +219,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dry-run", action="store_true",
-        help="Parse CSVs and print counts without connecting to or writing to Supabase",
+        help="Parse CSVs and print counts (and, if .env has credentials, the relationships "
+        "that would be deleted) without writing to Supabase",
     )
     args = parser.parse_args()
 
@@ -177,7 +231,7 @@ def main():
     if not args.dry_run and not (url and key):
         sys.exit("SUPABASE_URL and SUPABASE_KEY must be set in .env")
 
-    client = create_client(url, key) if not args.dry_run else None
+    client = create_client(url, key) if url and key else None
     migrate(client, dry_run=args.dry_run)
 
 

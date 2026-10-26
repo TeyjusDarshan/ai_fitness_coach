@@ -1,10 +1,9 @@
 """Integration test for _process_message.
 
-Only the Gemini LLM call and the outbound WhatsApp send are mocked
-(summarizer.llm.invoke, main.whatsapp_client.send_audio), since it's
-currently unreliable to call the LLM for real in a test run (tier/rate-limit
-issues on the free plan - see summarizer.py) and sending a real WhatsApp
-message has no test recipient. Everything else - the Supabase context fetch,
+Only the Claude summary call and the outbound WhatsApp send are mocked
+(main.generate_workout_summary, main.whatsapp_client.send_audio), so the
+test gets a fixed analysis text without paying for an LLM call, and since
+sending a real WhatsApp message has no test recipient. Everything else - the Supabase context fetch,
 Sarvam TTS, the mp3->ogg conversion, the Supabase Storage upload, and the
 session_analysis upsert - runs for real, same as
 backend/tests/kafka_producer/client_test.py does for Kafka.
@@ -33,9 +32,10 @@ CONSTANT_ANALYSIS_TEXT = (
 @pytest.mark.integration
 @pytest.mark.skipif(not SESSION_ID, reason="set ANALYSIS_IT_SESSION_ID to a test sessions row")
 def test_process_message_stores_analysis_and_voice_note(monkeypatch):
-    mock_llm = MagicMock()
-    mock_llm.invoke.return_value = MagicMock(content=CONSTANT_ANALYSIS_TEXT)
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.llm", mock_llm)
+    monkeypatch.setattr(
+        "workout_analysis_consumer.main.generate_workout_summary",
+        MagicMock(return_value=CONSTANT_ANALYSIS_TEXT),
+    )
 
     mock_send_audio = MagicMock()
     monkeypatch.setattr("workout_analysis_consumer.main.whatsapp_client.send_audio", mock_send_audio)

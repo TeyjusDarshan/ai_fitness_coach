@@ -1,6 +1,5 @@
 confluent-kafka==2.6.1
-langchain-core==1.4.9
-langchain-google-genai==4.2.7
+anthropic==1.8.0
 python-dotenv==1.2.2
 requests==2.34.2
 sarvamai==0.1.32

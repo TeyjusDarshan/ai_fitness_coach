@@ -2,50 +2,40 @@ import json
 import os
 from typing import Any, Dict
 
+import anthropic
 from dotenv import load_dotenv
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.rate_limiters import InMemoryRateLimiter
-from langchain_google_genai import ChatGoogleGenerativeAI
 
 from workout_analysis_consumer.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
 
 load_dotenv()
 
+MODEL = "claude-sonnet-5-5"
 
-rate_limiter = InMemoryRateLimiter(
-    requests_per_second=0.15,  # conservative free-tier guess for gemini-3.8-flash; check aistudio.google.com/rate-limit and raise if you're on a paid tier
-    check_every_n_seconds=0.1,
-    max_bucket_size=1,
-)
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    temperature=0.5,
+# Reads ANTHROPIC_API_KEY from the environment.
+client = anthropic.Anthropic(
     max_retries=2,
-    timeout=int(os.getenv("GEMINI_REQUEST_TIMEOUT_SECONDS", "120")),
-    rate_limiter=rate_limiter,
+    timeout=float(os.getenv("CLAUDE_REQUEST_TIMEOUT_SECONDS", "120")),
 )
+
+
+class SummaryRefusedError(RuntimeError):
+    """Claude's safety classifiers declined the request (and no fallback
+    model took it), so there's no summary to save."""
 
 
 def generate_workout_summary(context: Dict[str, Any]) -> str:
     """Turn one day's workout context into a Tanglish coach summary."""
-    messages = [
-        SystemMessage(content=WORKOUT_ANALYSIS_SYSTEM_PROMPT),
-        HumanMessage(content=json.dumps(context, indent=2, default=str)),
-    ]
-    response = llm.invoke(messages)
-    return _extract_text(response.content).strip()
-
-
-def _extract_text(content: Any) -> str:
-    """Normalize response content, which may be a plain string or a list of
-    content blocks (e.g. [{'type': 'text', 'text': ..., 'extras': {...}}])."""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        return "".join(
-            block.get("text", "") if isinstance(block, dict) else str(block)
-            for block in content
-            if not isinstance(block, dict) or block.get("type", "text") == "text"
-        )
-    return str(content)
+    response = client.beta.messages.create(
+        model=MODEL,
+        max_tokens=16000,
+        system=WORKOUT_ANALYSIS_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": json.dumps(context, indent=2, default=str)}],
+        # On a policy decline, the API re-runs the request on Anthropic's
+        # recommended fallback model within the same call.
+        betas=["server-side-fallback-2026-07-01"],
+        fallbacks="default",
+    )
+    if response.stop_reason == "refusal":
+        category = response.stop_details.category if response.stop_details else None
+        raise SummaryRefusedError(f"Claude declined to summarize (category: {category})")
+    return "".join(block.text for block in response.content if block.type == "text").strip()
