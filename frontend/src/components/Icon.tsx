@@ -27,6 +27,19 @@ const PATHS = {
   chevronLeft: <path d="m15 5-7 7 7 7" />,
   chevronRight: <path d="m9 5 7 7-7 7" />,
   share: <path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12" />,
+  chat: (
+    <>
+      <path d="M5 4.5h14a2.5 2.5 0 0 1 2.5 2.5v8a2.5 2.5 0 0 1-2.5 2.5H11l-4.5 3.5V17.5H5A2.5 2.5 0 0 1 2.5 15V7A2.5 2.5 0 0 1 5 4.5Z" />
+      <path d="M8 11h.01M12 11h.01M16 11h.01" strokeWidth="2.6" />
+    </>
+  ),
+  lightbulb: (
+    <>
+      <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z" />
+    </>
+  ),
+  send: <path d="M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5 21 3Z" />,
+  arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
   mic: (
     <>
       <rect x="9" y="3" width="6" height="11" rx="3" />
