@@ -1149,3 +1149,124 @@
   font-size: 16px;
   padding: 12px 16px;
 }
+
+.period-prompt {
+  --rose: #c8234a;
+  --rose-dark: #a10f3a;
+  --rose-ink: #b0507a;
+  --rose-bg: #fbe6ec;
+  --rose-badge: #f8cfda;
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(30, 43, 36, 0.4);
+  padding: 12px;
+}
+.period-prompt__card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: 440px;
+  background: var(--rose-bg);
+  border-radius: 28px;
+  box-shadow: 0 -4px 24px rgba(160, 15, 58, 0.18);
+  padding: 22px 20px 20px;
+}
+.period-prompt__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.period-prompt__badge {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  background: var(--rose-badge);
+  color: var(--rose);
+}
+.period-prompt__heart {
+  position: absolute;
+  color: #e8456b;
+}
+.period-prompt__heart--a {
+  top: -6px;
+  right: -2px;
+}
+.period-prompt__heart--b {
+  top: 6px;
+  right: -10px;
+}
+.period-prompt__title {
+  margin: 0 0 4px;
+  font-size: 23px;
+  line-height: 1.15;
+  font-weight: 800;
+  color: var(--rose-dark);
+}
+.period-prompt__text {
+  margin: 0;
+  font-size: 15px;
+  color: var(--rose-ink);
+}
+.period-prompt__yes {
+  position: relative;
+  padding: 0 22px;
+  margin-top: 4px;
+}
+/* Little sparkle ticks either side of "Yes". */
+.period-prompt__yes::before,
+.period-prompt__yes::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 22px;
+  transform: translateY(-50%);
+  background:
+    linear-gradient(var(--rose), var(--rose)) 0 0 / 11px 2.5px no-repeat,
+    linear-gradient(var(--rose), var(--rose)) 3px 100% / 8px 2.5px no-repeat,
+    linear-gradient(var(--rose), var(--rose)) 0 50% / 13px 2.5px no-repeat;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+.period-prompt__yes::before {
+  left: 2px;
+}
+.period-prompt__yes::after {
+  right: 2px;
+  transform: translateY(-50%) scaleX(-1);
+}
+.period-prompt__btn {
+  width: 100%;
+  font-size: 19px;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  padding: 15px 20px;
+  cursor: pointer;
+}
+.period-prompt__btn--yes {
+  color: #fff;
+  background: var(--rose);
+  border: none;
+  box-shadow: 0 4px 12px rgba(200, 35, 74, 0.3);
+}
+.period-prompt__btn--yes:hover {
+  background: var(--rose-dark);
+}
+.period-prompt__btn--no {
+  color: var(--rose-dark);
+  background: transparent;
+  border: 1.5px solid var(--rose);
+}
+.period-prompt__btn--no:hover {
+  background: rgba(200, 35, 74, 0.07);
+}

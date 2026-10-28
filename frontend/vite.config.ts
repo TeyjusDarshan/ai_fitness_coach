@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' so src/pwaUpdate.ts decides *when* a waiting update takes
+      // over (it reloads the page), instead of a reload at an arbitrary
+      // moment mid-workout.
+      registerType: 'prompt',
       // Data (dashboard/session state) must always be fresh — only the
       // built app shell (JS/CSS/HTML/icons) is precached, /api/* is left
       // untouched by the service worker (NetworkOnly by default).

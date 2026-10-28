@@ -24,8 +24,32 @@ ENROLLMENT_TTL = timedelta(hours=48)
 auth_repo = AuthRepository()
 
 
+def _preview_host() -> Optional[str]:
+    """This deployment's host when running as a Vercel preview, else None.
+
+    Uses the branch URL, which stays the same across a branch's deployments
+    (VERCEL_URL changes on every push, which would orphan every passkey
+    registered on it). Needs Vercel's "Automatically expose System
+    Environment Variables" setting, on by default.
+    """
+    if os.environ.get("VERCEL_ENV") != "preview":
+        return None
+    return os.environ.get("VERCEL_BRANCH_URL") or os.environ.get("VERCEL_URL") or None
+
+
 def rp_id() -> str:
-    return os.environ.get("WEBAUTHN_RP_ID", "localhost")
+    """The WebAuthn relying-party id: the site's domain. On a Vercel preview
+    it is that deployment's own host, overriding WEBAUTHN_RP_ID (which names
+    the production domain); elsewhere WEBAUTHN_RP_ID, default localhost."""
+    return _preview_host() or os.environ.get("WEBAUTHN_RP_ID", "localhost")
+
+
+def app_base_url(default: str = "") -> str:
+    """The app's public base URL (no trailing slash), used to build sign-up
+    links. On a Vercel preview it is that deployment's own URL, overriding
+    APP_BASE_URL; elsewhere APP_BASE_URL, else `default`."""
+    host = _preview_host()
+    return (f"https://{host}" if host else os.environ.get("APP_BASE_URL", default)).rstrip("/")
 
 
 def rp_name() -> str:
@@ -33,6 +57,9 @@ def rp_name() -> str:
 
 
 def allowed_origins() -> List[str]:
+    host = _preview_host()
+    if host:
+        return [f"https://{host}"]
     raw = os.environ.get("WEBAUTHN_ORIGINS", "http://localhost:5173")
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 

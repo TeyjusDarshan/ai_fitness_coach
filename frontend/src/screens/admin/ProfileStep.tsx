@@ -23,13 +23,14 @@ export function ProfileStep({
 }) {
   const [userId, setUserId] = useState(result?.user_id ?? '')
   const [name, setName] = useState(result?.name ?? '')
+  const [gender, setGender] = useState(result?.gender ?? '')
   const [rawText, setRawText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const userIdValid = USER_ID_PATTERN.test(userId.trim())
   const nameValid = name.trim() !== '' && name.trim().length <= MAX_NAME_LENGTH
-  const canGenerate = userIdValid && nameValid && rawText.trim() !== '' && !generating
+  const canGenerate = userIdValid && nameValid && gender !== '' && rawText.trim() !== '' && !generating
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -37,7 +38,7 @@ export function ProfileStep({
     setGenerating(true)
     setError(null)
     try {
-      onGenerated(await generateProfile(adminKey, userId.trim(), name.trim(), rawText))
+      onGenerated(await generateProfile(adminKey, userId.trim(), name.trim(), gender, rawText))
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onUnauthorized()
@@ -80,6 +81,23 @@ export function ProfileStep({
             disabled={generating}
           />
           <small className="admin__hint">Shown to the client in the app and on workout summaries.</small>
+        </label>
+        <label className="admin__field">
+          <span>Gender</span>
+          <select
+            className="login-screen__input"
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+            disabled={generating}
+          >
+            <option value="" disabled>
+              Select…
+            </option>
+            <option value="female">Female</option>
+            <option value="male">Male</option>
+            <option value="other">Other</option>
+          </select>
+          <small className="admin__hint">Women are asked if they are on their period before each workout.</small>
         </label>
         <label className="admin__field">
           <span>About the client</span>

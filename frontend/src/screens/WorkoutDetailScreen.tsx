@@ -2,6 +2,7 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { LEVELS, levelIndexForRpe } from '../components/EffortSlider'
 import { Icon } from '../components/Icon'
 import { Illustration } from '../components/Illustration'
+import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
 import { WORKOUT_STATUS_LABELS, targetRepsForSet, workoutDateLabel } from '../utils'
@@ -14,7 +15,7 @@ export function WorkoutDetailScreen() {
   const { dashboard } = useAppState()
   const navigate = useNavigate()
   const { sessionId } = useParams()
-  const { start, error } = useStartWorkout()
+  const { start, error, periodPrompt } = useStartWorkout()
 
   if (!dashboard) return null
   const workout = dashboard.workouts.find((w) => w.session_id === Number(sessionId))
@@ -66,6 +67,7 @@ export function WorkoutDetailScreen() {
           {workout.started_at ? 'Continue Workout' : 'Start Workout'}
         </button>
       )}
+      <PeriodPrompt {...periodPrompt} />
     </div>
   )
 }

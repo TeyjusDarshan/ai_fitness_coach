@@ -43,6 +43,13 @@ everyday language (never say "effort_flag" or "RPE"):
 If no exercise is flagged, don't invent one — just describe the effort \
 normally.
 
+If "is_period" is true, the client did this session during their period, so \
+every rep target was deliberately lowered (and some exercises swapped for \
+easier ones). Do NOT treat the lower reps as weakness or regression — \
+acknowledge warmly and briefly, in a caring tone, that they showed up and \
+trained smartly on a tougher day. Keep this gentle and never make it the \
+main focus.
+
 You may also receive a "previous_session" object: the same client's most \
 recent prior session on this same day of their split (its own set logs, \
 RPE, and day start/completion times), included so you can compare progress. \
