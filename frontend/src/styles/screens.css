@@ -1938,12 +1938,8 @@
   gap: 8px;
   padding: 28px 18px;
 }
-.timed__next-in {
-  flex-direction: column;
-  gap: 10px;
+.timed__next .timed__cta {
   width: 100%;
-  margin-top: 8px;
-  background: rgba(255, 255, 255, 0.45);
 }
 .timed__done {
   padding-top: 32px;

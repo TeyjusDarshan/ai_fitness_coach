@@ -7,10 +7,11 @@ import { VideoPlayer } from '../components/VideoPlayer'
 import { REST_BETWEEN_SETS_SECONDS } from '../constants'
 import { useAppState } from '../state/AppStateContext'
 import { useCountdown } from '../state/useCountdown'
+import { playTick, unlockTickSound } from '../state/tickSound'
 import { afterExercisePath, formatClock, targetRepsForSet, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
 import type { DashboardDay, ExerciseEntry } from '../types'
 
-// The 3-2-1 before a hold, and the lead-in to the next set after a rest.
+// The 3-2-1 before each hold.
 const GET_READY_SECONDS = 3
 
 const DEFAULT_TIP = 'Keep your body in a straight line and breathe normally.'
@@ -26,8 +27,9 @@ const DIFFICULTIES = [
 type Phase = 'intro' | 'countdown' | 'active' | 'rest' | 'next-set' | 'done' | 'difficulty'
 
 // A hold measured in seconds (exercises.is_time_based), run as a guided
-// flow: intro → 3-2-1 → timer (pause / end early) → rest → "set complete,
-// next set in 3" → … → "Great job" → how hard was it → next exercise.
+// flow: intro → 3-2-1 → timer (pause / end early) → rest → "set complete"
+// (waits for Start) → 3-2-1 → … → "Great job" → how hard was it → next
+// exercise.
 // Starts at the first set with no log, so reopening it resumes; each set's
 // seconds held are logged as that set's completed_reps.
 export function TimedExerciseScreen({
@@ -61,10 +63,16 @@ export function TimedExerciseScreen({
   const target = targetRepsForSet(exercise, setIdx)
   const timerSeconds =
     phase === 'active' ? target : phase === 'rest' ? REST_BETWEEN_SETS_SECONDS : GET_READY_SECONDS
-  const timing = phase === 'countdown' || phase === 'active' || phase === 'rest' || phase === 'next-set'
+  const timing = phase === 'countdown' || phase === 'active' || phase === 'rest'
 
   const msLeft = useCountdown(timerSeconds, timing && !paused, handleTimerDone, `${phase}:${setIdx}`)
   const secondsLeft = Math.ceil(msLeft / 1000)
+
+  // Tick once a second while she holds (not at the very start or at zero,
+  // and not while paused).
+  useEffect(() => {
+    if (phase === 'active' && !paused && secondsLeft > 0 && secondsLeft < target) playTick()
+  }, [phase, paused, secondsLeft, target])
 
   useWakeLock(timing)
 
@@ -72,10 +80,13 @@ export function TimedExerciseScreen({
     if (phase === 'countdown') setPhase('active')
     else if (phase === 'active') finishSet(target)
     else if (phase === 'rest') setPhase('next-set')
-    else if (phase === 'next-set') {
-      setSetIdx((i) => i + 1)
-      setPhase('active')
-    }
+  }
+
+  // The next set only begins when she's ready: Start leads into the 3-2-1.
+  function startNextSet() {
+    unlockTickSound()
+    setSetIdx((i) => i + 1)
+    setPhase('countdown')
   }
 
   function finishSet(held: number) {
@@ -154,7 +165,10 @@ export function TimedExerciseScreen({
               <div className="timed__muted">{exercise.note || DEFAULT_TIP}</div>
             </div>
           </div>
-          <button className="btn-primary timed__cta" onClick={() => setPhase('countdown')}>
+          <button className="btn-primary timed__cta" onClick={() => {
+              unlockTickSound()
+              setPhase('countdown')
+            }}>
             <Icon name="play" size={18} />
             Start Exercise
           </button>
@@ -189,7 +203,10 @@ export function TimedExerciseScreen({
             </span>
           )}
           <div className="timed__controls">
-            <button className="btn-secondary" onClick={() => setPaused((p) => !p)}>
+            <button className="btn-secondary" onClick={() => {
+                unlockTickSound()
+                setPaused((p) => !p)
+              }}>
               <Icon name={paused ? 'play' : 'pause'} size={18} />
               {paused ? 'Resume' : 'Pause'}
             </button>
@@ -235,10 +252,13 @@ export function TimedExerciseScreen({
           <p className="timed__score">
             {lastHeld} / {target} sec
           </p>
-          <div className="timed__card timed__next-in">
-            <span className="timed__muted">Next set will start in</span>
-            <CircularCountdown secondsLeft={secondsLeft} totalSeconds={GET_READY_SECONDS} size={96} stroke={7} />
-          </div>
+          <p className="timed__muted">
+            Next: Set {setIdx + 2} of {totalSets} · {targetRepsForSet(exercise, setIdx + 1)} seconds
+          </p>
+          <button className="btn-primary timed__cta" onClick={startNextSet}>
+            <Icon name="play" size={18} />
+            Start Set {setIdx + 2}
+          </button>
         </div>
       )}
 
