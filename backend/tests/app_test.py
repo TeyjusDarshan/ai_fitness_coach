@@ -327,3 +327,111 @@ def test_dashboard_workouts_reach_back_into_the_previous_plan(app_module, sign_i
         (22, "scheduled", "2026-10-15", False, False),
     ]
     app_module.plan_repo.get_previous_plan_workouts.assert_called_once_with("usr_1", 7)
+
+
+# --- voice feedback ---------------------------------------------------------------
+
+@pytest.fixture
+def storage(app_module, monkeypatch):
+    stub = MagicMock()
+    stub.create_signed_url.return_value = "https://signed.example/session_42.webm?token=abc"
+    monkeypatch.setattr(app_module, "feedback_storage", lambda: stub)
+    monkeypatch.setattr(app_module.plan_repo, "set_feedback_audio_path", MagicMock())
+    return stub
+
+
+def _upload(client, data=b"voice", mimetype="audio/webm;codecs=opus", field="audio"):
+    import io
+
+    return client.post(
+        "/api/sessions/42/feedback-audio",
+        data={field: (io.BytesIO(data), "feedback", mimetype)} if field else {},
+        content_type="multipart/form-data",
+    )
+
+
+def test_feedback_upload_stores_the_recording_and_records_its_path(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch, completed_at="2026-10-13T10:00:00+00:00")
+
+    response = _upload(sign_in("usr_1"))
+
+    assert response.status_code == 200
+    assert response.get_json() == {"feedback_audio_path": "session_42.webm"}
+    storage.store.assert_called_once_with(b"voice", "session_42.webm", "audio/webm")
+    app_module.plan_repo.set_feedback_audio_path.assert_called_once_with(42, "session_42.webm")
+    storage.remove.assert_not_called()
+
+
+def test_rerecording_in_another_format_removes_the_old_file(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch)
+    session = app_module.plan_repo.get_session.return_value
+    session["feedback_audio_path"] = "session_42.webm"
+
+    response = _upload(sign_in("usr_1"), mimetype="audio/mp4")
+
+    assert response.get_json() == {"feedback_audio_path": "session_42.m4a"}
+    storage.remove.assert_called_once_with("session_42.webm")
+
+
+@pytest.mark.parametrize("kwargs, status", [
+    ({"field": None}, 400),                       # no file
+    ({"data": b""}, 400),                         # empty
+    ({"mimetype": "video/mp4"}, 415),             # not audio we store
+    ({"data": b"x" * (4 * 1024 * 1024 + 1)}, 413),  # too big
+])
+def test_feedback_upload_rejects_bad_files(app_module, sign_in, monkeypatch, storage, kwargs, status):
+    _session_42(app_module, monkeypatch)
+
+    response = _upload(sign_in("usr_1"), **kwargs)
+
+    assert response.status_code == status
+    storage.store.assert_not_called()
+
+
+def test_feedback_upload_to_another_users_session_is_refused(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch, owner="usr_2")
+
+    response = _upload(sign_in("usr_1"))
+
+    assert response.status_code == 403
+    storage.store.assert_not_called()
+
+
+def test_feedback_upload_storage_failure_returns_500_without_recording_a_path(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch)
+    storage.store.side_effect = RuntimeError("bucket unreachable")
+
+    response = _upload(sign_in("usr_1"))
+
+    assert response.status_code == 500
+    app_module.plan_repo.set_feedback_audio_path.assert_not_called()
+
+
+def test_feedback_link_is_a_signed_url_for_the_stored_path(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch)
+    app_module.plan_repo.get_session.return_value["feedback_audio_path"] = "session_42.webm"
+
+    response = sign_in("usr_1").get("/api/sessions/42/feedback-audio")
+
+    assert response.status_code == 200
+    assert response.get_json() == {"url": "https://signed.example/session_42.webm?token=abc"}
+    storage.create_signed_url.assert_called_once_with("session_42.webm", 3600)
+
+
+def test_feedback_link_without_a_recording_is_404(app_module, sign_in, monkeypatch, storage):
+    _session_42(app_module, monkeypatch)
+
+    assert sign_in("usr_1").get("/api/sessions/42/feedback-audio").status_code == 404
+
+
+def test_coach_can_get_a_feedback_link_with_the_admin_key(app_module, monkeypatch, storage):
+    _session_42(app_module, monkeypatch)
+    app_module.plan_repo.get_session.return_value["feedback_audio_path"] = "session_42.webm"
+    monkeypatch.setenv("ADMIN_API_KEY", "k")
+    client = app_module.app.test_client()
+
+    assert client.get("/api/admin/sessions/42/feedback-audio").status_code == 401
+    ok = client.get("/api/admin/sessions/42/feedback-audio", headers={"X-Admin-Key": "k"})
+
+    assert ok.status_code == 200
+    assert ok.get_json()["url"].startswith("https://signed.example/")

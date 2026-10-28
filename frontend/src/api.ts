@@ -50,6 +50,14 @@ export function startSession(sessionId: number, isPeriod?: boolean): Promise<unk
   })
 }
 
+// Multipart, so the JSON Content-Type header is dropped and the browser sets
+// the boundary itself.
+export function uploadFeedbackAudio(sessionId: number, recording: Blob): Promise<{ feedback_audio_path: string }> {
+  const form = new FormData()
+  form.append('audio', recording, 'feedback')
+  return request(`/sessions/${sessionId}/feedback-audio`, { method: 'POST', body: form, headers: {} })
+}
+
 export function logSet(
   sessionId: number,
   sessionExerciseId: number,
