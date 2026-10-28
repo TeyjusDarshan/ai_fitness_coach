@@ -321,3 +321,48 @@ def test_logout_deletes_session_and_clears_cookie(env):
     auth.auth_repo.delete_session.assert_called_once_with(auth.hash_token("tok"))
     cookie = _session_cookie(response)
     assert cookie and ("Max-Age=0" in cookie or "Expires=Thu, 01 Jan 1970" in cookie)
+
+
+# --- Vercel preview deployments ---------------------------------------------------
+
+def test_vercel_preview_uses_its_own_branch_host_instead_of_the_production_config(monkeypatch):
+    from backend import auth
+
+    monkeypatch.setenv("WEBAUTHN_RP_ID", "prod.example.com")
+    monkeypatch.setenv("WEBAUTHN_ORIGINS", "https://prod.example.com")
+    monkeypatch.setenv("APP_BASE_URL", "https://prod.example.com")
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("VERCEL_URL", "app-abc123.vercel.app")
+    monkeypatch.setenv("VERCEL_BRANCH_URL", "app-git-feature.vercel.app")
+
+    assert auth.rp_id() == "app-git-feature.vercel.app"
+    assert auth.allowed_origins() == ["https://app-git-feature.vercel.app"]
+    assert auth.app_base_url() == "https://app-git-feature.vercel.app"
+
+
+def test_vercel_preview_falls_back_to_the_deployment_url_without_a_branch_url(monkeypatch):
+    from backend import auth
+
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.delenv("VERCEL_BRANCH_URL", raising=False)
+    monkeypatch.setenv("VERCEL_URL", "app-abc123.vercel.app")
+
+    assert auth.rp_id() == "app-abc123.vercel.app"
+
+
+@pytest.mark.parametrize("vercel_env", ["production", "development", None])
+def test_outside_a_preview_the_configured_values_are_used(monkeypatch, vercel_env):
+    from backend import auth
+
+    monkeypatch.setenv("WEBAUTHN_RP_ID", "prod.example.com")
+    monkeypatch.setenv("WEBAUTHN_ORIGINS", "https://prod.example.com, https://www.prod.example.com")
+    monkeypatch.setenv("APP_BASE_URL", "https://prod.example.com/")
+    monkeypatch.setenv("VERCEL_URL", "app-abc123.vercel.app")
+    if vercel_env:
+        monkeypatch.setenv("VERCEL_ENV", vercel_env)
+    else:
+        monkeypatch.delenv("VERCEL_ENV", raising=False)
+
+    assert auth.rp_id() == "prod.example.com"
+    assert auth.allowed_origins() == ["https://prod.example.com", "https://www.prod.example.com"]
+    assert auth.app_base_url() == "https://prod.example.com"

@@ -93,7 +93,9 @@ curl -X POST http://localhost:8001/api/admin/users/usr_10235/enrollment-link -H 
 Auth config (env): `ADMIN_API_KEY`, `WEBAUTHN_RP_ID` (the site's domain — defaults to `localhost`),
 `WEBAUTHN_ORIGINS` (comma-separated, defaults to `http://localhost:5173`), `WEBAUTHN_RP_NAME`,
 `APP_BASE_URL` (used to build sign-up links). Passkeys are bound to `WEBAUTHN_RP_ID`, so ones created
-on one domain won't work on another; testing on a phone needs an HTTPS domain.
+on one domain won't work on another; testing on a phone needs an HTTPS domain. On a Vercel **preview**
+deployment (`VERCEL_ENV=preview`) these three are ignored and derived from the branch's own URL
+(`VERCEL_BRANCH_URL`), so set them for Production only; a preview has its own passkeys, separate from production's.
 
 ### Flow detail
 

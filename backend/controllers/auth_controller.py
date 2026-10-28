@@ -11,7 +11,6 @@ Each /verify call finds its challenge by reading it back out of the
 credential's clientDataJSON and atomically deleting the stored row, so a
 challenge works at most once and no per-client server state is needed.
 """
-import os
 import secrets
 from typing import Optional
 
@@ -38,6 +37,7 @@ from backend.auth import (
     ENROLLMENT_TTL,
     SESSION_COOKIE,
     allowed_origins,
+    app_base_url,
     auth_repo,
     clear_session_cookie,
     current_user_id,
@@ -118,7 +118,7 @@ def mint_enrollment_link(user_id: str) -> dict:
     expires_at = utcnow() + ENROLLMENT_TTL
     auth_repo.create_enrollment_token(user_id, hash_token(token), expires_at)
 
-    base_url = os.environ.get("APP_BASE_URL", request.host_url).rstrip("/")
+    base_url = app_base_url(request.host_url)
     return {
         "url": f"{base_url}/enroll?token={token}",
         "expires_at": expires_at.isoformat(),
