@@ -1,7 +1,7 @@
 import os
 import secrets
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
@@ -114,6 +114,20 @@ class AuthRepository:
 
     def delete_session(self, token_hash: str) -> None:
         self.client.table("auth_sessions").delete().eq("token_hash", token_hash).execute()
+
+    def passkey_summary(self, user_id: Optional[str] = None) -> Dict[str, dict]:
+        """user_id -> {passkeys: count, last_used_at: latest sign-in or None},
+        for one user or (no user_id) everyone with a passkey."""
+        query = self.client.table("user_passkeys").select("user_id, last_used_at")
+        if user_id is not None:
+            query = query.eq("user_id", user_id)
+        summary: Dict[str, dict] = {}
+        for row in query.execute().data:
+            entry = summary.setdefault(row["user_id"], {"passkeys": 0, "last_used_at": None})
+            entry["passkeys"] += 1
+            if row.get("last_used_at") and (entry["last_used_at"] is None or row["last_used_at"] > entry["last_used_at"]):
+                entry["last_used_at"] = row["last_used_at"]
+        return summary
 
     def list_credential_ids(self, user_id: str) -> List[str]:
         rows = (

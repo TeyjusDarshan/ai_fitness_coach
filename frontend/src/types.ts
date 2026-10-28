@@ -23,6 +23,8 @@ export interface ExerciseEntry {
   video_url: string | null
   set_logs: SetLog[]
   rpe: number | null
+  // Whether `rpe` was actually rated (the server reports an unrated one as 8).
+  rpe_logged?: boolean
 }
 
 // 'missed': a training day whose date passed without it being completed —

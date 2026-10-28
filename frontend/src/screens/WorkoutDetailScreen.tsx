@@ -1,13 +1,12 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { LEVELS, levelIndexForRpe } from '../components/EffortSlider'
+import { LoggedSets, Prescription } from '../components/ExerciseLog'
 import { Icon } from '../components/Icon'
 import { Illustration } from '../components/Illustration'
 import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
-import { WORKOUT_STATUS_LABELS, repUnit, targetRepsForSet, workoutDateLabel } from '../utils'
+import { WORKOUT_STATUS_LABELS, workoutDateLabel } from '../utils'
 import { youtubeThumbnailUrl } from '../youtube'
-import type { ExerciseEntry } from '../types'
 
 // Read-only view of one workout panel: what's prescribed for a scheduled or
 // missed workout, and what was logged set by set for a completed one.
@@ -68,45 +67,6 @@ export function WorkoutDetailScreen() {
         </button>
       )}
       <PeriodPrompt {...periodPrompt} />
-    </div>
-  )
-}
-
-function setNumbers(exercise: ExerciseEntry): number[] {
-  return Array.from({ length: exercise.sets ?? 0 }, (_, i) => i + 1)
-}
-
-function Prescription({ exercise }: { exercise: ExerciseEntry }) {
-  const targets = setNumbers(exercise).map((n) => targetRepsForSet(exercise, n - 1))
-  const uniform = targets.every((reps) => reps === targets[0])
-  return (
-    <>
-      <div className="workout-detail__muted">
-        {exercise.sets ?? 0} sets × {uniform ? targets[0] : targets.join(', ')} {repUnit(exercise)}
-      </div>
-      {exercise.note && <div className="workout-detail__note">{exercise.note}</div>}
-    </>
-  )
-}
-
-function LoggedSets({ exercise }: { exercise: ExerciseEntry }) {
-  return (
-    <div className="workout-detail__sets">
-      {setNumbers(exercise).map((n) => {
-        const log = exercise.set_logs.find((l) => l.set_number === n)
-        return (
-          <div key={n} className="workout-detail__set">
-            <span>Set {n}</span>
-            <span>
-              <strong>{log ? log.completed_reps : '—'}</strong> / {targetRepsForSet(exercise, n - 1)} {repUnit(exercise)}
-            </span>
-          </div>
-        )
-      })}
-      <div className="workout-detail__effort">
-        <span className={`effort-dot effort-dot--${levelIndexForRpe(exercise.rpe)}`} />
-        Effort: {LEVELS[levelIndexForRpe(exercise.rpe)].label}
-      </div>
     </div>
   )
 }

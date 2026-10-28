@@ -3,7 +3,7 @@ import os
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -97,6 +97,17 @@ def is_session_missed(session: dict, today: date) -> bool:
     finished. Derived, never stored: a missed session can't be started or
     logged any more, and counts as resolved for closing out its plan."""
     return not session.get("completed_at") and date.fromisoformat(session["scheduled_date"]) < today
+
+
+def workout_status(workout: dict, today: date, plan_closed: bool = False) -> Tuple[str, str]:
+    """(status, display date) for a _workout_entries entry: "completed" on its
+    completion date (in APP_TIMEZONE), else "missed" (date passed, or its
+    plan is already closed — e.g. the coach closed it early) or "scheduled",
+    on its scheduled date. Shared by the dashboard and the admin monitor."""
+    if workout.get("completed_at"):
+        return "completed", app_date(workout["completed_at"]).isoformat()
+    status = "missed" if plan_closed or is_session_missed(workout, today) else "scheduled"
+    return status, workout["scheduled_date"]
 
 
 def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
@@ -1176,9 +1187,117 @@ class WorkoutPlanRepository:
                 "scheduled_date": session["scheduled_date"],
                 "started_at": session.get("started_at"),
                 "completed_at": session.get("completed_at"),
+                "is_period": bool(session.get("is_period")),
+                "has_feedback": bool(session.get("feedback_audio_path")),
                 "exercises": [WorkoutPlanRepository._exercise_entry(row) for row in rows],
             })
         return entries
+
+    # ---------- admin monitor (read-only) ----------
+
+    def list_user_profiles(self) -> List[dict]:
+        return (
+            self.client.table("user_profiles")
+            .select("user_id, name, gender, updated_at")
+            .order("name")
+            .execute()
+            .data
+        )
+
+    def get_user_profile_row(self, user_id: str) -> Optional[dict]:
+        rows = (
+            self.client.table("user_profiles")
+            .select("user_id, name, gender, profile")
+            .eq("user_id", user_id)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def list_joint_pain(self, user_id: str) -> List[dict]:
+        rows = (
+            self.client.table("user_joint_pain")
+            .select("pain_level, joints(name)")
+            .eq("user_id", user_id)
+            .execute()
+            .data
+        )
+        return [
+            {"joint": row["joints"]["name"], "pain_level": row["pain_level"]}
+            for row in rows
+            if row.get("joints")
+        ]
+
+    def list_period_days(self, user_id: str) -> List[str]:
+        rows = (
+            self.client.table("user_period_logs")
+            .select("logged_on")
+            .eq("user_id", user_id)
+            .order("logged_on", desc=True)
+            .execute()
+            .data
+        )
+        return [row["logged_on"] for row in rows]
+
+    def get_user_workout_history(self, user_id: str) -> Dict[str, List[dict]]:
+        """Every workout across all of the user's plans, split into
+        {"scheduled": soonest first, "past": newest first}, each with its
+        status/date (workout_status), period flag, whether she recorded voice
+        feedback, the AI analysis text and voice-note URL, and how long it
+        took. Read-only — unlike get_unfinished_plan it never closes or
+        progresses a plan."""
+        plans = self.client.table("plans").select("*").eq("user_id", user_id).execute().data
+        if not plans:
+            return {"scheduled": [], "past": []}
+        sessions = (
+            self.client.table("sessions")
+            .select(f"{PLAN_SESSIONS_SELECT}, session_analysis(analysis, audio_url)")
+            .in_("plan_id", [plan["id"] for plan in plans])
+            .execute()
+            .data
+        )
+        sessions_by_plan: Dict[int, List[dict]] = defaultdict(list)
+        for session in sessions:
+            sessions_by_plan[session["plan_id"]].append(session)
+
+        today = app_today()
+        entries = []
+        for plan in plans:
+            plan_sessions = sessions_by_plan[plan["id"]]
+            by_id = {session["id"]: session for session in plan_sessions}
+            for workout in self._workout_entries(plan, plan_sessions):
+                session = by_id[workout["session_id"]]
+                status, shown = workout_status(workout, today, plan_closed=bool(plan.get("completed")))
+                # One row per session (unique), returned as an object or a
+                # one-item list depending on how PostgREST reads the FK.
+                analysis = session.get("session_analysis") or {}
+                if isinstance(analysis, list):
+                    analysis = analysis[0] if analysis else {}
+                duration = None
+                if workout.get("started_at") and workout.get("completed_at"):
+                    duration = int(
+                        (datetime.fromisoformat(workout["completed_at"]) - datetime.fromisoformat(workout["started_at"]))
+                        .total_seconds()
+                    )
+                entries.append({
+                    **workout,
+                    "status": status,
+                    "date": shown,
+                    "duration_seconds": duration,
+                    "analysis": analysis.get("analysis"),
+                    "analysis_audio_url": analysis.get("audio_url"),
+                })
+
+        scheduled = sorted(
+            (e for e in entries if e["status"] == "scheduled"),
+            key=lambda e: (e["scheduled_date"], e["day_number"]),
+        )
+        past = sorted(
+            (e for e in entries if e["status"] != "scheduled"),
+            key=lambda e: (e["date"], e.get("completed_at") or ""),
+            reverse=True,
+        )
+        return {"scheduled": scheduled, "past": past}
 
     @staticmethod
     def _exercise_entry(row: dict) -> Dict[str, Any]:
@@ -1208,5 +1327,8 @@ class WorkoutPlanRepository:
                 (row.get("session_exercise_set_logs") or []),
                 key=lambda log: log["set_number"],
             ),
-            "rpe": ((row.get("session_exercise_rpe") or {}).get("rpe")) or 8
+            "rpe": ((row.get("session_exercise_rpe") or {}).get("rpe")) or 8,
+            # `rpe` above defaults to 8 (Medium); this says whether it was
+            # actually rated.
+            "rpe_logged": (row.get("session_exercise_rpe") or {}).get("rpe") is not None,
         }

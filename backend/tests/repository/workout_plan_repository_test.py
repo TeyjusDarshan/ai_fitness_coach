@@ -1023,3 +1023,79 @@ def test_timed_exercise_without_a_two_week_streak_is_copied():
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "30,30,30"
+
+
+# --- admin monitor history --------------------------------------------------------
+
+def _history_client():
+    """usr_1 with a closed plan 6 (week of 5 Oct) and an open plan 7 (week of
+    12 Oct), each 3_day: day 1 / 3 / 5."""
+    client = FakeSupabaseClient()
+    client.seed("plans", [
+        {"id": 6, "user_id": "usr_1", "plan_type": "3_day", "completed": True},
+        {"id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False},
+        {"id": 9, "user_id": "usr_other", "plan_type": "3_day", "completed": False},
+    ])
+
+    def session(id, plan_id, day, scheduled, completed_at=None, **extra):
+        return {
+            "id": id, "plan_id": plan_id, "day_number": day, "scheduled_date": scheduled,
+            "started_at": None, "completed_at": completed_at,
+            "session_exercises": [_row(id=id * 10, reps="10,10,10", exercises={"id": 100, "name": "Squat"},
+                                       session_exercise_rpe=None)],
+            **extra,
+        }
+
+    client.seed("sessions", [
+        session(61, 6, 1, "2026-10-05", "2026-10-05T04:00:00+00:00",
+                started_at="2026-10-05T03:30:00+00:00", is_period=True, feedback_audio_path="session_61.webm",
+                session_analysis={"analysis": "Super!", "audio_url": "https://x/a.ogg"}),
+        session(63, 6, 3, "2026-10-07"),                       # closed plan -> missed
+        session(65, 6, 5, "2026-10-20"),                       # closed plan, future date -> still missed
+        session(71, 7, 1, "2026-10-12", "2026-10-12T05:00:00+00:00"),
+        session(73, 7, 3, "2026-10-14"),                       # date passed -> missed
+        session(75, 7, 5, "2026-10-16"),                       # upcoming -> scheduled
+        session(91, 9, 1, "2026-10-12"),                       # someone else's
+    ])
+    return client
+
+
+def test_history_splits_scheduled_and_past_across_every_plan(monkeypatch):
+    set_today(monkeypatch, date(2026, 10, 15))
+    client = _history_client()
+
+    history = _repo(client).get_user_workout_history("usr_1")
+
+    assert [w["session_id"] for w in history["scheduled"]] == [75]
+    assert [(w["session_id"], w["status"]) for w in history["past"]] == [
+        (65, "missed"), (73, "missed"), (71, "completed"), (63, "missed"), (61, "completed"),
+    ]
+
+
+def test_history_carries_period_feedback_analysis_and_duration(monkeypatch):
+    set_today(monkeypatch, date(2026, 10, 15))
+    client = _history_client()
+
+    past = _repo(client).get_user_workout_history("usr_1")["past"]
+    first = next(w for w in past if w["session_id"] == 61)
+    plain = next(w for w in past if w["session_id"] == 71)
+
+    assert (first["is_period"], first["has_feedback"]) == (True, True)
+    assert (first["analysis"], first["analysis_audio_url"]) == ("Super!", "https://x/a.ogg")
+    assert first["duration_seconds"] == 1800
+    assert first["exercises"][0]["rpe_logged"] is False
+    assert (plain["is_period"], plain["has_feedback"], plain["analysis"], plain["duration_seconds"]) == (False, False, None, None)
+
+
+def test_history_never_closes_or_progresses_a_plan(monkeypatch):
+    set_today(monkeypatch, date(2026, 10, 30))  # every session of plan 7 is resolved by now
+    client = _history_client()
+
+    _repo(client).get_user_workout_history("usr_1")
+
+    assert [p["completed"] for p in client.tables["plans"]] == [True, False, False]
+    assert "plans" not in client.inserted
+
+
+def test_history_for_a_client_with_no_plans_is_empty():
+    assert _repo(FakeSupabaseClient()).get_user_workout_history("usr_new") == {"scheduled": [], "past": []}
