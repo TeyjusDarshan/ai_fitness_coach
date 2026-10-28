@@ -1,5 +1,5 @@
 import { LEVELS, levelIndexForRpe } from './components/EffortSlider'
-import { COACH_WHATSAPP_NUMBER } from './constants'
+import { COACH_WHATSAPP_NUMBER, REST_BETWEEN_EXERCISES_SECONDS } from './constants'
 import type {
   Dashboard,
   DashboardDay,
@@ -20,11 +20,37 @@ export function isExerciseComplete(exercise: ExerciseEntry): boolean {
 // exercise.reps is either a single numeric target (e.g. "10", shared by
 // every set) or a comma-separated per-set target list (e.g. "11,10,10")
 // written once a progression is mid-ramp on one set ahead of the others —
-// falls back to 8 for the rare case a value is missing or non-numeric.
+// falls back to 8 reps (30 seconds for a timed exercise) for the rare case a
+// value is missing or non-numeric.
 export function targetRepsForSet(exercise: ExerciseEntry, setIndex: number): number {
   const values = (exercise.reps ?? '').split(',').map((v) => Number(v.trim()))
   const parsed = values[setIndex] ?? values[0]
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 8
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : exercise.is_time_based ? 30 : 8
+}
+
+// The unit an exercise's targets and logs are in.
+export function repUnit(exercise: ExerciseEntry): string {
+  return exercise.is_time_based ? 'sec' : 'reps'
+}
+
+// 75 -> "01:15"
+export function formatClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
+}
+
+export function restPath(dayNumber: number, seconds: number, next: string): string {
+  return `/day/${dayNumber}/rest?${new URLSearchParams({ seconds: String(seconds), next }).toString()}`
+}
+
+// Where to go once an exercise is finished: the between-exercise rest and
+// then the next exercise, or — after the last one — straight into the
+// cool-down (no rest timer), which leads on to the summary.
+export function afterExercisePath(dayNumber: number, slotIndex: number, exerciseCount: number): string {
+  const nextIndex = slotIndex + 1
+  return nextIndex < exerciseCount
+    ? restPath(dayNumber, REST_BETWEEN_EXERCISES_SECONDS, `/day/${dayNumber}/exercise/${nextIndex}`)
+    : `/day/${dayNumber}/cooldown`
 }
 
 export function firstIncompleteIndex(day: DashboardDay): number {
@@ -124,14 +150,15 @@ export function buildCoachShareMessage(
   )
 
   flattenExercises(day).forEach((exercise, index) => {
-    const target = exercise.reps ? `${exercise.sets ?? '?'}x${exercise.reps}` : `${exercise.sets ?? '?'} sets`
+    const unit = exercise.is_time_based ? ' sec' : ''
+    const target = exercise.reps ? `${exercise.sets ?? '?'}x${exercise.reps}${unit}` : `${exercise.sets ?? '?'} sets`
     const loggedReps = [...exercise.set_logs]
       .sort((a, b) => a.set_number - b.set_number)
       .map((log) => log.completed_reps)
       .join(', ')
     lines.push(
       `${index + 1}. ${exercise.name} — ${target}`,
-      `   Logged reps: ${loggedReps || 'Not logged'}`,
+      `   ${exercise.is_time_based ? 'Held (sec)' : 'Logged reps'}: ${loggedReps || 'Not logged'}`,
       `   Effort: ${effortLabel(exercise.rpe)}`,
     )
   })

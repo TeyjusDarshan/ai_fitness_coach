@@ -5,7 +5,7 @@ import { Illustration } from '../components/Illustration'
 import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
-import { WORKOUT_STATUS_LABELS, targetRepsForSet, workoutDateLabel } from '../utils'
+import { WORKOUT_STATUS_LABELS, repUnit, targetRepsForSet, workoutDateLabel } from '../utils'
 import { youtubeThumbnailUrl } from '../youtube'
 import type { ExerciseEntry } from '../types'
 
@@ -82,7 +82,7 @@ function Prescription({ exercise }: { exercise: ExerciseEntry }) {
   return (
     <>
       <div className="workout-detail__muted">
-        {exercise.sets ?? 0} sets × {uniform ? targets[0] : targets.join(', ')} reps
+        {exercise.sets ?? 0} sets × {uniform ? targets[0] : targets.join(', ')} {repUnit(exercise)}
       </div>
       {exercise.note && <div className="workout-detail__note">{exercise.note}</div>}
     </>
@@ -98,7 +98,7 @@ function LoggedSets({ exercise }: { exercise: ExerciseEntry }) {
           <div key={n} className="workout-detail__set">
             <span>Set {n}</span>
             <span>
-              <strong>{log ? log.completed_reps : '—'}</strong> / {targetRepsForSet(exercise, n - 1)} reps
+              <strong>{log ? log.completed_reps : '—'}</strong> / {targetRepsForSet(exercise, n - 1)} {repUnit(exercise)}
             </span>
           </div>
         )

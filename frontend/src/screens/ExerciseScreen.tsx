@@ -6,9 +6,18 @@ import { EffortSlider, DEFAULT_RPE } from '../components/EffortSlider'
 import { Icon } from '../components/Icon'
 import { useAppState } from '../state/AppStateContext'
 import { logSet, logRpe } from '../api'
-import { flattenExercises, targetRepsForSet, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
-import { REST_BETWEEN_EXERCISES_SECONDS, REST_BETWEEN_SETS_SECONDS } from '../constants'
+import {
+  afterExercisePath,
+  flattenExercises,
+  restPath,
+  targetRepsForSet,
+  withRpeLogged,
+  withSetLogged,
+  withSetLogRemoved,
+} from '../utils'
+import { REST_BETWEEN_SETS_SECONDS } from '../constants'
 import type { ExerciseEntry } from '../types'
+import { TimedExerciseScreen } from './TimedExerciseScreen'
 
 function initialRepCounts(exercise: ExerciseEntry | undefined): number[] {
   if (!exercise) return []
@@ -19,7 +28,30 @@ function initialRepCounts(exercise: ExerciseEntry | undefined): number[] {
   })
 }
 
+// One route for every exercise: holds measured in seconds (is_time_based)
+// get the timer flow, everything else the set-by-set rep logger.
 export function ExerciseScreen() {
+  const { dashboard } = useAppState()
+  const { dayNumber, slotIndex } = useParams()
+  const day = dashboard?.days.find((d) => d.day_number === Number(dayNumber))
+  const exercises = day ? flattenExercises(day) : []
+  const exercise = exercises[Number(slotIndex)]
+
+  if (day && !day.locked && exercise?.is_time_based) {
+    return (
+      <TimedExerciseScreen
+        key={exercise.id}
+        day={day}
+        exercise={exercise}
+        slotIndex={Number(slotIndex)}
+        exerciseCount={exercises.length}
+      />
+    )
+  }
+  return <RepExerciseScreen />
+}
+
+function RepExerciseScreen() {
   const { dashboard, updateDashboard } = useAppState()
   const navigate = useNavigate()
   const { dayNumber, slotIndex } = useParams()
@@ -50,10 +82,6 @@ export function ExerciseScreen() {
         <div className="spinner" />
       </div>
     )
-  }
-
-  function restPath(seconds: number, next: string): string {
-    return `/day/${dayNum}/rest?${new URLSearchParams({ seconds: String(seconds), next }).toString()}`
   }
 
   function handleRepChange(setIdx: number, reps: number) {
@@ -87,7 +115,7 @@ export function ExerciseScreen() {
     // rest before the next set; finishing the last set instead leaves the
     // user on "Begin Next Workout" to start the between-exercise rest.
     if (!willComplete) {
-      navigate(restPath(REST_BETWEEN_SETS_SECONDS, `/day/${dayNum}/exercise/${slotIdx}`))
+      navigate(restPath(dayNum, REST_BETWEEN_SETS_SECONDS, `/day/${dayNum}/exercise/${slotIdx}`))
     }
   }
 
@@ -106,14 +134,7 @@ export function ExerciseScreen() {
       handleRpeChange(DEFAULT_RPE)
     }
 
-    const nextIndex = slotIdx + 1
-    if (nextIndex < exercises.length) {
-      navigate(restPath(REST_BETWEEN_EXERCISES_SECONDS, `/day/${dayNum}/exercise/${nextIndex}`))
-    } else {
-      // Last exercise: straight into the cool-down (no rest timer), which
-      // leads on to the summary.
-      navigate(`/day/${dayNum}/cooldown`)
-    }
+    navigate(afterExercisePath(dayNum, slotIdx, exercises.length))
   }
 
   return (

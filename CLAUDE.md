@@ -46,6 +46,7 @@ Maps to `exercises.csv`. The CSV's `loaded_joints` (semicolon-delimited) is norm
 | `dominant` | bool, nullable | |
 | `equipment_id` | int4, nullable, FK → `equipment.id` | single-valued per exercise; no cascade |
 | `min_reps` / `max_reps` | int2, nullable | rep range |
+| `is_time_based` | bool, default `false` | true for static holds measured in **seconds** rather than reps — currently Superman, Static split squat, standing wall plank, Knee plank, full plank, Side Plank, Dead-Bug. For these, `min_reps`/`max_reps` (and the sets' `reps` in `session_exercises`) are seconds. Mirrors the `is_time_based` column in `exercises.csv` (board and migration script carry it). Returned on dashboard exercise entries; the PWA runs these with the timed flow (`TimedExerciseScreen`: countdown, hold timer, rest, difficulty) and logs seconds held as `completed_reps`. Progression steps them +5 s (correct) / +10 s (easy) / −5 s (hard) instead of ±1/2 reps (`TIMED_*_STEP`); the analysis consumer marks them `unit: seconds` |
 | `avoid_if` | text, nullable | contraindications |
 | `on_board` | bool, default `true` | |
 | `board_x` / `board_y` | float8, nullable | board coordinates |

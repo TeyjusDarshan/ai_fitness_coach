@@ -127,6 +127,7 @@ def build_records(exercise_rows, relationship_rows, movement_type_ids, equipment
             "equipment_id": equipment_ids.get(row["equipment"]),
             "min_reps": _to_int(row["min_reps"]),
             "max_reps": _to_int(row["max_reps"]),
+            "is_time_based": _to_bool(row.get("is_time_based"), default=False),
             "avoid_if": row["avoid_if"] or None,
             "on_board": _to_bool(row["on_board"], default=True),
             "board_x": _to_float(row["board_x"]),

@@ -35,6 +35,7 @@ def test_list_exercises_orders_by_name_and_normalizes_rows():
         "loaded_joints": ["shoulder", "elbow"],
         "min_reps": 8,
         "max_reps": 15,
+        "is_time_based": False,
         "avoid_if": "",
         "video_url": "",
     }]
