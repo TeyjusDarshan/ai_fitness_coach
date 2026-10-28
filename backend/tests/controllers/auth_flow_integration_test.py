@@ -121,7 +121,7 @@ def test_enroll_sign_in_and_sign_out_with_a_real_passkey(live_app):
             "enrollment_token": token, "credential": authenticator.register(reg_options),
         })
         assert registered.status_code == 200, registered.get_json()
-        assert client.get("/api/auth/me").get_json() == {"user_id": user_id, "name": None}
+        assert client.get("/api/auth/me").get_json() == {"user_id": user_id, "name": None, "gender": None}
 
         # The link is single-use.
         assert client.post("/api/auth/register/options", json={"enrollment_token": token}).status_code == 400
@@ -138,7 +138,7 @@ def test_enroll_sign_in_and_sign_out_with_a_real_passkey(live_app):
         assertion = authenticator.assert_(login_options)
         signed_in = client.post("/api/auth/login/verify", json={"credential": assertion})
         assert signed_in.status_code == 200, signed_in.get_json()
-        assert client.get("/api/auth/me").get_json() == {"user_id": user_id, "name": None}
+        assert client.get("/api/auth/me").get_json() == {"user_id": user_id, "name": None, "gender": None}
 
         # Replaying the same assertion fails — its challenge was consumed.
         assert client.post("/api/auth/login/verify", json={"credential": assertion}).status_code == 401

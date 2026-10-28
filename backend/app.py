@@ -341,8 +341,12 @@ def start_session(session_id):
     if denied := _deny_unless_session_open(session_id):
         return denied
 
+    # Only women are asked, and the answer is only honoured for them.
+    body = request.get_json(silent=True) or {}
+    is_period = body.get("is_period") is True and plan_repo.get_gender(g.user_id) == "female"
+
     try:
-        session = plan_repo.start_session(session_id)
+        session = plan_repo.start_session(session_id, is_period)
     except Exception:
         app.logger.exception("Failed to start session_id=%s", session_id)
         return jsonify({"error": "Failed to start this workout."}), 500

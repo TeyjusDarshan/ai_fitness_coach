@@ -89,14 +89,15 @@ def _registering_user(body: dict):
     return user_id, None
 
 
-def _signed_in_user(user_id: str, name: Optional[str] = None) -> dict:
-    """The {user_id, name} body sign-in and /me return. `name` is the
-    coach-entered display name, or None for a user who doesn't have one yet
-    (the PWA then shows the user_id)."""
-    if name is None:
-        row = auth_repo.get_user_auth_row(user_id)
-        name = row.get("name") if row else None
-    return {"user_id": user_id, "name": name}
+def _signed_in_user(user_id: str, row: Optional[dict] = None) -> dict:
+    """The {user_id, name, gender} body sign-in and /me return, from the
+    user's user_profiles row (fetched when not already in hand). `name` is
+    the coach-entered display name, or None for a user who doesn't have one
+    yet (the PWA then shows the user_id); `gender` is male / female / other,
+    or None when the coach hasn't set it."""
+    if row is None:
+        row = auth_repo.get_user_auth_row(user_id) or {}
+    return {"user_id": user_id, "name": row.get("name"), "gender": row.get("gender")}
 
 
 def _json_options(options) -> Response:
@@ -258,7 +259,7 @@ def authentication_verify():
 
     auth_repo.update_passkey_usage(passkey["credential_id"], verified.new_sign_count)
 
-    response = jsonify(_signed_in_user(passkey["user_id"], profile.get("name")))
+    response = jsonify(_signed_in_user(passkey["user_id"], profile))
     start_session(response, passkey["user_id"])
     return response, 200
 

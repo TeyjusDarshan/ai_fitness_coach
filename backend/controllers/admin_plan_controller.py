@@ -22,6 +22,8 @@ from backend.repository.workout_repository import WorkoutRepository
 
 logger = logging.getLogger(__name__)
 
+GENDERS = ("male", "female", "other")
+
 admin_plan_bp = Blueprint("admin_plan", __name__)
 plan_repo = WorkoutPlanRepository()
 exercise_repo = WorkoutRepository()
@@ -80,6 +82,9 @@ def create_profile():
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > MAX_NAME_LENGTH:
         return jsonify({"error": f"'name' is required (max {MAX_NAME_LENGTH} characters)."}), 400
     name = name.strip()
+    gender = body.get("gender")
+    if gender is not None and gender not in GENDERS:
+        return jsonify({"error": f"'gender' must be one of {', '.join(GENDERS)}."}), 400
     if not isinstance(raw_user_text, str) or not raw_user_text.strip():
         return jsonify({"error": "'raw_user_text' is required."}), 400
 
@@ -100,12 +105,14 @@ def create_profile():
     profile["user_id"] = user_id
 
     try:
-        plan_repo.upsert_user_profile(user_id, profile, name)
+        plan_repo.upsert_user_profile(user_id, profile, name, gender)
     except Exception:
         logger.exception("Failed to upsert profile for user_id=%s", user_id)
         return jsonify({"error": "Failed to save the client profile."}), 500
 
-    return jsonify({"user_id": user_id, "name": name, "profile": profile, "user_created": user_created}), 200
+    return jsonify({
+        "user_id": user_id, "name": name, "gender": gender, "profile": profile, "user_created": user_created,
+    }), 200
 
 
 @admin_plan_bp.get("/api/admin/plan-builder")

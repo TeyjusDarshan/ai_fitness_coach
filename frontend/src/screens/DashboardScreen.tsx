@@ -2,11 +2,12 @@ import { useEffect } from 'react'
 import { HeroHeader } from '../components/HeroHeader'
 import { WorkoutPanel } from '../components/WorkoutPanel'
 import { useAppState } from '../state/AppStateContext'
+import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useStartWorkout } from '../state/useStartWorkout'
 
 export function DashboardScreen() {
   const { dashboard, loading, error, refreshDashboard, logout } = useAppState()
-  const { start, error: startError } = useStartWorkout()
+  const { start, error: startError, periodPrompt } = useStartWorkout()
 
   useEffect(() => {
     refreshDashboard().catch(() => {
@@ -56,6 +57,7 @@ export function DashboardScreen() {
         ))}
       </div>
       {dashboard.coach_notes && <p className="dashboard-coach-notes">{dashboard.coach_notes}</p>}
+      <PeriodPrompt {...periodPrompt} />
     </div>
   )
 }

@@ -182,7 +182,7 @@ def _source_plan(**overrides):
     return plan
 
 
-def _progress(repo, user_id, source_plan, exercise_rows, missed_days=()):
+def _progress(repo, user_id, source_plan, exercise_rows, missed_days=(), period_days=()):
     """create_progressed_plan with the source plan's sessions built from
     exercise_rows: one session per distinct day_number, each scheduled on
     2026-10-12 + (day_number - 1) with its rows nested. Every session is
@@ -195,6 +195,7 @@ def _progress(repo, user_id, source_plan, exercise_rows, missed_days=()):
             "day_number": day_number,
             "scheduled_date": date(2026, 10, 11 + day_number).isoformat(),
             "completed_at": None if day_number in missed_days else "2026-10-12T10:30:00+00:00",
+            "is_period": day_number in period_days,
             "session_exercises": [],
         })
         session["session_exercises"].append({k: v for k, v in row.items() if k != "day_number"})
@@ -206,7 +207,7 @@ def _hit(reps):
     return [{"set_number": i, "completed_reps": int(r)} for i, r in enumerate(reps.split(","), start=1)]
 
 
-def _after_streak(client, source_plan, previous_rows, parent_id=54, missed_days=()):
+def _after_streak(client, source_plan, previous_rows, parent_id=54, missed_days=(), period_days=()):
     """Seed the previous week's plan (parent_id) with previous_rows nested
     under one session per day, and return source_plan pointing at it, so
     create_progressed_plan sees a prior week to compare against."""
@@ -219,6 +220,7 @@ def _after_streak(client, source_plan, previous_rows, parent_id=54, missed_days=
             "day_number": day_number,
             "scheduled_date": date(2026, 10, 4 + day_number).isoformat(),
             "completed_at": None if day_number in missed_days else "2026-10-05T10:30:00+00:00",
+            "is_period": day_number in period_days,
             "session_exercises": [],
         })
         session["session_exercises"].append({k: v for k, v in row.items() if k != "day_number"})
@@ -770,3 +772,152 @@ class _RecordingUpsert:
 
     def execute(self):
         return FakeResponse([self.upserts[-1]])
+
+
+# --- period sessions -----------------------------------------------------------
+
+def _seed_period_session(client, reps="10,10,10", started_at=None, exercise_id=100):
+    client.seed("sessions", [{"id": 5, "plan_id": 7, "day_number": 1, "started_at": started_at, "is_period": False}])
+    client.seed("session_exercises", [{
+        "id": 50, "session_id": 5, "exercise_id": exercise_id, "sets": 3, "reps": reps, "rep_range": "8-12",
+    }])
+    return client.tables["session_exercises"][0]
+
+
+def test_period_start_scales_every_set_to_70_percent_rounded_half_up():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 4, "max_reps": 15}])
+    row = _seed_period_session(client, reps="11,10,9")
+
+    session = _repo(client).start_session(5, is_period=True)
+
+    assert row["reps"] == "8,7,6"  # 7.7, 7.0, 6.3
+    assert row["exercise_id"] == 100
+    assert session["is_period"] is True
+    assert client.tables["sessions"][0]["is_period"] is True
+
+
+def test_period_start_below_min_reps_swaps_to_the_lack_of_strength_regression():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [
+        {"id": 100, "min_reps": 8, "max_reps": 15},
+        {"id": 101, "min_reps": 5, "max_reps": 10},
+    ])
+    client.seed("exercise_relationships", [{
+        "from_exercise_id": 100, "to_exercise_id": 101, "type": "regression", "reason": "Lack of strength",
+    }])
+    row = _seed_period_session(client, reps="10,10,10")  # 70% -> 7 < min 8
+
+    _repo(client).start_session(5, is_period=True)
+
+    assert (row["exercise_id"], row["reps"], row["rep_range"]) == (101, "5,5,5", "5-10")
+
+
+def test_period_start_below_min_reps_without_regression_edge_clamps_to_min():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 8, "max_reps": 15}])
+    row = _seed_period_session(client, reps="10,10,10")
+
+    _repo(client).start_session(5, is_period=True)
+
+    assert (row["exercise_id"], row["reps"], row["rep_range"]) == (100, "8,8,8", "8-12")
+
+
+def test_restarting_a_started_period_session_does_not_scale_again():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 1, "max_reps": 15}])
+    row = _seed_period_session(client, reps="7,7,7", started_at="2026-10-12T09:00:00+00:00")
+
+    _repo(client).start_session(5, is_period=True)
+
+    assert row["reps"] == "7,7,7"
+    assert client.tables["sessions"][0]["is_period"] is False
+
+
+def test_ordinary_start_leaves_reps_alone():
+    client = FakeSupabaseClient()
+    row = _seed_period_session(client, reps="10,10,10")
+
+    _repo(client).start_session(5)
+
+    assert row["reps"] == "10,10,10"
+    assert client.tables["sessions"][0]["is_period"] is False
+
+
+def test_progression_learns_from_the_last_non_period_session_not_the_period_one():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 1, "max_reps": 20}, {"id": 101, "min_reps": 1, "max_reps": 20}])
+    repo = _repo(client)
+
+    last_normal_week = [_row(id=1, reps="10,10,10", session_exercise_rpe={"rpe": 10},
+                             session_exercise_set_logs=_hit("10,10,10"))]
+    source = _after_streak(client, _source_plan(), last_normal_week)
+    # The period week: swapped-in exercise at 70% reps, and a "too easy" RPE that must be ignored.
+    period_week = [_row(id=2, exercise_id=101, reps="7,7,7", session_exercise_rpe={"rpe": 6},
+                        session_exercise_set_logs=_hit("7,7,7"))]
+
+    _progress(repo, "usr_1", source, period_week, period_days={1})
+
+    [new_row] = client.inserted["session_exercises"]
+    # Derived from the normal week's hard RPE (-1), not the period week's data.
+    assert (new_row["exercise_id"], new_row["reps"]) == (100, "9,9,9")
+
+
+def test_hold_check_uses_the_two_latest_non_period_sessions():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 1, "max_reps": 20}])
+    # Chain: source plan 55 (period) <- 54 (period) <- 53 (normal) <- 52 (normal)
+    client.seed("plans", [{"id": 54, "parent_plan_id": 53}, {"id": 53, "parent_plan_id": 52}])
+    repo = _repo(client)
+
+    plan_52 = [_row(id=1, reps="10,10,10", session_exercise_set_logs=_hit("10,10,10"))]
+    plan_53 = [_row(id=2, reps="10,10,10", session_exercise_rpe={"rpe": 8},
+                    session_exercise_set_logs=_hit("10,10,10"))]
+    plan_54_period = [_row(id=3, reps="7,7,7", session_exercise_set_logs=_hit("7,7,7"))]
+    _after_streak(client, _source_plan(), plan_52, parent_id=52)
+    _after_streak(client, _source_plan(), plan_53, parent_id=53)
+    _after_streak(client, _source_plan(), plan_54_period, parent_id=54, period_days={1})
+    source = _source_plan(parent_plan_id=54)
+    this_week = [_row(id=4, reps="7,7,7", session_exercise_set_logs=_hit("7,7,7"))]
+
+    _progress(repo, "usr_1", source, this_week, period_days={1})
+
+    [new_row] = client.inserted["session_exercises"]
+    # Plans 53 and 52 both hit the same 10,10,10 targets, so the ramp advances.
+    assert new_row["reps"] == "11,10,10"
+
+
+def test_day_with_no_non_period_history_carries_the_period_rows_forward():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 1, "max_reps": 20}])
+    repo = _repo(client)
+
+    period_week = [_row(reps="7,7,7", session_exercise_rpe={"rpe": 6}, session_exercise_set_logs=_hit("7,7,7"))]
+
+    _progress(repo, "usr_1", _source_plan(), period_week, period_days={1})
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "7,7,7"
+
+
+def test_progression_stops_looking_back_after_the_hop_limit(monkeypatch):
+    monkeypatch.setattr(workout_plan_repository, "MAX_PROGRESSION_HOPS", 1)
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 1, "max_reps": 20}])
+    client.seed("plans", [{"id": 54, "parent_plan_id": 53}])
+    repo = _repo(client)
+
+    # Plan 54 is a period week and plan 53 (a normal week) is beyond the limit.
+    old_normal_week = [_row(id=1, reps="10,10,10", session_exercise_rpe={"rpe": 10})]
+    _after_streak(client, _source_plan(), old_normal_week, parent_id=53)
+    client.seed("sessions", [{
+        "id": 454, "plan_id": 54, "day_number": 1, "scheduled_date": "2026-10-05",
+        "completed_at": "2026-10-05T10:30:00+00:00", "is_period": True, "session_exercises": [],
+    }])
+    source = {**_source_plan(), "parent_plan_id": 54}
+    period_week = [_row(id=3, reps="7,7,7", session_exercise_set_logs=_hit("7,7,7"))]
+
+    _progress(repo, "usr_1", source, period_week, period_days={1})
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "7,7,7"

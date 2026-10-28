@@ -12,7 +12,11 @@ export interface Me {
   // The coach-entered display name; null for users created before names
   // were recorded.
   name: string | null
+  // Set by the coach at intake; null for users created before it existed.
+  gender: Gender | null
 }
+
+export type Gender = 'male' | 'female' | 'other'
 
 export type RegistrationOptions = PublicKeyCredentialCreationOptionsJSON
 export type LoginOptions = PublicKeyCredentialRequestOptionsJSON

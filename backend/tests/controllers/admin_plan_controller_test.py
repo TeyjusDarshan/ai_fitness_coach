@@ -91,10 +91,39 @@ def test_profile_generates_and_upserts_with_callers_user_id(admin):
     assert response.status_code == 200
     expected = {"user_id": "usr_new", "goals": {}}
     assert response.get_json() == {
-        "user_id": "usr_new", "name": "Asha Raman", "profile": expected, "user_created": True,
+        "user_id": "usr_new", "name": "Asha Raman", "gender": None, "profile": expected, "user_created": True,
     }
     controller.generate_user_profile.assert_called_once_with("52yo, sore knee")
-    controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected, "Asha Raman")
+    controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected, "Asha Raman", None)
+
+
+def test_profile_stores_a_valid_gender(admin):
+    client, controller = admin
+
+    response = client.post(
+        "/api/admin/users/profile",
+        json={"user_id": "usr_new", "name": "Asha", "gender": "female", "raw_user_text": "x"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["gender"] == "female"
+    controller.plan_repo.upsert_user_profile.assert_called_once_with(
+        "usr_new", {"user_id": "usr_new", "goals": {}}, "Asha", "female"
+    )
+
+
+def test_profile_rejects_an_unknown_gender_before_calling_llm(admin):
+    client, controller = admin
+
+    response = client.post(
+        "/api/admin/users/profile",
+        json={"user_id": "usr_new", "name": "Asha", "gender": "f", "raw_user_text": "x"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 400
+    controller.generate_user_profile.assert_not_called()
 
 
 def test_profile_for_existing_user_reports_not_created(admin):

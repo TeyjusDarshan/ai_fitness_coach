@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { fetchDashboard, setUnauthorizedHandler } from '../api'
-import { fetchMe, logoutRequest, type Me } from '../auth'
+import { fetchMe, logoutRequest, type Gender, type Me } from '../auth'
 import type { Dashboard } from '../types'
 
 type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
@@ -21,6 +21,7 @@ interface AppState {
   // What to call the user on screen: their name, or their user_id if they
   // don't have one on file.
   displayName: string | null
+  gender: Gender | null
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
@@ -40,6 +41,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [authStatus, setAuthStatus] = useState<AuthStatus>('checking')
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
+  const [gender, setGender] = useState<Gender | null>(null)
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -56,6 +58,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const resetToSignedOut = useCallback(() => {
     setUserId(null)
     setUserName(null)
+    setGender(null)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -68,6 +71,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       .then((me) => {
         setUserId(me.user_id)
         setUserName(me.name)
+        setGender(me.gender)
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
@@ -77,6 +81,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const completeSignIn = useCallback((me: Me) => {
     setUserId(me.user_id)
     setUserName(me.name)
+    setGender(me.gender)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -125,6 +130,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       authStatus,
       userId,
       displayName: userName ?? userId,
+      gender,
       dashboard,
       loading,
       error,
@@ -139,6 +145,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       authStatus,
       userId,
       userName,
+      gender,
       dashboard,
       loading,
       error,
