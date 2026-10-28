@@ -8,7 +8,7 @@ Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northe
 >
 > This includes the passkey-auth tables (`user_passkeys`, `auth_challenges`, `auth_sessions`, `passkey_enrollment_tokens`): the API-level passkey sign-in is only as strong as the secrecy of the publishable key, since anyone holding it can insert an `auth_sessions` row (or their own passkey) for any `user_id` and impersonate that user. Kept this way deliberately (decision 2026-09-27) because the backend's `SUPABASE_KEY` is the publishable key. The fix is to switch the backend (and `workout_analysis_consumer`) to the secret/service-role key, which bypasses RLS, and then enable RLS on these tables.
 
-> The exercise-library schema (`movement_types`, `equipment`, `joints`, `exercises`, `exercise_loaded_joints`, `exercise_relationships`) is sourced from `utilities/workout_builder/data/exercises.csv` and `relationships.csv`, edited in the Workout Builder board (`utilities/workout_builder`, `python3 app.py` → http://localhost:8765) and migrated via `utilities/scripts/migrate_exercises_to_supabase.py` (idempotent — safe to re-run after editing the CSVs; `exercise_relationships` is synced to match `relationships.csv` exactly, so edges removed or retyped on the board are deleted from Supabase; board-only `alternatives` edges are skipped; `--dry-run` previews the deletions and warns when an exercise has more than one progression or lack-of-strength regression edge, since plan progression follows only one). Populated as of this writing: 66 exercises, 203 joint links, 110 relationships.
+> The exercise-library schema (`movement_types`, `equipment`, `joints`, `exercises`, `exercise_loaded_joints`, `exercise_relationships`) is edited in the Workout Builder board (`utilities/workout_builder`, `.venv/bin/python utilities/workout_builder/app.py` → http://localhost:8765), which reads and writes these tables in Supabase directly — there is no CSV copy or migration step any more (the old `exercises.csv` / `relationships.csv` / `migrate_exercises_to_supabase.py` flow was removed; git history has them). The board saves its whole state on each change and the server writes only the differences; it refuses to delete an exercise that `session_exercises` still references (no-cascade FK) — take it off the board instead. It offers only `progression`/`regression` links, matching the table's check. Plan progression follows only one progression and one lack-of-strength regression edge per exercise, so avoid drawing more. Populated as of this writing: 66 exercises, 203 joint links, 108 relationships.
 
 ### Entity overview
 
@@ -35,7 +35,7 @@ equipment ──────┘               └─< exercise_relationships >�
 
 ### `exercises` — hub table
 
-Maps to `exercises.csv`. The CSV's `loaded_joints` (semicolon-delimited) is normalized into `exercise_loaded_joints`.
+Edited in the Workout Builder board; its per-exercise loaded joints (with a high/mid/low/nil load each) are stored in `exercise_loaded_joints`.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -46,7 +46,7 @@ Maps to `exercises.csv`. The CSV's `loaded_joints` (semicolon-delimited) is norm
 | `dominant` | bool, nullable | |
 | `equipment_id` | int4, nullable, FK → `equipment.id` | single-valued per exercise; no cascade |
 | `min_reps` / `max_reps` | int2, nullable | rep range |
-| `is_time_based` | bool, default `false` | true for static holds measured in **seconds** rather than reps — currently Superman, Static split squat, standing wall plank, Knee plank, full plank, Side Plank, Dead-Bug. For these, `min_reps`/`max_reps` (and the sets' `reps` in `session_exercises`) are seconds. Mirrors the `is_time_based` column in `exercises.csv` (board and migration script carry it). Returned on dashboard exercise entries; the PWA runs these with the timed flow (`TimedExerciseScreen`: countdown, hold timer, rest, difficulty) and logs seconds held as `completed_reps`. Progression steps them +5 s (correct) / +10 s (easy) / −5 s (hard) instead of ±1/2 reps (`TIMED_*_STEP`); the analysis consumer marks them `unit: seconds` |
+| `is_time_based` | bool, default `false` | true for static holds measured in **seconds** rather than reps — currently Superman, Static split squat, standing wall plank, Knee plank, full plank, Side Plank, Dead-Bug. For these, `min_reps`/`max_reps` (and the sets' `reps` in `session_exercises`) are seconds. Set with the Workout Builder form's "Timed hold" checkbox. Returned on dashboard exercise entries; the PWA runs these with the timed flow (`TimedExerciseScreen`: countdown, hold timer, rest, difficulty) and logs seconds held as `completed_reps`. Progression steps them +5 s (correct) / +10 s (easy) / −5 s (hard) instead of ±1/2 reps (`TIMED_*_STEP`); the analysis consumer marks them `unit: seconds` |
 | `avoid_if` | text, nullable | contraindications |
 | `on_board` | bool, default `true` | |
 | `board_x` / `board_y` | float8, nullable | board coordinates |
@@ -54,7 +54,7 @@ Maps to `exercises.csv`. The CSV's `loaded_joints` (semicolon-delimited) is norm
 
 ### `exercise_loaded_joints` — many-to-many join
 
-Composite PK. Populated from the semicolon-delimited `loaded_joints` column in `exercises.csv`.
+Composite PK. Edited in the Workout Builder form (a load picker per ticked joint). `joint_load` (high / mid / low / nil) feeds the injury multiplier in progression.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -65,7 +65,7 @@ PK: (`exercise_id`, `joint_id`).
 
 ### `exercise_relationships` — self-referential edges
 
-Maps to `relationships.csv`. Each row links a `from` exercise to a `to` exercise with a direction.
+Drawn as arrows on the Workout Builder board. Each row links a `from` exercise to a `to` exercise with a direction.
 
 | Column | Type | Notes |
 |---|---|---|

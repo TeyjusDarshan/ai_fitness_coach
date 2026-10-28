@@ -61,19 +61,76 @@
     <fieldset>
       <legend>Loaded joints</legend>
       <div class="joint-grid" id="joint-grid">
-        <label class="check-row"><input type="checkbox" value="ankle"> Ankle</label>
-        <label class="check-row"><input type="checkbox" value="knee"> Knee</label>
-        <label class="check-row"><input type="checkbox" value="hip"> Hip</label>
-        <label class="check-row"><input type="checkbox" value="spine"> Spine</label>
-        <label class="check-row"><input type="checkbox" value="shoulder"> Shoulder</label>
-        <label class="check-row"><input type="checkbox" value="elbow"> Elbow</label>
-        <label class="check-row"><input type="checkbox" value="wrist"> Wrist</label>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="ankle"> Ankle</label>
+          <select class="joint-load" data-joint="ankle" disabled title="How much this exercise loads the ankle">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="knee"> Knee</label>
+          <select class="joint-load" data-joint="knee" disabled title="How much this exercise loads the knee">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="hip"> Hip</label>
+          <select class="joint-load" data-joint="hip" disabled title="How much this exercise loads the hip">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="spine"> Spine</label>
+          <select class="joint-load" data-joint="spine" disabled title="How much this exercise loads the spine">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="shoulder"> Shoulder</label>
+          <select class="joint-load" data-joint="shoulder" disabled title="How much this exercise loads the shoulder">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="elbow"> Elbow</label>
+          <select class="joint-load" data-joint="elbow" disabled title="How much this exercise loads the elbow">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
+        <div class="joint-row">
+          <label class="check-row"><input type="checkbox" value="wrist"> Wrist</label>
+          <select class="joint-load" data-joint="wrist" disabled title="How much this exercise loads the wrist">
+            <option value="high">High load</option>
+            <option value="mid" selected>Mid load</option>
+            <option value="low">Low load</option>
+            <option value="nil">No load</option>
+          </select>
+        </div>
       </div>
     </fieldset>
 
+    <label class="check-row"><input type="checkbox" name="is_time_based"> Timed hold — min/max are seconds (e.g. plank)</label>
     <div class="rep-row">
-      <label>Min reps <input type="number" name="min_reps" min="1" required value="6"></label>
-      <label>Max reps <input type="number" name="max_reps" min="1" required value="12"></label>
+      <label>Min reps / seconds <input type="number" name="min_reps" min="1" required value="6"></label>
+      <label>Max reps / seconds <input type="number" name="max_reps" min="1" required value="12"></label>
     </div>
 
     <label>Who should completely avoid this exercise
@@ -137,7 +194,6 @@
   </div>
   <div id="popup-endpoints" class="hint"></div>
   <div class="popup-types">
-    <label class="check-row"><input type="radio" name="rel-type" value="alternatives"> Alternatives</label>
     <label class="check-row"><input type="radio" name="rel-type" value="progression"> Progression</label>
     <label class="check-row"><input type="radio" name="rel-type" value="regression"> Regression</label>
   </div>

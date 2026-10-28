@@ -2,7 +2,8 @@
 
 const PROGRESSION_DEFAULT_REASON = "RIR > 3 and hit rep ceiling";
 const REGRESSION_REASONS = ["Lack of form", "Lack of strength"];
-const REL_COLORS = { alternatives: "#1565c0", progression: "#2e7d32", regression: "#e65100" };
+const REL_COLORS = { progression: "#2e7d32", regression: "#e65100" };
+const DEFAULT_JOINT_LOAD = "mid";
 
 let state = { exercises: [], relationships: [] };
 let saveTimer = null;
@@ -13,24 +14,50 @@ const $ = (sel) => document.querySelector(sel);
 
 /* ============================ persistence ============================ */
 
+// The server reads and writes Supabase directly (see app.py).
 async function loadState() {
   const res = await fetch("/api/state");
-  state = await res.json();
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || "Could not load the exercise library.");
+  state = body;
+}
+
+function rerenderAll() {
+  renderExerciseTable();
+  renderPalette();
+  renderBoard();
 }
 
 function scheduleSave() {
   $("#save-status").textContent = "Saving…";
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
+    let res;
     try {
-      await fetch("/api/state", {
+      res = await fetch("/api/state", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(state),
       });
-      $("#save-status").textContent = "Saved ✓";
     } catch {
       $("#save-status").textContent = "Save failed — is the server running?";
+      return;
+    }
+    if (res.ok) {
+      $("#save-status").textContent = "Saved to Supabase ✓";
+      return;
+    }
+    // Refused (e.g. deleting an exercise that's in clients' plans) or a
+    // Supabase error: say why, then show what's actually in the database.
+    const body = await res.json().catch(() => ({}));
+    $("#save-status").textContent = "Not saved";
+    alert(body.error || "Saving to Supabase failed.");
+    try {
+      await loadState();
+      rerenderAll();
+      $("#save-status").textContent = "Reloaded from Supabase";
+    } catch (e) {
+      $("#save-status").textContent = e.message;
     }
   }, 350);
 }
@@ -69,6 +96,17 @@ function syncOrientationField() {
   }
 }
 
+// A joint's load picker is only active while the joint is ticked; `reset`
+// also puts every picker back to the default load.
+function syncJointLoads(reset = true) {
+  $("#joint-grid").querySelectorAll(".joint-row").forEach((row) => {
+    const checkbox = row.querySelector("input");
+    const select = row.querySelector(".joint-load");
+    if (reset && !checkbox.checked) select.value = DEFAULT_JOINT_LOAD;
+    select.disabled = !checkbox.checked;
+  });
+}
+
 function handleFormSubmit(event) {
   event.preventDefault();
   const form = event.target;
@@ -98,6 +136,9 @@ function handleFormSubmit(event) {
   }
 
   const loadedJoints = [...$("#joint-grid").querySelectorAll("input:checked")].map((cb) => cb.value);
+  const jointLoads = Object.fromEntries(
+    loadedJoints.map((joint) => [joint, $(`#joint-grid .joint-load[data-joint="${joint}"]`).value])
+  );
 
   const fields = {
     name: form.name.value.trim(),
@@ -106,6 +147,8 @@ function handleFormSubmit(event) {
     dominant: form.dominant.checked,
     equipment,
     loaded_joints: loadedJoints,
+    joint_loads: jointLoads,
+    is_time_based: form.is_time_based.checked,
     min_reps: minReps,
     max_reps: maxReps,
     avoid_if: form.avoid_if.value.trim(),
@@ -137,6 +180,7 @@ function resetExerciseForm() {
   form.reset();
   form.eq_bodyweight.checked = true;
   $("#eq-other-text").disabled = true;
+  syncJointLoads();
   syncOrientationField();
   $("#exercise-form-heading").textContent = "New exercise";
   $("#exercise-submit-btn").textContent = "Add exercise";
@@ -170,6 +214,11 @@ function startEditExercise(id) {
   $("#joint-grid").querySelectorAll("input").forEach((cb) => {
     cb.checked = ex.loaded_joints.includes(cb.value);
   });
+  $("#joint-grid").querySelectorAll(".joint-load").forEach((select) => {
+    select.value = (ex.joint_loads || {})[select.dataset.joint] || DEFAULT_JOINT_LOAD;
+  });
+  syncJointLoads(false);
+  form.is_time_based.checked = Boolean(ex.is_time_based);
 
   form.min_reps.value = ex.min_reps;
   form.max_reps.value = ex.max_reps;
@@ -540,14 +589,12 @@ function renderWires() {
       const midX = (p1.x + p2.x) / 2;
       const midY = (p1.y + p2.y) / 2;
       const color = REL_COLORS[rel.type] || "#7a8699";
-      const dash = rel.type === "alternatives" ? 'stroke-dasharray="7 5"' : "";
-      const markerStart = rel.type === "alternatives" ? `marker-start="url(#arrow-${rel.type})"` : "";
       const d = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
       markup.push(`
         <g class="rel" data-id="${rel.id}">
           <path d="${d}" fill="none" stroke="transparent" stroke-width="14"></path>
-          <path d="${d}" fill="none" stroke="${color}" stroke-width="2.5" ${dash}
-                marker-end="url(#arrow-${rel.type})" ${markerStart}></path>
+          <path d="${d}" fill="none" stroke="${color}" stroke-width="2.5"
+                marker-end="url(#arrow-${rel.type})"></path>
           <text x="${midX}" y="${midY - 7}" text-anchor="middle" fill="${color}">${rel.type}</text>
         </g>`);
     });
@@ -648,7 +695,13 @@ function setUpPopup() {
 /* ============================ init ============================ */
 
 async function init() {
-  await loadState();
+  try {
+    await loadState();
+  } catch (e) {
+    $("#save-status").textContent = e.message;
+    alert(e.message);
+    return;
+  }
   applyCanvasSize();
   renderExerciseTable();
   renderPalette();
@@ -662,6 +715,7 @@ async function init() {
     if (e.target.checked) $("#eq-other-text").focus();
   });
   $("#movement-type-select").addEventListener("change", syncOrientationField);
+  $("#joint-grid").querySelectorAll("input").forEach((cb) => cb.addEventListener("change", () => syncJointLoads(false)));
   syncOrientationField();
 
   $("#filter-movement").addEventListener("change", renderPalette);
