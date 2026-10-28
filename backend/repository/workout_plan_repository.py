@@ -52,6 +52,11 @@ _RPE_BUCKETS = (RPE_TOO_EASY, RPE_CORRECT, RPE_HARD)
 PROGRESSION_FALLBACK_RPE = RPE_HARD  # no rpe was ever logged -> assume hard
 PROGRESSION_CORRECT_STEP = 1
 PROGRESSION_EASY_STEP = 2
+PROGRESSION_HARD_STEP = 1
+# The same steps for a timed exercise (exercises.is_time_based), in seconds.
+TIMED_CORRECT_STEP = 5
+TIMED_EASY_STEP = 10
+TIMED_HARD_STEP = 5
 
 # A session started during a period runs at this fraction of its planned reps
 # (see WorkoutPlanRepository._apply_period_adjustment).
@@ -196,6 +201,7 @@ def _compute_progressed_reps(
     exercise_row: Dict[str, Any],
     injury_multiplier: Optional[float] = None,
     previous_row: Optional[Dict[str, Any]] = None,
+    is_time_based: bool = False,
 ) -> List[int]:
     """Next plan's per-set target reps list for one session_exercises row.
 
@@ -222,7 +228,15 @@ def _compute_progressed_reps(
     targets forward unchanged rather than taking the missing-RPE path: the
     user didn't struggle with it, they just didn't do it. An injury still
     overrides this.
+
+    For a timed exercise (is_time_based — targets are seconds held) the steps
+    are TIMED_CORRECT_STEP / TIMED_EASY_STEP / TIMED_HARD_STEP seconds instead
+    of 1 / 2 / 1 reps; the rules are otherwise identical.
     """
+    if is_time_based:
+        correct_step, easy_step, hard_step = TIMED_CORRECT_STEP, TIMED_EASY_STEP, TIMED_HARD_STEP
+    else:
+        correct_step, easy_step, hard_step = PROGRESSION_CORRECT_STEP, PROGRESSION_EASY_STEP, PROGRESSION_HARD_STEP
     sets = exercise_row.get("sets") or 1
     target_reps = _parse_target_reps(exercise_row.get("reps"), sets)
 
@@ -237,12 +251,12 @@ def _compute_progressed_reps(
         )
 
     if rpe_bucket == RPE_HARD:
-        return [max(PROGRESSION_MIN_REPS, r - 1) for r in target_reps]
+        return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in target_reps]
     if not _held_target_two_weeks(exercise_row, previous_row):
         return target_reps
     if rpe_bucket == RPE_TOO_EASY:
-        return _bump_next_set(target_reps, PROGRESSION_EASY_STEP)
-    return _bump_next_set(target_reps, PROGRESSION_CORRECT_STEP)
+        return _bump_next_set(target_reps, easy_step)
+    return _bump_next_set(target_reps, correct_step)
 
 
 class WorkoutPlanRepository:
@@ -556,12 +570,13 @@ class WorkoutPlanRepository:
         return min(multipliers) if multipliers else None
 
     def _fetch_exercise_rep_bounds(self, exercise_ids: List[int]) -> Dict[int, dict]:
-        """id -> {min_reps, max_reps} for the given exercises, batched into one query."""
+        """id -> {min_reps, max_reps, is_time_based} for the given exercises,
+        batched into one query."""
         if not exercise_ids:
             return {}
         rows = (
             self.client.table("exercises")
-            .select("id, min_reps, max_reps")
+            .select("id, min_reps, max_reps, is_time_based")
             .in_("id", list(set(exercise_ids)))
             .execute()
             .data
@@ -780,6 +795,7 @@ class WorkoutPlanRepository:
         loaded_joints_by_exercise = self._fetch_loaded_joints(
             [row["exercise_id"] for row in exercise_rows]
         )
+        exercise_info = self._fetch_exercise_rep_bounds([row["exercise_id"] for row in exercise_rows])
         computed_reps = {
             row["id"]: _compute_progressed_reps(
                 row,
@@ -787,6 +803,7 @@ class WorkoutPlanRepository:
                     row["exercise_id"], loaded_joints_by_exercise, user_joint_pain
                 ),
                 previous_rows.get((row["day_number"], row["exercise_id"])),
+                bool((exercise_info.get(row["exercise_id"]) or {}).get("is_time_based")),
             )
             for row in exercise_rows
         }
@@ -1178,6 +1195,8 @@ class WorkoutPlanRepository:
             # orientation matches the null the workout agent originally emits.
             "orientation": exercise["orientation"] or None,
             "dominant": exercise["dominant"],
+            # A hold measured in seconds: `reps` and set logs are seconds.
+            "is_time_based": exercise["is_time_based"],
             "sets": row.get("sets"),
             "reps": row.get("reps"),
             "rep_range": row.get("rep_range"),

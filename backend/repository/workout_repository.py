@@ -114,6 +114,7 @@ class WorkoutRepository:
             "loaded_joints": joints,
             "min_reps": row.get("min_reps"),
             "max_reps": row.get("max_reps"),
+            "is_time_based": bool(row.get("is_time_based")),
             "avoid_if": _to_str(row.get("avoid_if")),
             "video_url": _to_str(row.get("video_url")),
         }

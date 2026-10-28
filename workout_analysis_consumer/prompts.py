@@ -50,6 +50,11 @@ acknowledge warmly and briefly, in a caring tone, that they showed up and \
 trained smartly on a tougher day. Keep this gentle and never make it the \
 main focus.
 
+Each exercise has a "unit". When it is "seconds" the exercise is a timed \
+hold (like a plank): its prescribed and completed numbers are seconds held, \
+not reps — talk about how long they held it (e.g. "45 seconds plank \
+pidichinga"), never about reps for it.
+
 You may also receive a "previous_session" object: the same client's most \
 recent prior session on this same day of their split (its own set logs, \
 RPE, and day start/completion times), included so you can compare progress. \

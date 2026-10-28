@@ -970,3 +970,56 @@ def test_progression_stops_looking_back_after_the_hop_limit(monkeypatch):
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "7,7,7"
+
+
+# --- timed (is_time_based) exercises ---------------------------------------------
+
+def _timed_plank(client):
+    client.seed("exercises", [{"id": 300, "min_reps": 10, "max_reps": 120, "is_time_based": True}])
+
+
+@pytest.mark.parametrize("rpe, expected", [
+    (8, "35,30,30"),   # correct: +5 s on the next set
+    (6, "40,30,30"),   # too easy: +10 s
+])
+def test_timed_exercise_progresses_in_seconds_after_two_weeks_at_target(rpe, expected):
+    client = FakeSupabaseClient()
+    _timed_plank(client)
+    repo = _repo(client)
+
+    previous = [_row(id=1, exercise_id=300, reps="30,30,30", session_exercise_set_logs=_hit("30,30,30"))]
+    source = _after_streak(client, _source_plan(), previous)
+    this_week = [_row(id=2, exercise_id=300, reps="30,30,30", rep_range="10-120",
+                      session_exercise_rpe={"rpe": rpe}, session_exercise_set_logs=_hit("30,30,30"))]
+
+    _progress(repo, "usr_1", source, this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == expected
+
+
+def test_timed_exercise_hard_drops_five_seconds_every_set():
+    client = FakeSupabaseClient()
+    _timed_plank(client)
+    repo = _repo(client)
+
+    rows = [_row(exercise_id=300, reps="30,35,30", session_exercise_rpe={"rpe": 10})]
+
+    _progress(repo, "usr_1", _source_plan(), rows)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "25,30,25"
+
+
+def test_timed_exercise_without_a_two_week_streak_is_copied():
+    client = FakeSupabaseClient()
+    _timed_plank(client)
+    repo = _repo(client)
+
+    rows = [_row(exercise_id=300, reps="30,30,30", session_exercise_rpe={"rpe": 6},
+                 session_exercise_set_logs=_hit("30,30,30"))]
+
+    _progress(repo, "usr_1", _source_plan(), rows)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "30,30,30"

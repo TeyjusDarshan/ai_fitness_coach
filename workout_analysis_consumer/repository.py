@@ -10,7 +10,7 @@ load_dotenv()
 # exercise's name/movement type, its per-set completion logs, and its RPE.
 SESSION_EXERCISE_JOIN = (
     "id, category, slot_label, sets, reps, rep_range, note, "
-    "exercises(name, movement_types(name)), "
+    "exercises(name, is_time_based, movement_types(name)), "
     "session_exercise_set_logs(set_number, completed_reps), "
     "session_exercise_rpe(rpe)"
 )
@@ -42,6 +42,8 @@ def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "name": row["exercises"]["name"],
             "movement_type": (row["exercises"].get("movement_types") or {}).get("name"),
             "slot": row.get("slot_label"),
+            # Timed holds (e.g. planks): prescribed_reps and completed_reps are seconds.
+            "unit": "seconds" if row["exercises"].get("is_time_based") else "reps",
             "prescribed_sets": row.get("sets"),
             "prescribed_reps": row.get("reps"),
             "rep_range": row.get("rep_range"),

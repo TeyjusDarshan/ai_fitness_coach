@@ -12,6 +12,9 @@ export interface ExerciseEntry {
   movement_type: string
   orientation: string | null
   dominant: boolean
+  // A hold measured in seconds (e.g. a plank): `reps` and set logs are
+  // seconds, and the workout runs it with TimedExerciseScreen.
+  is_time_based: boolean
   sets: number | null
   reps: string | null
   rep_range: string | null

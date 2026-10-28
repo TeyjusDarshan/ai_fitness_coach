@@ -19,7 +19,7 @@ RELATIONSHIPS_CSV = os.path.join(DATA_DIR, "relationships.csv")
 
 EXERCISE_FIELDS = [
     "id", "name", "movement_type", "orientation", "dominant", "equipment", "loaded_joints",
-    "min_reps", "max_reps", "avoid_if", "on_board", "board_x", "board_y",
+    "min_reps", "max_reps", "is_time_based", "avoid_if", "on_board", "board_x", "board_y",
 ]
 RELATIONSHIP_FIELDS = ["id", "from_exercise_id", "to_exercise_id", "type", "reason"]
 
@@ -63,6 +63,7 @@ def load_state():
                     "loaded_joints": _split(row.get("loaded_joints")),
                     "min_reps": _to_int(row.get("min_reps")),
                     "max_reps": _to_int(row.get("max_reps")),
+                    "is_time_based": row.get("is_time_based") == "true",
                     "avoid_if": row.get("avoid_if", ""),
                     "on_board": row.get("on_board") == "true",
                     "board_x": _to_float(row.get("board_x")),
@@ -98,6 +99,7 @@ def save_state(state):
                 "loaded_joints": _join(ex.get("loaded_joints")),
                 "min_reps": ex.get("min_reps"),
                 "max_reps": ex.get("max_reps"),
+                "is_time_based": "true" if ex.get("is_time_based") else "false",
                 "avoid_if": ex.get("avoid_if", ""),
                 "on_board": "true" if ex.get("on_board") else "false",
                 "board_x": round(_to_float(ex.get("board_x")), 1),
