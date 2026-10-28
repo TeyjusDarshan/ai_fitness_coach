@@ -118,7 +118,6 @@ export function SummaryScreen() {
           <p className="summary-hero__plan-complete">You&apos;ve completed your whole plan!</p>
         )}
         <p className="summary-hero__greeting">Great job{displayName ? `, ${capitalize(displayName)}` : ''}!</p>
-        <p className="summary-hero__motto">Every workout counts. Keep going!</p>
       </header>
 
       <section className="panel feedback-panel">
@@ -126,12 +125,7 @@ export function SummaryScreen() {
           <span className="panel__badge">
             <Icon name="chat" size={26} />
           </span>
-          <div>
-            <h2 className="panel__title">How did today&apos;s workout feel?</h2>
-            <p className="panel__text">
-              Share your thoughts with your coach. You can mention how it felt, any pain, or what to adjust.
-            </p>
-          </div>
+          <h2 className="panel__title">How did today&apos;s workout feel?</h2>
         </div>
 
         {!recorder.supported ? (
@@ -197,7 +191,7 @@ export function SummaryScreen() {
             <Icon name="dumbbell" size={22} />
             Today&apos;s Workout
           </h2>
-          <button className="btn-link workout-panel__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
+          <button className="workout-panel__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
             View Details
             <Icon name="chevronRight" size={16} />
           </button>
@@ -230,7 +224,7 @@ export function SummaryScreen() {
       {day && (
         <div className="share-cta">
           <button className="share-cta__button" disabled={upload === 'saving'} onClick={handleShareWithCoach}>
-            <Icon name="send" size={26} />
+            <Icon name="send" size={24} />
             <span className="share-cta__text">
               <strong>Share Workout &amp; Voice Note</strong>
               <small>Sends your workout summary + voice feedback</small>
