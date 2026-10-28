@@ -201,6 +201,31 @@ def _progress(repo, user_id, source_plan, exercise_rows, missed_days=()):
     return repo.create_progressed_plan(user_id, source_plan, list(sessions.values()))
 
 
+def _hit(reps):
+    """Set logs completing every set at exactly its target reps."""
+    return [{"set_number": i, "completed_reps": int(r)} for i, r in enumerate(reps.split(","), start=1)]
+
+
+def _after_streak(client, source_plan, previous_rows, parent_id=54, missed_days=()):
+    """Seed the previous week's plan (parent_id) with previous_rows nested
+    under one session per day, and return source_plan pointing at it, so
+    create_progressed_plan sees a prior week to compare against."""
+    sessions = {}
+    for row in previous_rows:
+        day_number = row["day_number"]
+        session = sessions.setdefault(day_number, {
+            "id": 400 + day_number,
+            "plan_id": parent_id,
+            "day_number": day_number,
+            "scheduled_date": date(2026, 10, 4 + day_number).isoformat(),
+            "completed_at": None if day_number in missed_days else "2026-10-05T10:30:00+00:00",
+            "session_exercises": [],
+        })
+        session["session_exercises"].append({k: v for k, v in row.items() if k != "day_number"})
+    client.seed("sessions", list(sessions.values()))
+    return {**source_plan, "parent_plan_id": parent_id}
+
+
 def test_hard_rpe_reduces_every_set_by_one():
     client = FakeSupabaseClient()
     client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
@@ -230,40 +255,72 @@ def test_missing_rpe_falls_back_to_hard():
     assert new_row["reps"] == "9,9,9"
 
 
-def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one():
+def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one_after_two_weeks_at_target():
     client = FakeSupabaseClient()
     client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
     repo = _repo(client)
 
-    # Week 1: fully uniform -> set 1 (the first index at the shared minimum)
-    # is the one that advances.
-    week1 = _progress(repo, "usr_1", _source_plan(), [_row(reps="10,9,9", session_exercise_rpe={"rpe": 8})]
-    )
-    [week1_row] = client.inserted["session_exercises"]
-    assert week1_row["reps"] == "10,10,9"
+    previous = [_row(id=1, reps="10,9,9", session_exercise_set_logs=_hit("10,9,9"))]
+    source = _after_streak(client, _source_plan(), previous)
+    this_week = [_row(id=2, reps="10,9,9", session_exercise_rpe={"rpe": 8},
+                      session_exercise_set_logs=_hit("10,9,9"))]
 
-    # Week 2: carries forward last week's output row -> set 2 is now the
-    # first one still at the shared minimum (10), so it advances next.
-    client.inserted["session_exercises"] = []
-    week2_row_input = _row(id=2, reps=week1_row["reps"], session_exercise_rpe={"rpe": 8})
-    _progress(repo, "usr_1", _source_plan(id=week1["id"]), [week2_row_input])
-    [week2_row] = client.inserted["session_exercises"]
-    assert week2_row["reps"] == "10,10,10"
+    _progress(repo, "usr_1", source, this_week)
 
-    # Week 3: set 3 is the last one still behind -> it advances, completing
-    # the lap (all three sets now equal).
-    client.inserted["session_exercises"] = []
-    week3_row_input = _row(id=3, reps=week2_row["reps"], session_exercise_rpe={"rpe": 8})
-    _progress(repo, "usr_1", _source_plan(), [week3_row_input])
-    [week3_row] = client.inserted["session_exercises"]
-    assert week3_row["reps"] == "11,10,10"
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "10,10,9"
 
-    # Week 4: lap complete and uniform again -> set 1 starts a new lap.
-    client.inserted["session_exercises"] = []
-    week4_row_input = _row(id=4, reps=week3_row["reps"], session_exercise_rpe={"rpe": 8})
-    _progress(repo, "usr_1", _source_plan(), [week4_row_input])
-    [week4_row] = client.inserted["session_exercises"]
-    assert week4_row["reps"] == "11,11,10"
+
+def test_first_week_at_a_target_is_copied_forward_even_when_rpe_says_progress():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    this_week = [_row(reps="10,9,9", session_exercise_rpe={"rpe": 6}, session_exercise_set_logs=_hit("10,9,9"))]
+
+    _progress(repo, "usr_1", _source_plan(), this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "10,9,9"
+
+
+@pytest.mark.parametrize("previous_reps, previous_logs, this_logs, previous_missed", [
+    ("10,9,9", "10,9,8", "10,9,9", False),    # last week fell short of target
+    ("10,9,9", "10,9,9", "10,9,8", False),    # this week fell short of target
+    ("10,9,9", "10,9,9", "10,9", False),      # a set was never logged
+    ("9,9,9", "9,9,9", "10,9,9", False),      # targets changed since last week: streak restarts
+    ("10,9,9", "10,9,9", "10,9,9", True),     # last week's session was missed
+])
+def test_no_two_week_streak_copies_targets_forward(previous_reps, previous_logs, this_logs, previous_missed):
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    previous = [_row(id=1, reps=previous_reps, session_exercise_set_logs=_hit(previous_logs))]
+    source = _after_streak(client, _source_plan(), previous, missed_days={1} if previous_missed else ())
+    this_week = [_row(id=2, reps="10,9,9", session_exercise_rpe={"rpe": 8},
+                      session_exercise_set_logs=_hit(this_logs))]
+
+    _progress(repo, "usr_1", source, this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "10,9,9"
+
+
+def test_swapped_in_exercise_has_no_streak_to_progress_from():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}, {"id": 101, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    previous = [_row(id=1, exercise_id=101, reps="10,10,10", session_exercise_set_logs=_hit("10,10,10"))]
+    source = _after_streak(client, _source_plan(), previous)
+    this_week = [_row(id=2, exercise_id=100, reps="10,10,10", session_exercise_rpe={"rpe": 8},
+                      session_exercise_set_logs=_hit("10,10,10"))]
+
+    _progress(repo, "usr_1", source, this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "10,10,10"
 
 
 def test_too_easy_rpe_bumps_only_the_next_uncaught_up_set_by_two():
@@ -271,9 +328,12 @@ def test_too_easy_rpe_bumps_only_the_next_uncaught_up_set_by_two():
     client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 25}])
     repo = _repo(client)
 
-    exercise_rows = [_row(reps="10,10,10", session_exercise_rpe={"rpe": 6})]
+    previous = [_row(id=1, reps="10,10,10", session_exercise_set_logs=_hit("10,10,10"))]
+    source = _after_streak(client, _source_plan(), previous)
+    exercise_rows = [_row(id=2, reps="10,10,10", session_exercise_rpe={"rpe": 6},
+                          session_exercise_set_logs=_hit("10,10,10"))]
 
-    _progress(repo, "usr_1", _source_plan(), exercise_rows)
+    _progress(repo, "usr_1", source, exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "12,10,10"
@@ -337,11 +397,14 @@ def test_above_max_with_progression_edge_swaps_exercise():
     }])
     repo = _repo(client)
 
+    previous = [_row(id=1, exercise_id=400, reps="20,19,19", session_exercise_set_logs=_hit("20,19,19"))]
+    source = _after_streak(client, _source_plan(), previous)
     exercise_rows = [_row(
         id=4, exercise_id=400, reps="20,19,19", session_exercise_rpe={"rpe": 6},
+        session_exercise_set_logs=_hit("20,19,19"),
     )]
 
-    plan = _progress(repo, "usr_4", _source_plan(), exercise_rows)
+    plan = _progress(repo, "usr_4", source, exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 401
@@ -355,11 +418,14 @@ def test_above_max_without_progression_edge_clamps_every_set_to_own_max_reps():
     client.seed("exercises", [{"id": 500, "min_reps": 8, "max_reps": 20}])
     repo = _repo(client)
 
+    previous = [_row(id=1, exercise_id=500, reps="20,19,19", session_exercise_set_logs=_hit("20,19,19"))]
+    source = _after_streak(client, _source_plan(), previous)
     exercise_rows = [_row(
         id=5, exercise_id=500, reps="20,19,19", session_exercise_rpe={"rpe": 6},
+        session_exercise_set_logs=_hit("20,19,19"),
     )]
 
-    _progress(repo, "usr_5", _source_plan(), exercise_rows)
+    _progress(repo, "usr_5", source, exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["exercise_id"] == 500
@@ -546,7 +612,9 @@ def test_missed_session_carries_its_exercises_forward_unchanged():
 
     missed_row, done_row = client.inserted["session_exercises"]
     assert (missed_row["exercise_id"], missed_row["reps"], missed_row["rep_range"]) == (100, "10,11,10", "8-12")
-    assert done_row["reps"] == "11,10,10"
+    # Completed on-target with RPE 8, but with no previous week to confirm a
+    # two-week streak, so it is copied rather than bumped.
+    assert done_row["reps"] == "10,10,10"
 
 
 def test_missed_session_with_joint_pain_still_reduces_reps():
@@ -610,7 +678,8 @@ def test_get_unfinished_plan_closes_and_progresses_a_plan_whose_sessions_are_all
         for s in client.inserted["sessions"]
         for row in client.inserted["session_exercises"] if row["session_id"] == s["id"]
     }
-    assert reps_by_day == {1: "11,10,10", 3: "10,10,10", 5: "10,10,10"}
+    # No previous week on record, so nothing has held its target two weeks yet.
+    assert reps_by_day == {1: "10,10,10", 3: "10,10,10", 5: "10,10,10"}
 
 
 def test_get_unfinished_plan_leaves_a_plan_open_while_a_session_is_still_due(monkeypatch):

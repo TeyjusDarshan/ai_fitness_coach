@@ -150,8 +150,38 @@ def _bump_next_set(target_reps: List[int], step: int) -> List[int]:
     return bumped
 
 
+def _hit_target(exercise_row: Dict[str, Any]) -> bool:
+    """Whether the user logged every prescribed set at (or above) its target
+    reps, in a session they actually completed."""
+    if exercise_row.get("missed"):
+        return False
+    sets = exercise_row.get("sets") or 1
+    target_reps = _parse_target_reps(exercise_row.get("reps"), sets)
+    completed = {
+        log["set_number"]: log["completed_reps"]
+        for log in exercise_row.get("session_exercise_set_logs") or []
+    }
+    return all(completed.get(number, 0) >= target for number, target in enumerate(target_reps, start=1))
+
+
+def _held_target_two_weeks(
+    exercise_row: Dict[str, Any], previous_row: Optional[Dict[str, Any]]
+) -> bool:
+    """Whether the user hit the same per-set targets on this exercise two
+    weeks running: this week's row and the previous plan's row for the same
+    day and exercise both have the same targets, both fully hit. No previous
+    row (first week, exercise swapped in, or day absent) means no streak."""
+    if previous_row is None or not _hit_target(exercise_row) or not _hit_target(previous_row):
+        return False
+    return _parse_target_reps(previous_row.get("reps"), previous_row.get("sets") or 1) == _parse_target_reps(
+        exercise_row.get("reps"), exercise_row.get("sets") or 1
+    )
+
+
 def _compute_progressed_reps(
-    exercise_row: Dict[str, Any], injury_multiplier: Optional[float] = None
+    exercise_row: Dict[str, Any],
+    injury_multiplier: Optional[float] = None,
+    previous_row: Optional[Dict[str, Any]] = None,
 ) -> List[int]:
     """Next plan's per-set target reps list for one session_exercises row.
 
@@ -161,6 +191,12 @@ def _compute_progressed_reps(
       - RPE 8 (correct): the ramp advances by 1 rep, one set at a time (see
         _bump_next_set) — only the next not-yet-bumped set goes up this week.
       - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
+
+    Going up (RPE 8 or 6) additionally requires the user to have hit the
+    targets two weeks in a row (_held_target_two_weeks, with previous_row
+    being the previous plan's row for the same day and exercise); otherwise
+    last week's targets are copied forward unchanged. Coming down (RPE 10,
+    missing RPE, injury) is never held back by this.
 
     A missing RPE, or an injury_multiplier below 1.0 (the exercise loads a
     joint the user has reported pain in — see _injury_multiplier_for_exercise),
@@ -188,6 +224,8 @@ def _compute_progressed_reps(
 
     if rpe_bucket == RPE_HARD:
         return [max(PROGRESSION_MIN_REPS, r - 1) for r in target_reps]
+    if not _held_target_two_weeks(exercise_row, previous_row):
+        return target_reps
     if rpe_bucket == RPE_TOO_EASY:
         return _bump_next_set(target_reps, PROGRESSION_EASY_STEP)
     return _bump_next_set(target_reps, PROGRESSION_CORRECT_STEP)
@@ -543,7 +581,10 @@ class WorkoutPlanRepository:
         so it isn't born with its sessions already missed.
 
         Exercises from a missed session carry forward unchanged (see
-        _compute_progressed_reps).
+        _compute_progressed_reps), as do exercises that haven't yet held
+        their targets for two weeks running — the previous plan
+        (source_plan["parent_plan_id"]) supplies last week's row for that
+        check.
 
         Each exercise's reps target is computed by _compute_progressed_reps,
         using an injury multiplier (_injury_multiplier_for_exercise) in place
@@ -595,6 +636,15 @@ class WorkoutPlanRepository:
                 {s["day_number"]: scheduled_date_for(start_date, s["day_number"]) for s in source_sessions},
             )
         exercise_rows = _flatten_session_exercises(source_sessions)
+        previous_rows = {}
+        if source_plan.get("parent_plan_id"):
+            previous_sessions = self._fetch_plan_sessions(
+                source_plan["parent_plan_id"], PROGRESSION_SESSIONS_SELECT
+            )
+            previous_rows = {
+                (row["day_number"], row["exercise_id"]): row
+                for row in _flatten_session_exercises(previous_sessions)
+            }
 
         user_joint_pain = self._fetch_user_joint_pain(user_id)
         loaded_joints_by_exercise = self._fetch_loaded_joints(
@@ -606,6 +656,7 @@ class WorkoutPlanRepository:
                 self._injury_multiplier_for_exercise(
                     row["exercise_id"], loaded_joints_by_exercise, user_joint_pain
                 ),
+                previous_rows.get((row["day_number"], row["exercise_id"])),
             )
             for row in exercise_rows
         }
