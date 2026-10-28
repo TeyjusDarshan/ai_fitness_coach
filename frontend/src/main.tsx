@@ -5,6 +5,9 @@ import './index.css'
 import './styles/screens.css'
 import App from './App.tsx'
 import { AppStateProvider } from './state/AppStateContext'
+import { keepAppUpdated } from './pwaUpdate'
+
+keepAppUpdated()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -918,8 +918,26 @@ class WorkoutPlanRepository:
         if result:
             if is_period:
                 self._apply_period_adjustment(session_id)
+                self._log_period(session_id)
             return result[0]
         return self.client.table("sessions").select("*").eq("id", session_id).execute().data[0]
+
+    def _log_period(self, session_id: int) -> None:
+        """Record today (in APP_TIMEZONE) as a period day for the session's
+        user in user_period_logs. One row per (user, date), so answering yes
+        on two sessions the same day logs it once."""
+        user_id = ((self.get_session(session_id) or {}).get("plans") or {}).get("user_id")
+        if user_id is None:
+            return
+        (
+            self.client.table("user_period_logs")
+            .upsert(
+                {"user_id": user_id, "logged_on": app_today().isoformat(), "session_id": session_id},
+                on_conflict="user_id,logged_on",
+                ignore_duplicates=True,
+            )
+            .execute()
+        )
 
     def _apply_period_adjustment(self, session_id: int) -> None:
         """Rewrite a period session's exercise rows in place to

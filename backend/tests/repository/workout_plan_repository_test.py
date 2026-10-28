@@ -85,6 +85,14 @@ class FakeTable:
         self._in.append((key, set(values)))
         return self
 
+    def upsert(self, row, on_conflict, ignore_duplicates=False):
+        keys = on_conflict.split(",")
+        if any(all(r.get(k) == row[k] for k in keys) for r in self.rows):
+            self._insert_rows = []
+        else:
+            self._insert_rows = [row]
+        return self
+
     def ilike(self, key, pattern):
         self._ilike.append((key, pattern.strip("%").lower()))
         return self
@@ -795,6 +803,47 @@ def test_period_start_scales_every_set_to_70_percent_rounded_half_up():
     assert row["exercise_id"] == 100
     assert session["is_period"] is True
     assert client.tables["sessions"][0]["is_period"] is True
+
+
+def _seed_owned_period_session(client, user_id="usr_1"):
+    row = _seed_period_session(client)
+    client.tables["sessions"][0]["plans"] = {"user_id": user_id, "plan_type": "3_day", "completed": False}
+    return row
+
+
+def test_period_start_logs_todays_date_for_the_user():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 4, "max_reps": 15}])
+    _seed_owned_period_session(client)
+
+    _repo(client).start_session(5, is_period=True)
+
+    assert client.inserted["user_period_logs"] == [
+        {"user_id": "usr_1", "logged_on": "2026-10-12", "session_id": 5, "id": client.inserted["user_period_logs"][0]["id"]}
+    ]
+
+
+def test_a_second_period_yes_on_the_same_day_is_logged_once():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 4, "max_reps": 15}])
+    _seed_owned_period_session(client)
+    client.seed("user_period_logs", [{"user_id": "usr_1", "logged_on": "2026-10-12", "session_id": 4}])
+
+    _repo(client).start_session(5, is_period=True)
+
+    assert client.inserted.get("user_period_logs", []) == []
+
+
+def test_ordinary_start_and_resumed_start_log_nothing():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 4, "max_reps": 15}])
+    _seed_owned_period_session(client)
+    repo = _repo(client)
+
+    repo.start_session(5)
+    repo.start_session(5, is_period=True)  # already started
+
+    assert "user_period_logs" not in client.inserted
 
 
 def test_period_start_below_min_reps_swaps_to_the_lack_of_strength_regression():
