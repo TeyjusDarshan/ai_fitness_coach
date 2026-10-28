@@ -3,9 +3,14 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import { completeSession, uploadFeedbackAudio } from '../api'
 import { Icon } from '../components/Icon'
+import { Laurel } from '../components/Laurel'
+import { ShareProgress, type SharePhase } from '../components/ShareProgress'
 import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDuration } from '../utils'
 import { useVoiceRecorder } from '../state/useVoiceRecorder'
 import type { DayCompleteSummary } from '../types'
+
+// How long "Preparing to open WhatsApp" shows before WhatsApp opens.
+const SHARE_OPENING_MS = 800
 
 export function SummaryScreen() {
   const { dashboard, displayName, refreshDashboard } = useAppState()
@@ -17,33 +22,18 @@ export function SummaryScreen() {
   const [error, setError] = useState<string | null>(null)
   const fired = useRef(false)
 
-  // The voice note uploads as soon as recording stops, so the share tap can
-  // open WhatsApp straight away (iOS blocks window.open after an await).
-  const [upload, setUpload] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
-  const sessionIdRef = useRef<number | null>(null)
+  // The recording stays on the device until she taps Share, which uploads it
+  // (behind the ShareProgress screen) and then opens WhatsApp.
   const recordingRef = useRef<Blob | null>(null)
-  const uploadToken = useRef(0)
+  const [share, setShare] = useState<SharePhase | null>(null)
+  const [shareHasVoice, setShareHasVoice] = useState(false)
 
-  async function saveRecording(recording: Blob) {
-    const sessionId = sessionIdRef.current
-    if (sessionId == null) return
+  const recorder = useVoiceRecorder((recording) => {
     recordingRef.current = recording
-    const token = ++uploadToken.current
-    setUpload('saving')
-    try {
-      await uploadFeedbackAudio(sessionId, recording)
-      if (token === uploadToken.current) setUpload('saved')
-    } catch {
-      if (token === uploadToken.current) setUpload('failed')
-    }
-  }
-
-  const recorder = useVoiceRecorder((recording) => void saveRecording(recording))
+  })
 
   function recordAgain() {
-    uploadToken.current++
     recordingRef.current = null
-    setUpload('idle')
     recorder.reset()
   }
 
@@ -53,10 +43,7 @@ export function SummaryScreen() {
     if (sessionId == null) return
     fired.current = true
     completeSession(sessionId)
-      .then((result) => {
-        sessionIdRef.current = result.session_id
-        setSummary(result)
-      })
+      .then(setSummary)
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to complete this day.'))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dashboard])
@@ -94,10 +81,29 @@ export function SummaryScreen() {
 
   const day = dashboard?.days.find((d) => d.day_number === dayNum)
 
-  function handleShareWithCoach() {
-    if (!day || !summary || !dashboard) return
-    const message = buildCoachShareMessage(day, summary, displayName)
-    window.open(coachWhatsAppShareUrl(message), '_blank', 'noopener,noreferrer')
+  // Upload the voice note (if she recorded one), then open WhatsApp with the
+  // workout summary. WhatsApp opens after an await, which browsers can block
+  // as a popup (iOS Safari especially) — so if window.open is refused, this
+  // tab navigates there instead. No `noopener`: it would make window.open
+  // return null even on success.
+  async function runShare(withVoice: boolean) {
+    if (!day || !summary) return
+    const recording = withVoice ? recordingRef.current : null
+    setShareHasVoice(recording !== null)
+    if (recording) {
+      setShare('uploading')
+      try {
+        await uploadFeedbackAudio(summary.session_id, recording)
+      } catch {
+        setShare('upload-failed')
+        return
+      }
+    }
+    setShare('opening')
+    await new Promise((resolve) => setTimeout(resolve, SHARE_OPENING_MS))
+    const url = coachWhatsAppShareUrl(buildCoachShareMessage(day, summary, displayName))
+    if (!window.open(url, '_blank')) window.location.href = url
+    setShare('done')
   }
 
   return (
@@ -134,24 +140,10 @@ export function SummaryScreen() {
           <div className="recorded">
             <audio className="recorded__player" src={recorder.playbackUrl} controls />
             <div className="recorded__row">
-              <span className={`recorded__status recorded__status--${upload}`}>
-                {upload === 'saving' && 'Saving…'}
-                {upload === 'saved' && (
-                  <>
-                    <Icon name="check" size={16} /> Voice note saved
-                  </>
-                )}
-                {upload === 'failed' && "Couldn't save your voice note"}
+              <span className="recorded__note">
+                <Icon name="check" size={16} /> Voice note recorded
               </span>
-              {upload === 'failed' && (
-                <button
-                  className="btn-link"
-                  onClick={() => recordingRef.current && void saveRecording(recordingRef.current)}
-                >
-                  Retry
-                </button>
-              )}
-              <button className="btn-link" onClick={recordAgain} disabled={upload === 'saving'}>
+              <button className="btn-link" onClick={recordAgain}>
                 Record again
               </button>
             </div>
@@ -185,13 +177,13 @@ export function SummaryScreen() {
         </p>
       </section>
 
-      <section className="panel workout-panel">
-        <div className="workout-panel__head">
-          <h2 className="workout-panel__title">
+      <section className="panel today-card">
+        <div className="today-card__head">
+          <h2 className="today-card__title">
             <Icon name="dumbbell" size={22} />
             Today&apos;s Workout
           </h2>
-          <button className="workout-panel__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
+          <button className="today-card__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
             View Details
             <Icon name="chevronRight" size={16} />
           </button>
@@ -223,7 +215,7 @@ export function SummaryScreen() {
 
       {day && (
         <div className="share-cta">
-          <button className="share-cta__button" disabled={upload === 'saving'} onClick={handleShareWithCoach}>
+          <button className="share-cta__button" onClick={() => void runShare(true)}>
             <Icon name="send" size={24} />
             <span className="share-cta__text">
               <strong>Share Workout &amp; Voice Note</strong>
@@ -237,22 +229,17 @@ export function SummaryScreen() {
         <Icon name="arrowLeft" size={20} />
         Back to Dashboard
       </button>
-    </div>
-  )
-}
 
-// A sprig of leaves either side of the trophy.
-function Laurel({ side }: { side: 'left' | 'right' }) {
-  return (
-    <svg viewBox="0 0 30 60" className={`laurel laurel--${side}`} aria-hidden>
-      <path d="M22 58C10 46 6 30 12 6" stroke="#5f9b78" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-      {[12, 24, 36, 48].map((y) => (
-        <g key={y}>
-          <ellipse cx={y < 30 ? 6 : 9} cy={y} rx="6" ry="3" transform={`rotate(-35 ${y < 30 ? 6 : 9} ${y})`} fill="#7fb38c" />
-          <ellipse cx={y < 30 ? 17 : 21} cy={y - 4} rx="6" ry="3" transform={`rotate(35 ${y < 30 ? 17 : 21} ${y - 4})`} fill="#9cc49f" />
-        </g>
-      ))}
-    </svg>
+      {share && (
+        <ShareProgress
+          phase={share}
+          hasVoice={shareHasVoice}
+          onRetry={() => void runShare(true)}
+          onSkipVoice={() => void runShare(false)}
+          onBack={handleBackToDashboard}
+        />
+      )}
+    </div>
   )
 }
 
