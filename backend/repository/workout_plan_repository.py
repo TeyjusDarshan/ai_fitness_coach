@@ -750,6 +750,10 @@ class WorkoutPlanRepository:
                 completed_plan.get("id"),
             )
 
+    def set_feedback_audio_path(self, session_id: int, path: str) -> None:
+        """Point the session at its voice-feedback recording in storage."""
+        self.client.table("sessions").update({"feedback_audio_path": path}).eq("id", session_id).execute()
+
     def start_session(self, session_id: int) -> dict:
         """Stamp started_at on a session the first time it's started.
 

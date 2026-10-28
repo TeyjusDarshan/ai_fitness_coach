@@ -15,8 +15,20 @@ class BlobStorageManager(ABC):
     """
 
     @abstractmethod
-    def store(self, data: bytes, name: str) -> str:
-        """Store data under name and return a URL it can be fetched from."""
+    def store(self, data: bytes, name: str, content_type: str = "audio/ogg") -> str:
+        """Store data under name and return a URL it can be fetched from
+        (only meaningful for a public bucket; see create_signed_url)."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_signed_url(self, name: str, expires_in: int) -> str:
+        """A temporary URL for a stored object, valid for expires_in seconds
+        — the way to read from a private bucket."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def remove(self, name: str) -> None:
+        """Delete a stored object."""
         raise NotImplementedError
 
 
@@ -32,13 +44,19 @@ class SupabaseBlobStorageManager(BlobStorageManager):
             self.client = create_client(url, key)
         self._bucket = bucket
 
-    def store(self, data: bytes, name: str) -> str:
+    def store(self, data: bytes, name: str, content_type: str = "audio/ogg") -> str:
         self.client.storage.from_(self._bucket).upload(
             path=name,
             file=data,
             file_options=FileOptions(
-                **{"content-type": "audio/ogg"},
+                **{"content-type": content_type},
                 upsert="true"
             ),
         )
         return self.client.storage.from_(self._bucket).get_public_url(name)
+
+    def create_signed_url(self, name: str, expires_in: int) -> str:
+        return self.client.storage.from_(self._bucket).create_signed_url(name, expires_in)["signedUrl"]
+
+    def remove(self, name: str) -> None:
+        self.client.storage.from_(self._bucket).remove([name])

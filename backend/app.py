@@ -19,6 +19,12 @@ from flask import Flask, g, jsonify, request
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
 from backend.auth import require_admin, require_auth
+from backend.feedback_storage import (
+    MAX_FEEDBACK_BYTES,
+    SIGNED_URL_TTL_SECONDS,
+    feedback_path,
+    feedback_storage,
+)
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
@@ -347,6 +353,64 @@ def start_session(session_id):
         app.logger.exception("Failed to start session_id=%s", session_id)
         return jsonify({"error": "Failed to start this workout."}), 500
     return jsonify(session), 200
+
+
+@app.post("/api/sessions/<int:session_id>/feedback-audio")
+@require_auth
+def upload_feedback_audio(session_id):
+    """Store the client's recorded voice feedback for a finished session
+    (multipart field `audio`), replacing any earlier recording."""
+    if denied := _deny_unless_session_open(session_id):
+        return denied
+
+    upload = request.files.get("audio")
+    if upload is None:
+        return jsonify({"error": "An 'audio' file is required."}), 400
+    content_type = (upload.mimetype or "").split(";")[0].strip().lower()
+    path = feedback_path(session_id, content_type)
+    if path is None:
+        return jsonify({"error": f"Unsupported audio type '{content_type}'."}), 415
+    data = upload.read(MAX_FEEDBACK_BYTES + 1)
+    if not data:
+        return jsonify({"error": "The recording is empty."}), 400
+    if len(data) > MAX_FEEDBACK_BYTES:
+        return jsonify({"error": "The recording is too long."}), 413
+
+    try:
+        previous_path = (plan_repo.get_session(session_id) or {}).get("feedback_audio_path")
+        feedback_storage().store(data, path, content_type)
+        plan_repo.set_feedback_audio_path(session_id, path)
+        if previous_path and previous_path != path:
+            try:
+                feedback_storage().remove(previous_path)
+            except Exception:
+                app.logger.warning("Could not remove old feedback %s", previous_path, exc_info=True)
+    except Exception:
+        app.logger.exception("Failed to store voice feedback for session_id=%s", session_id)
+        return jsonify({"error": "Failed to save your recording."}), 500
+    return jsonify({"feedback_audio_path": path}), 200
+
+
+@app.get("/api/sessions/<int:session_id>/feedback-audio")
+@require_auth
+def get_feedback_audio(session_id):
+    """A temporary link to the session's voice feedback, 404 if none."""
+    if denied := _deny_unless_session_open(session_id):
+        return denied
+    path = (plan_repo.get_session(session_id) or {}).get("feedback_audio_path")
+    if not path:
+        return jsonify({"error": "No voice feedback for this session."}), 404
+    return jsonify({"url": feedback_storage().create_signed_url(path, SIGNED_URL_TTL_SECONDS)}), 200
+
+
+@app.get("/api/admin/sessions/<int:session_id>/feedback-audio")
+@require_admin
+def get_feedback_audio_for_coach(session_id):
+    """The coach's temporary link to a session's voice feedback."""
+    path = (plan_repo.get_session(session_id) or {}).get("feedback_audio_path")
+    if not path:
+        return jsonify({"error": "No voice feedback for this session."}), 404
+    return jsonify({"url": feedback_storage().create_signed_url(path, SIGNED_URL_TTL_SECONDS)}), 200
 
 
 @app.patch("/api/sessions/<int:session_id>/exercises/<int:session_exercise_id>/sets/<int:set_number>")

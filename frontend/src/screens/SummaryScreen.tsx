@@ -128,6 +128,11 @@ export function SummaryScreen() {
         </button>
       )}
 
+      <button className="btn-secondary" onClick={() => navigate(`/day/${dayNum}/feedback`)}>
+        <Icon name="mic" size={18} />
+        Record Voice Feedback
+      </button>
+
       <button className="btn-secondary" onClick={handleBackToDashboard}>
         Back to Dashboard
       </button>

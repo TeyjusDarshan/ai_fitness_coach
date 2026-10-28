@@ -27,6 +27,13 @@ const PATHS = {
   chevronLeft: <path d="m15 5-7 7 7 7" />,
   chevronRight: <path d="m9 5 7 7-7 7" />,
   share: <path d="M12 15V3M7.5 7.5 12 3l4.5 4.5M5 12v6.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V12" />,
+  mic: (
+    <>
+      <rect x="9" y="3" width="6" height="11" rx="3" />
+      <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7" />
+    </>
+  ),
+  stop: <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />,
   trophy: (
     <>
       <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />
