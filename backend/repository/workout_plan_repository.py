@@ -1239,6 +1239,31 @@ class WorkoutPlanRepository:
         )
         return [row["logged_on"] for row in rows]
 
+    def get_session_exercise_for_edit(self, session_exercise_id: int) -> Optional[dict]:
+        """One session_exercises row with its logged set numbers and its
+        session (dates) and plan (owner, closed?) nested — what the coach's
+        prescription edit checks before changing anything."""
+        rows = (
+            self.client.table("session_exercises")
+            .select(
+                "id, sets, reps, session_exercise_set_logs(set_number), "
+                "sessions(id, scheduled_date, completed_at, plans(user_id, completed))"
+            )
+            .eq("id", session_exercise_id)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def update_session_exercise_prescription(self, session_exercise_id: int, sets: int, reps: str) -> None:
+        """Set an exercise slot's prescribed sets and per-set target(s)."""
+        (
+            self.client.table("session_exercises")
+            .update({"sets": sets, "reps": reps})
+            .eq("id", session_exercise_id)
+            .execute()
+        )
+
     def get_user_workout_history(self, user_id: str) -> Dict[str, List[dict]]:
         """Every workout across all of the user's plans, split into
         {"scheduled": soonest first, "past": newest first}, each with its

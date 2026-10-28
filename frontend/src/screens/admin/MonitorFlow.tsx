@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError } from '../../api'
 import {
+  editPrescription,
   fetchClientMonitor,
   fetchClients,
   fetchFeedbackAudioUrl,
@@ -9,12 +10,14 @@ import {
   type MonitorWorkout,
 } from '../../adminApi'
 import { LoggedSets, Prescription } from '../../components/ExerciseLog'
-import { capitalize, formatDayDate, formatDuration, WORKOUT_STATUS_LABELS } from '../../utils'
+import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, WORKOUT_STATUS_LABELS } from '../../utils'
+import type { ExerciseEntry } from '../../types'
 import { humanize } from './planDraft'
 
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
 // what was logged, the AI analysis and the client's own voice feedback.
+// An upcoming workout's sets and reps can be edited per exercise.
 export function MonitorFlow({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
   const [query, setQuery] = useState('')
@@ -215,7 +218,11 @@ function WorkoutCard({
   const [feedbackUrl, setFeedbackUrl] = useState<string | null>(null)
   const [feedbackError, setFeedbackError] = useState<string | null>(null)
   const [loadingFeedback, setLoadingFeedback] = useState(false)
+  // Local copy so a saved edit shows straight away.
+  const [exercises, setExercises] = useState(workout.exercises)
+  const [editing, setEditing] = useState<number | null>(null)
   const done = workout.status === 'completed'
+  const editable = workout.status === 'scheduled'
 
   async function loadFeedback() {
     setLoadingFeedback(true)
@@ -249,10 +256,30 @@ function WorkoutCard({
           {workout.duration_seconds != null && (
             <p className="admin__muted">Took {formatDuration(workout.duration_seconds)}</p>
           )}
-          {workout.exercises.map((exercise) => (
+          {exercises.map((exercise) => (
             <div key={exercise.id} className="monitor__exercise">
-              <div className="monitor__exercise-name">{exercise.name}</div>
-              <Prescription exercise={exercise} />
+              <div className="monitor__exercise-head">
+                <span className="monitor__exercise-name">{exercise.name}</span>
+                {editable && editing !== exercise.id && exercise.set_logs.length === 0 && (
+                  <button className="btn-link" onClick={() => setEditing(exercise.id)}>
+                    Edit
+                  </button>
+                )}
+              </div>
+              {editing === exercise.id ? (
+                <PrescriptionEditor
+                  exercise={exercise}
+                  adminKey={adminKey}
+                  onUnauthorized={onUnauthorized}
+                  onSaved={(sets, reps) => {
+                    setExercises((prev) => prev.map((ex) => (ex.id === exercise.id ? { ...ex, sets, reps } : ex)))
+                    setEditing(null)
+                  }}
+                  onCancel={() => setEditing(null)}
+                />
+              ) : (
+                <Prescription exercise={exercise} />
+              )}
               {done && <LoggedSets exercise={exercise} />}
             </div>
           ))}
@@ -280,6 +307,93 @@ function WorkoutCard({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// Sets plus one target per set (reps, or seconds for a timed exercise).
+const MAX_SETS = 10
+
+function PrescriptionEditor({
+  exercise,
+  adminKey,
+  onUnauthorized,
+  onSaved,
+  onCancel,
+}: {
+  exercise: ExerciseEntry
+  adminKey: string
+  onUnauthorized: () => void
+  onSaved: (sets: number, reps: string) => void
+  onCancel: () => void
+}) {
+  const [targets, setTargets] = useState<string[]>(() =>
+    Array.from({ length: exercise.sets ?? 1 }, (_, i) => String(targetRepsForSet(exercise, i))),
+  )
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const unit = repUnit(exercise)
+  const values = targets.map(Number)
+  const valid = values.every((v) => Number.isInteger(v) && v >= 1 && v <= 600)
+
+  function setCount(next: number) {
+    const count = Math.max(1, Math.min(MAX_SETS, next))
+    // New sets copy the last one's target.
+    setTargets((prev) =>
+      count <= prev.length ? prev.slice(0, count) : [...prev, ...Array(count - prev.length).fill(prev[prev.length - 1] ?? '10')],
+    )
+  }
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const result = await editPrescription(adminKey, exercise.id, values.length, values)
+      onSaved(result.sets, result.reps)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onUnauthorized()
+      else setError(err instanceof Error ? err.message : 'Could not save.')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="monitor__editor">
+      <div className="monitor__editor-sets">
+        <span className="monitor__label">Sets</span>
+        <button type="button" className="monitor__step" onClick={() => setCount(targets.length - 1)} disabled={targets.length <= 1}>
+          −
+        </button>
+        <strong>{targets.length}</strong>
+        <button type="button" className="monitor__step" onClick={() => setCount(targets.length + 1)} disabled={targets.length >= MAX_SETS}>
+          +
+        </button>
+      </div>
+      <div className="monitor__editor-targets">
+        {targets.map((value, i) => (
+          <label key={i} className="monitor__target">
+            <span>Set {i + 1}</span>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={600}
+              value={value}
+              onChange={(e) => setTargets((prev) => prev.map((v, j) => (j === i ? e.target.value : v)))}
+            />
+            <span className="admin__muted">{unit}</span>
+          </label>
+        ))}
+      </div>
+      {error && <div className="admin__hint admin__hint--error">{error}</div>}
+      <div className="monitor__editor-actions">
+        <button type="button" className="btn-link" onClick={onCancel} disabled={saving}>
+          Cancel
+        </button>
+        <button type="button" className="btn-primary monitor__save" onClick={() => void save()} disabled={!valid || saving}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </div>
     </div>
   )
 }

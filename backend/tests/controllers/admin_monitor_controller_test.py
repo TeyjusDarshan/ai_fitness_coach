@@ -85,3 +85,79 @@ def test_monitor_for_an_unknown_client_is_404(monitor):
 
     assert client.get("/api/admin/users/nobody/monitor", headers=ADMIN_HEADERS).status_code == 404
     controller.plan_repo.get_user_workout_history.assert_not_called()
+
+
+# --- editing an upcoming workout's prescription ---------------------------------
+
+def _slot(completed_at=None, scheduled_date="2026-10-20", plan_completed=False, logs=()):
+    return {
+        "id": 70, "sets": 3, "reps": "10",
+        "session_exercise_set_logs": [{"set_number": n} for n in logs],
+        "sessions": {"id": 7, "scheduled_date": scheduled_date, "completed_at": completed_at,
+                     "plans": {"user_id": "usr_1", "completed": plan_completed}},
+    }
+
+
+@pytest.fixture
+def editing(monitor, monkeypatch):
+    client, controller = monitor
+    monkeypatch.setattr(controller, "app_today", lambda: __import__("datetime").date(2026, 10, 15))
+    monkeypatch.setattr(controller.plan_repo, "get_session_exercise_for_edit", MagicMock(return_value=_slot()))
+    monkeypatch.setattr(controller.plan_repo, "update_session_exercise_prescription", MagicMock())
+    return client, controller
+
+
+def _edit(client, body, headers=ADMIN_HEADERS):
+    return client.patch("/api/admin/session-exercises/70", json=body, headers=headers)
+
+
+@pytest.mark.parametrize("reps, stored", [([12, 12, 12, 12], "12"), ([12, 12, 11, 10], "12,12,11,10")])
+def test_editing_an_upcoming_exercise_stores_sets_and_targets(editing, reps, stored):
+    client, controller = editing
+
+    response = _edit(client, {"sets": 4, "reps": reps})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"id": 70, "sets": 4, "reps": stored}
+    controller.plan_repo.update_session_exercise_prescription.assert_called_once_with(70, 4, stored)
+
+
+def test_editing_needs_the_admin_key(editing):
+    client, controller = editing
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}, headers={}).status_code == 401
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+@pytest.mark.parametrize("body", [
+    {"sets": 0, "reps": []},
+    {"sets": 11, "reps": [10] * 11},
+    {"sets": 3, "reps": [10, 10]},          # one target per set
+    {"sets": 2, "reps": [10, 0]},
+    {"sets": 2, "reps": [10, "10"]},
+    {"sets": True, "reps": [10]},
+    {"sets": 1, "reps": [601]},
+])
+def test_editing_rejects_bad_values(editing, body):
+    client, controller = editing
+    assert _edit(client, body).status_code == 400
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+@pytest.mark.parametrize("slot", [
+    _slot(completed_at="2026-10-14T05:00:00+00:00"),   # done
+    _slot(scheduled_date="2026-10-13"),                # date passed -> missed
+    _slot(plan_completed=True),                        # plan closed -> missed
+    _slot(logs=(1,)),                                  # in progress
+])
+def test_only_untouched_upcoming_workouts_can_be_edited(editing, slot):
+    client, controller = editing
+    controller.plan_repo.get_session_exercise_for_edit.return_value = slot
+
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}).status_code == 409
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+def test_editing_an_unknown_slot_is_404(editing):
+    client, controller = editing
+    controller.plan_repo.get_session_exercise_for_edit.return_value = None
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}).status_code == 404

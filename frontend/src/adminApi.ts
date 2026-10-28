@@ -220,3 +220,17 @@ export function fetchClientMonitor(adminKey: string, userId: string): Promise<Cl
 export function fetchFeedbackAudioUrl(adminKey: string, sessionId: number): Promise<{ url: string }> {
   return adminRequest(adminKey, `/admin/sessions/${sessionId}/feedback-audio`)
 }
+
+// Change an upcoming workout's sets and per-set targets for one exercise
+// (reps, or seconds for a timed exercise). Returns the stored values.
+export function editPrescription(
+  adminKey: string,
+  sessionExerciseId: number,
+  sets: number,
+  reps: number[],
+): Promise<{ id: number; sets: number; reps: string }> {
+  return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ sets, reps }),
+  })
+}
