@@ -77,7 +77,7 @@ class AnalysisRepository:
         """
         sessions = (
             self.client.table("sessions")
-            .select("id, day_number, plan_id, plans(user_id, plan_type, parent_plan_id)")
+            .select("id, day_number, plan_id, is_period, plans(user_id, plan_type, parent_plan_id)")
             .eq("id", session_id)
             .execute()
             .data
@@ -123,6 +123,7 @@ class AnalysisRepository:
             "user_id": user_id,
             "client_name": client_name,
             "plan_type": plan["plan_type"],
+            "is_period": bool(session.get("is_period")),
             "user_profile": profile,
             "joint_pain": [
                 {"joint": row["joints"]["name"], "pain_level": row["pain_level"]}
@@ -141,7 +142,7 @@ class AnalysisRepository:
 
     def _fetch_previous_session_context(self, parent_plan_id: int, day_number: int) -> Optional[Dict[str, Any]]:
         """The most recent earlier session for the same day_number as the
-        current analysis that the client actually completed, so the LLM can
+        current analysis that the client actually completed outside a period, so the LLM can
         compare like for like (same split day). Starts at the parent plan and
         walks further up parent_plan_id (at most MAX_PREVIOUS_PLAN_HOPS plans)
         past missed sessions, which have no logs to compare against. None if
@@ -154,7 +155,7 @@ class AnalysisRepository:
             sessions = (
                 self.client.table("sessions")
                 .select(
-                    f"id, started_at, completed_at, plans(parent_plan_id), "
+                    f"id, started_at, completed_at, is_period, plans(parent_plan_id), "
                     f"session_exercises({SESSION_EXERCISE_JOIN})"
                 )
                 .eq("plan_id", plan_id)
@@ -165,7 +166,8 @@ class AnalysisRepository:
             if not sessions:
                 return None
             session = sessions[0]
-            if session.get("completed_at"):
+            # A period session ran at reduced reps, so it's no fair comparison.
+            if session.get("completed_at") and not session.get("is_period"):
                 break
             plan_id = (session.get("plans") or {}).get("parent_plan_id")
         else:

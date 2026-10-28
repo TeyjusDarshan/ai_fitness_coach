@@ -143,7 +143,7 @@ def test_register_verify_success_stores_passkey_and_signs_in(env, monkeypatch):
     })
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "registration")
     stored = auth.auth_repo.add_passkey.call_args.args[0]
     assert stored["user_id"] == "usr_1"
@@ -234,7 +234,7 @@ def test_login_verify_success_updates_sign_count_and_signs_in(env, monkeypatch):
     response = client.post("/api/auth/login/verify", json={"credential": _login_credential()})
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "authentication")
     auth.auth_repo.update_passkey_usage.assert_called_once_with("cred-1", 0)
     assert _session_cookie(response) is not None
@@ -307,7 +307,7 @@ def test_me_returns_signed_in_user(env):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha"}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None}
     auth.auth_repo.get_active_session.assert_called_once_with(auth.hash_token("tok"))
 
 

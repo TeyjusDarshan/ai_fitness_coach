@@ -33,7 +33,7 @@ class AuthRepository:
     def get_user_auth_row(self, user_id: str) -> Optional[dict]:
         rows = (
             self.client.table("user_profiles")
-            .select("user_id, name, webauthn_user_handle")
+            .select("user_id, name, gender, webauthn_user_handle")
             .eq("user_id", user_id)
             .execute()
             .data

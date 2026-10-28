@@ -4,7 +4,7 @@
 
 Project: `khwrrvmejvrupokvfwvf` ("AI powered Fitness trainer", region `ap-northeast-1`, Postgres 17.6).
 
-> ⚠️ **RLS is disabled on every table below.** All 18 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `plans`, `sessions`, `session_exercises`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, and `session_analysis` hold real per-user data (generated profiles, weekly plans, scheduled workout days and their progress, prescribed exercises, per-set rep logs, RPE, reported joint pain, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
+> ⚠️ **RLS is disabled on every table below.** All 19 tables are exposed to the `anon`/`authenticated` roles — anyone with the publishable key can read or write every row. This was originally tolerable while the data was public reference content (exercise library); that condition has now been **triggered**, not just theoretical — `user_profiles`, `plans`, `sessions`, `session_exercises`, `session_exercise_set_logs`, `session_exercise_rpe`, `user_joint_pain`, `user_period_logs`, and `session_analysis` hold real per-user data (generated profiles, weekly plans, scheduled workout days and their progress, prescribed exercises, per-set rep logs, RPE, reported joint pain, logged period days, generated LLM workout summaries) and are still exposed with no RLS. This is a known, accepted gap, not an oversight. Remediation SQL is available on request — don't apply it blind, since enabling RLS with no policies blocks all access.
 >
 > This includes the passkey-auth tables (`user_passkeys`, `auth_challenges`, `auth_sessions`, `passkey_enrollment_tokens`): the API-level passkey sign-in is only as strong as the secrecy of the publishable key, since anyone holding it can insert an `auth_sessions` row (or their own passkey) for any `user_id` and impersonate that user. Kept this way deliberately (decision 2026-09-27) because the backend's `SUPABASE_KEY` is the publishable key. The fix is to switch the backend (and `workout_analysis_consumer`) to the secret/service-role key, which bypasses RLS, and then enable RLS on these tables.
 
@@ -87,6 +87,7 @@ Populated via `WorkoutPlanRepository.upsert_user_profile` by either the Flask `/
 | `created_at` | timestamptz, default `now()` | |
 | `updated_at` | timestamptz, default `now()` | bumped on every upsert |
 | `name` | text, nullable | client display name, entered by the coach on the `/admin` intake step (required there; optional `name` on `POST /workout-plan`). Shown in place of `user_id` wherever the user is named: the PWA (returned by `/api/auth/me` and sign-in), the coach share message, the admin screens, the passkey's display name, and the analysis consumer's greeting (`client_name`). Only overwritten when a new name is given. NULL for users created before it existed — the PWA falls back to `user_id` |
+| `gender` | text, nullable | check ∈ `male, female, other`. Set by the coach on the `/admin` intake step (`POST /api/admin/users/profile`, only overwritten when given); returned by `/api/auth/me` and sign-in. Women (`female`) are asked "are you on your period?" before a fresh workout starts (see `sessions.is_period`). NULL for users created before it existed — no prompt. Independent of the LLM-extracted `profile.demographics.sex` |
 | `webauthn_user_handle` | text, nullable, unique | random 32-byte WebAuthn `user.id` (base64url), created on first passkey enrollment by `AuthRepository.get_or_create_user_handle`; shared by all of the user's passkeys and checked against `userHandle` at sign-in |
 
 ### `user_joint_pain` — reported pain per (user, joint)
@@ -137,6 +138,7 @@ One row per non-rest day of a plan's `DAY_TEMPLATES[plan_type]` schedule (rest d
 | `started_at` | timestamptz, nullable | set once, on the first `start_session` call — never overwritten by a later re-entry |
 | `completed_at` | timestamptz, nullable | set when the session's summary screen is reached (`complete_session`) |
 | `feedback_audio_path` | text, nullable | object path (`session_<id>.<ext>`) of the client's recorded voice feedback in the **private** `voice-feedback` Storage bucket, uploaded from the PWA's `/day/:n/feedback` screen (shown after the congratulations screen) via `POST /api/sessions/<id>/feedback-audio` (≤ 4 MB; a re-record overwrites). A path, not a URL: it's read through short-lived signed URLs — `GET /api/sessions/<id>/feedback-audio` (the owner) or `GET /api/admin/sessions/<id>/feedback-audio` (`X-Admin-Key`, for the coach). Bucket access for the publishable key comes from the `voice-feedback app access` policy on `storage.objects` |
+| `is_period` | bool, default `false` | set by the first `start_session` when a female user answers "yes" to "are you on your period?" (`POST /api/sessions/<id>/start` with `{"is_period": true}`; ignored for anyone whose `user_profiles.gender` isn't `female`, and never re-applied on resume). On that first start `_apply_period_adjustment` rewrites the session's `session_exercises` rows **in place** to 70% of the planned reps (`PERIOD_REP_FACTOR`), swapping to the "lack of strength" regression — or clamping to `min_reps` when there's no edge — wherever that falls below an exercise's `min_reps`. The originals are not kept. Progression never learns from a period session: `_progression_sources` uses each day's latest non-period session (walking up `parent_plan_id`, at most `MAX_PROGRESSION_HOPS` plans) as the source and the non-period session before it for the two-week hold check; a day with no non-period history carries the period rows forward unchanged. The analysis consumer is told (`is_period`) and skips period sessions as `previous_session` |
 | `created_at` | timestamptz, default `now()` | |
 
 Unique: (`plan_id`, `day_number`). **Scheduled-date lock:** the backend refuses start / set / RPE / complete for a session (409, `_deny_unless_session_open` in `backend/app.py`) while `scheduled_date` is after today in `APP_TIMEZONE` (env, default `Asia/Kolkata`; see `app_today()`). **Missed days (strict):** a session with no `completed_at` whose `scheduled_date` is before today is *missed* (`is_session_missed`) — including one that was started with sets logged but never finished. Missed is derived, not stored (no column, no cron job): a missed session is refused the same way (409, `"missed": true`), shows as `missed` on the dashboard, and `next` moves past it. Once every session of a plan is completed or missed, the plan is closed via `mark_plan_completed` (which auto-progresses it) — either by `complete_session` when the last open session is finished, or lazily by `get_unfinished_plan` the next time anything loads the plan (dashboard, `/workout-plan`, progress-plan, admin), which then returns the new plan. `mark_plan_completed` only matches while `completed = false`, so racing closes progress a plan once. In progression, a missed session's exercises carry forward unchanged (same exercise, same reps) instead of taking the missing-RPE → hard path; reported joint pain still reduces them. Replaces the former `session_day_logs` table.
@@ -186,6 +188,20 @@ One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe`
 | `created_at` | timestamptz, default `now()` | |
 
 Unique: (`session_exercise_id`) — makes `log_rpe` an idempotent upsert.
+
+### `user_period_logs` — days a user said she was on her period
+
+One row per (user, date) on which a user answered **yes** to "are you on your period?" when starting a workout. Written by `WorkoutPlanRepository._log_period`, called from `start_session` only on a session's first start with `is_period` (so resuming or an ordinary start never logs). Not read by anything yet — it's a record for tracking.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | int4 PK | `GENERATED BY DEFAULT AS IDENTITY` |
+| `user_id` | text, FK → `user_profiles.user_id` | `ON DELETE CASCADE` |
+| `logged_on` | date | the day she answered yes, in `APP_TIMEZONE` (`app_today()`) |
+| `session_id` | int4, nullable, FK → `sessions.id` | the session she answered on; `ON DELETE SET NULL` |
+| `created_at` | timestamptz, default `now()` | |
+
+Unique: (`user_id`, `logged_on`) — answering yes on two sessions the same day logs it once (insert ignores the duplicate). Indexed on `session_id`.
 
 ### `session_analysis` — LLM-generated Tanglish summary per session
 

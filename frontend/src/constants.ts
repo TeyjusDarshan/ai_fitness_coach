@@ -13,5 +13,5 @@ export const COACH_WHATSAPP_NUMBER = '919180190745'
 
 // Played full screen in landscape before every workout (after "Start") and
 // after its last exercise (before the summary). YouTube video ids.
-export const WARMUP_VIDEO_ID = 'McIrh35QRM8'
-export const COOLDOWN_VIDEO_ID = 'IlHgLYdt3kc'
+export const WARMUP_VIDEO_ID = 'HB21F-PqVW4'
+export const COOLDOWN_VIDEO_ID = '_exFPnHZewI'

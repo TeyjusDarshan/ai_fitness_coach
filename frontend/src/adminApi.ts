@@ -69,6 +69,7 @@ export interface ClientProfile {
 export interface ProfileResult {
   user_id: string
   name: string
+  gender?: string | null
   profile: ClientProfile
   user_created: boolean
 }
@@ -139,11 +140,12 @@ export function generateProfile(
   adminKey: string,
   userId: string,
   name: string,
+  gender: string,
   rawUserText: string,
 ): Promise<ProfileResult> {
   return adminRequest(adminKey, '/admin/users/profile', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, name, raw_user_text: rawUserText }),
+    body: JSON.stringify({ user_id: userId, name, gender, raw_user_text: rawUserText }),
   })
 }
 

@@ -41,8 +41,13 @@ export function fetchDashboard(userId: string): Promise<Dashboard> {
   return request<Dashboard>(`/users/${encodeURIComponent(userId)}/dashboard`)
 }
 
-export function startSession(sessionId: number): Promise<unknown> {
-  return request(`/sessions/${sessionId}/start`, { method: 'POST' })
+// `isPeriod` is only sent when the user answered the "on your period?" prompt;
+// the server applies it on the session's first start only.
+export function startSession(sessionId: number, isPeriod?: boolean): Promise<unknown> {
+  return request(`/sessions/${sessionId}/start`, {
+    method: 'POST',
+    body: isPeriod === undefined ? undefined : JSON.stringify({ is_period: isPeriod }),
+  })
 }
 
 // Multipart, so the JSON Content-Type header is dropped and the browser sets

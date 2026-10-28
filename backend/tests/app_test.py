@@ -87,7 +87,27 @@ def test_start_session_on_its_date_starts_it(app_module, sign_in, monkeypatch):
     response = sign_in("usr_1").post("/api/sessions/42/start")
 
     assert response.status_code == 200
-    app_module.plan_repo.start_session.assert_called_once_with(42)
+    app_module.plan_repo.start_session.assert_called_once_with(42, False)
+
+
+@pytest.mark.parametrize("gender, body, expected", [
+    ("female", {"is_period": True}, True),
+    ("female", {"is_period": False}, False),
+    ("female", {"is_period": "yes"}, False),
+    ("female", {}, False),
+    ("male", {"is_period": True}, False),
+    ("other", {"is_period": True}, False),
+    (None, {"is_period": True}, False),
+])
+def test_start_session_honours_is_period_only_for_women(app_module, sign_in, monkeypatch, gender, body, expected):
+    _session_42(app_module, monkeypatch, scheduled_date="2026-10-13")
+    monkeypatch.setattr(app_module.plan_repo, "start_session", MagicMock(return_value={"id": 42}))
+    monkeypatch.setattr(app_module.plan_repo, "get_gender", MagicMock(return_value=gender))
+
+    response = sign_in("usr_1").post("/api/sessions/42/start", json=body)
+
+    assert response.status_code == 200
+    app_module.plan_repo.start_session.assert_called_once_with(42, expected)
 
 
 @pytest.mark.parametrize("method, path, body, repo_method", [
