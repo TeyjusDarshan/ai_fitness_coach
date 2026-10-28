@@ -81,6 +81,10 @@ nav { display: flex; gap: 8px; }
 #eq-other-text { flex: 1; }
 #eq-other-text:disabled { background: #f0f2f6; }
 .joint-grid { display: grid; grid-template-columns: 1fr 1fr; }
+.joint-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.joint-row .check-row { margin: 0; }
+.joint-load { width: auto; padding: 2px 4px; font-size: 13px; }
+.joint-load:disabled { opacity: 0.45; }
 .rep-row { display: flex; gap: 12px; }
 .rep-row label { flex: 1; }
 
