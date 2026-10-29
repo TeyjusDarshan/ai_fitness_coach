@@ -69,6 +69,19 @@ def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypat
     assert json.loads(kwargs["messages"][0]["content"]) == context
 
 
+def test_generate_workout_summary_logs_the_whole_prompt(monkeypatch, caplog):
+    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client("analysis text"))
+
+    with caplog.at_level("INFO", logger="workout_analysis_consumer.summarizer"):
+        generate_workout_summary({"session_id": 5, "client_voice_feedback": "இன்னைக்கு romba kashtam"})
+
+    [record] = caplog.records
+    assert "session_id=5" in record.getMessage()
+    assert WORKOUT_ANALYSIS_SYSTEM_PROMPT in record.getMessage()
+    # Tamil is logged (and sent) as-is, not as \\u escapes.
+    assert "இன்னைக்கு romba kashtam" in record.getMessage()
+
+
 def test_generate_workout_summary_serializes_non_json_native_values(monkeypatch):
     """context can carry values json.dumps can't natively serialize (e.g. a
     datetime from a DB row) - the default=str fallback should stringify
