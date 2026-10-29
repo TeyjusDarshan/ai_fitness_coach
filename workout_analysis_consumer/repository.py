@@ -58,6 +58,32 @@ def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     ]
 
 
+def _total_done(exercise: Dict[str, Any]) -> int:
+    return sum(log.get("completed_reps") or 0 for log in exercise["set_logs"])
+
+
+def _compare_to_last_time(
+    exercises: List[Dict[str, Any]], previous_exercises: List[Dict[str, Any]]
+) -> None:
+    """Set each exercise's "compared_to_last_time" to "more", "less" or
+    "same": its total reps (or seconds, for a timed hold) completed across
+    all sets against the same exercise, matched by name, in the previous
+    session. None when it wasn't done last time (e.g. swapped in since).
+    Computed here so the summary's comparison doesn't rely on the LLM
+    adding up set logs.
+    """
+    previous_totals = {exercise["name"]: _total_done(exercise) for exercise in previous_exercises}
+    for exercise in exercises:
+        previous_total = previous_totals.get(exercise["name"])
+        if previous_total is None:
+            exercise["compared_to_last_time"] = None
+            continue
+        total = _total_done(exercise)
+        exercise["compared_to_last_time"] = (
+            "more" if total > previous_total else "less" if total < previous_total else "same"
+        )
+
+
 class AnalysisRepository:
     """Reads the Supabase data needed to summarize one workout session, and
     persists the generated summary to session_analysis.
@@ -143,10 +169,13 @@ class AnalysisRepository:
             "exercises": _shape_exercise_rows(exercise_rows),
         }
 
+        previous_session = None
         if plan.get("parent_plan_id") is not None:
-            context["previous_session"] = self._fetch_previous_session_context(
-                plan["parent_plan_id"], day_number
-            )
+            previous_session = self._fetch_previous_session_context(plan["parent_plan_id"], day_number)
+            context["previous_session"] = previous_session
+        _compare_to_last_time(
+            context["exercises"], previous_session["exercises"] if previous_session else []
+        )
 
         return context
 
