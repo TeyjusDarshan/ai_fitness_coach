@@ -194,6 +194,16 @@ def _hit_target(exercise_row: Dict[str, Any]) -> bool:
     return all(completed.get(number, 0) >= target for number, target in enumerate(target_reps, start=1))
 
 
+def _performed_reps(exercise_row: Dict[str, Any], target_reps: List[int]) -> List[int]:
+    """Per-set reps the user actually logged, falling back to a set's target
+    where that set was never logged (there is nothing better to go on)."""
+    completed = {
+        log["set_number"]: log["completed_reps"]
+        for log in exercise_row.get("session_exercise_set_logs") or []
+    }
+    return [completed.get(number, target) for number, target in enumerate(target_reps, start=1)]
+
+
 def _held_target_two_weeks(
     exercise_row: Dict[str, Any], previous_row: Optional[Dict[str, Any]]
 ) -> bool:
@@ -216,9 +226,10 @@ def _compute_progressed_reps(
 ) -> List[int]:
     """Next plan's per-set target reps list for one session_exercises row.
 
-    Driven entirely by the reported RPE against last week's *prescribed*
-    reps (not what was actually completed):
-      - RPE 10 (hard): every set's target drops by 1.
+    Driven by the reported RPE and by whether every set's target was hit:
+      - RPE 10 (hard), or any set short of its prescribed reps: every set
+        drops by 1 from what the user actually *performed* on it (see
+        _performed_reps), not from what was prescribed.
       - RPE 8 (correct): the ramp advances by 1 rep, one set at a time (see
         _bump_next_set) — only the next not-yet-bumped set goes up this week.
       - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
@@ -238,7 +249,8 @@ def _compute_progressed_reps(
     An exercise from a missed session (see is_session_missed) carries its
     targets forward unchanged rather than taking the missing-RPE path: the
     user didn't struggle with it, they just didn't do it. An injury still
-    overrides this.
+    overrides this, dropping 1 from the prescribed targets (nothing was
+    performed to go on).
 
     For a timed exercise (is_time_based — targets are seconds held) the steps
     are TIMED_CORRECT_STEP / TIMED_EASY_STEP / TIMED_HARD_STEP seconds instead
@@ -261,8 +273,10 @@ def _compute_progressed_reps(
             _nearest_rpe_bucket(reported_rpe) if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
         )
 
-    if rpe_bucket == RPE_HARD:
-        return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in target_reps]
+    missed = bool(exercise_row.get("missed"))
+    if rpe_bucket == RPE_HARD or not (missed or _hit_target(exercise_row)):
+        base_reps = target_reps if missed else _performed_reps(exercise_row, target_reps)
+        return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in base_reps]
     if not _held_target_two_weeks(exercise_row, previous_row):
         return target_reps
     if rpe_bucket == RPE_TOO_EASY:
@@ -623,13 +637,17 @@ class WorkoutPlanRepository:
         )
         return {row["from_exercise_id"]: row["to_exercise_id"] for row in rows}
 
-    def _apply_rep_bounds(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _apply_rep_bounds(
+        self, items: List[Dict[str, Any]], regress_to: str = "max_reps"
+    ) -> List[Dict[str, Any]]:
         """Swap or clamp each item against its exercise's own rep bounds.
 
         Each item is {"exercise_id", "reps": per-set target list, "rep_range"}.
         If any set is below the exercise's `min_reps` it is swapped for its
         "lack of strength" regression with every set at that exercise's
-        `min_reps`; above `max_reps`, for its progression likewise. With no
+        `regress_to` bound (`max_reps` by default — the easier exercise starts
+        at the top of its range); above `max_reps`, for its progression with
+        every set at that exercise's `min_reps`. With no
         matching edge, every set is clamped to the exercise's own min/max.
         `rep_range` follows a swapped-in exercise's own min-max. Returns the
         items in the same order, same shape.
@@ -666,7 +684,7 @@ class WorkoutPlanRepository:
                 if target_id is not None:
                     exercise_id = target_id
                     target_bounds = replacement_bounds[target_id]
-                    next_reps_list = [target_bounds["min_reps"]] * len(next_reps_list)
+                    next_reps_list = [target_bounds[regress_to]] * len(next_reps_list)
                     rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
                 else:
                     next_reps_list = [bounds["min_reps"]] * len(next_reps_list)
@@ -759,7 +777,7 @@ class WorkoutPlanRepository:
         If the recalculated reps falls below the exercise's own `min_reps`
         (from `exercises`), the exercise is swapped for its "lack of
         strength" regression (`exercise_relationships`) and reps is set to
-        that regression's own `min_reps`. If it exceeds `max_reps`, the
+        that regression's own `max_reps`. If it exceeds `max_reps`, the
         exercise is swapped for its progression and reps is set to *that*
         exercise's `min_reps`. If no matching regression/progression edge
         exists, the exercise is kept as-is and reps is clamped to its own
@@ -974,8 +992,8 @@ class WorkoutPlanRepository:
     def _apply_period_adjustment(self, session_id: int) -> None:
         """Rewrite a period session's exercise rows in place to
         PERIOD_REP_FACTOR of their planned reps, swapping to the "lack of
-        strength" regression (or clamping) where that drops below an
-        exercise's `min_reps` (see _apply_rep_bounds)."""
+        strength" regression at its `min_reps` (or clamping) where that drops
+        below an exercise's `min_reps` (see _apply_rep_bounds)."""
         rows = (
             self.client.table("session_exercises")
             .select("id, exercise_id, sets, reps, rep_range")
@@ -990,7 +1008,7 @@ class WorkoutPlanRepository:
                 "rep_range": row.get("rep_range"),
             }
             for row in rows
-        ])
+        ], regress_to="min_reps")
         for row, item in zip(rows, resolved):
             (
                 self.client.table("session_exercises")
