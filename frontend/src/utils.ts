@@ -119,8 +119,10 @@ export function withRpeLogged(
   dayNumber: number,
   exerciseId: number,
   rpe: number | null,
+  // false only when rolling back to an exercise that was never rated.
+  logged = true,
 ): Dashboard {
-  return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({ ...ex, rpe }))
+  return mapExercise(dashboard, dayNumber, exerciseId, (ex) => ({ ...ex, rpe, rpe_logged: logged }))
 }
 
 function effortLabel(rpe: number | null): string {

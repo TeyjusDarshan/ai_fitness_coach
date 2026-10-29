@@ -31,6 +31,11 @@ class BlobStorageManager(ABC):
         """Delete a stored object."""
         raise NotImplementedError
 
+    @abstractmethod
+    def download(self, name: str) -> bytes:
+        """The raw bytes of a stored object."""
+        raise NotImplementedError
+
 
 class SupabaseBlobStorageManager(BlobStorageManager):
     """BlobStorageManager implementation backed by Supabase Storage."""
@@ -60,3 +65,6 @@ class SupabaseBlobStorageManager(BlobStorageManager):
 
     def remove(self, name: str) -> None:
         self.client.storage.from_(self._bucket).remove([name])
+
+    def download(self, name: str) -> bytes:
+        return self.client.storage.from_(self._bucket).download(name)
