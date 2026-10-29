@@ -1,4 +1,5 @@
 import { ApiError } from './api'
+import type { ExerciseEntry } from './types'
 
 // Coach-only endpoints, authorized by the X-Admin-Key header rather than the
 // passkey session cookie. Deliberately separate from api.ts's request(): a
@@ -157,5 +158,79 @@ export function createInitialPlan(
   return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/initial-plan`, {
     method: 'POST',
     body: JSON.stringify(plan),
+  })
+}
+
+// ---------- client monitor ----------
+
+export interface ClientSummary {
+  user_id: string
+  name: string | null
+  gender: string | null
+  updated_at: string | null
+  has_passkey: boolean
+}
+
+export interface MonitorWorkout {
+  session_id: number
+  plan_id: number
+  day_number: number
+  name: string | null
+  scheduled_date: string
+  started_at: string | null
+  completed_at: string | null
+  status: 'completed' | 'missed' | 'scheduled'
+  date: string
+  is_period: boolean
+  has_feedback: boolean
+  duration_seconds: number | null
+  analysis: string | null
+  analysis_audio_url: string | null
+  exercises: ExerciseEntry[]
+}
+
+export interface ClientMonitor {
+  client: {
+    user_id: string
+    name: string | null
+    gender: string | null
+    profile: {
+      age: number | null
+      sex: string | null
+      primary_goal: string | null
+      experience_level: string | null
+      days_per_week: number | null
+    }
+    joint_pain: { joint: string; pain_level: string }[]
+    period_days: string[]
+    sign_in: { passkeys: number; last_used_at: string | null }
+  }
+  workouts: { scheduled: MonitorWorkout[]; past: MonitorWorkout[] }
+}
+
+export function fetchClients(adminKey: string): Promise<ClientSummary[]> {
+  return adminRequest(adminKey, '/admin/users')
+}
+
+export function fetchClientMonitor(adminKey: string, userId: string): Promise<ClientMonitor> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/monitor`)
+}
+
+// A short-lived link to the client's recorded voice feedback for a session.
+export function fetchFeedbackAudioUrl(adminKey: string, sessionId: number): Promise<{ url: string }> {
+  return adminRequest(adminKey, `/admin/sessions/${sessionId}/feedback-audio`)
+}
+
+// Change an upcoming workout's sets and per-set targets for one exercise
+// (reps, or seconds for a timed exercise). Returns the stored values.
+export function editPrescription(
+  adminKey: string,
+  sessionExerciseId: number,
+  sets: number,
+  reps: number[],
+): Promise<{ id: number; sets: number; reps: string }> {
+  return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ sets, reps }),
   })
 }

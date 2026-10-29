@@ -25,21 +25,23 @@ from backend.feedback_storage import (
     feedback_path,
     feedback_storage,
 )
+from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
     PainLevel,
     WorkoutPlanRepository,
-    app_date,
     app_today,
     is_session_missed,
+    workout_status,
 )
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_plan_bp)
+app.register_blueprint(admin_monitor_bp)
 plan_repo = WorkoutPlanRepository()
 
 
@@ -78,12 +80,7 @@ def _dashboard_workout(workout, today, plan_closed=False):
     """A _workout_entries entry with its dashboard status and display date.
     An uncompleted workout of an already-closed plan counts as missed even if
     its date hadn't arrived (the coach closed the plan early)."""
-    if workout.get("completed_at"):
-        status = "completed"
-        shown = app_date(workout["completed_at"]).isoformat()
-    else:
-        status = "missed" if plan_closed or is_session_missed(workout, today) else "scheduled"
-        shown = workout["scheduled_date"]
+    status, shown = workout_status(workout, today, plan_closed)
     return {**workout, "status": status, "date": shown, "is_next": False, "can_start": False}
 
 

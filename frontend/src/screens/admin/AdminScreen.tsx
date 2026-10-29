@@ -11,11 +11,12 @@ import {
 import { defaultPlanType, emptyDraft, nextMondayIso, painJoints, type PlanDraft } from './planDraft'
 import { PlannerStep } from './PlannerStep'
 import { ProfileStep } from './ProfileStep'
+import { MonitorFlow } from './MonitorFlow'
 import { PlanSavedCard, ReviewStep } from './ReviewStep'
 
-// Coach-only onboarding: client notes -> generated profile -> hand-built
-// plan -> review -> saved first session. Authorized by the admin key, not a
-// passkey sign-in.
+// Coach-only: onboarding (client notes -> generated profile -> hand-built
+// plan -> review -> saved first session) and a read-only client monitor.
+// Authorized by the admin key, not a passkey sign-in.
 
 type Stage = 'profile' | 'planner' | 'review' | 'saved'
 
@@ -25,6 +26,7 @@ export function AdminScreen() {
   const [options, setOptions] = useState<PlanBuilderOptions | null>(null)
   const [unlocking, setUnlocking] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
+  const [section, setSection] = useState<'onboard' | 'monitor'>('onboard')
 
   async function unlock(key: string) {
     setUnlocking(true)
@@ -75,7 +77,7 @@ export function AdminScreen() {
             📋
           </div>
           <h1 className="screen-title">Coach admin</h1>
-          <p className="login-screen__subtitle">Enter the admin key to onboard a client.</p>
+          <p className="login-screen__subtitle">Enter the admin key to onboard and monitor clients.</p>
         </div>
         <form
           className="login-screen__form"
@@ -101,25 +103,52 @@ export function AdminScreen() {
     )
   }
 
+  const onUnauthorized = () => lock('The admin key was rejected — enter it again.')
   return (
-    <OnboardingFlow
-      adminKey={adminKey}
-      options={options}
-      onLock={() => lock()}
-      onUnauthorized={() => lock('The admin key was rejected — enter it again.')}
-    />
+    <div className={`screen admin${section === 'monitor' ? ' admin--wide' : ''}`}>
+      <div className="admin__header">
+        <h1 className="screen-title">Coach admin</h1>
+        <button type="button" className="btn-link" onClick={() => lock()}>
+          Lock
+        </button>
+      </div>
+      <div className="admin__segmented admin__tabs" role="tablist">
+        {(
+          [
+            ['onboard', 'Onboard client'],
+            ['monitor', 'Monitor clients'],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={section === key}
+            className={`admin__segment${section === key ? ' admin__segment--active' : ''}`}
+            onClick={() => setSection(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {/* Both stay mounted so switching tabs keeps an onboarding in progress. */}
+      <div className="admin__panel" hidden={section !== 'onboard'}>
+        <OnboardingFlow adminKey={adminKey} options={options} onUnauthorized={onUnauthorized} />
+      </div>
+      <div className="admin__panel" hidden={section !== 'monitor'}>
+        <MonitorFlow adminKey={adminKey} onUnauthorized={onUnauthorized} />
+      </div>
+    </div>
   )
 }
 
 function OnboardingFlow({
   adminKey,
   options,
-  onLock,
   onUnauthorized,
 }: {
   adminKey: string
   options: PlanBuilderOptions
-  onLock: () => void
   onUnauthorized: () => void
 }) {
   const [stage, setStage] = useState<Stage>('profile')
@@ -158,13 +187,7 @@ function OnboardingFlow({
   }, [stage])
 
   return (
-    <div className="screen admin">
-      <div className="admin__header">
-        <h1 className="screen-title">Coach admin</h1>
-        <button type="button" className="btn-link" onClick={onLock}>
-          Lock
-        </button>
-      </div>
+    <>
       <ol className="admin__steps">
         {(['profile', 'planner', 'review'] as const).map((s, i) => (
           <li key={s} className={stage === s ? 'admin__step--active' : ''}>
@@ -222,6 +245,6 @@ function OnboardingFlow({
       {stage === 'saved' && saved && (
         <PlanSavedCard result={saved} clientName={profile?.name ?? saved.user_id} onStartOver={startOver} />
       )}
-    </div>
+    </>
   )
 }
