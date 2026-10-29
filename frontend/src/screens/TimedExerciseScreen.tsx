@@ -116,9 +116,10 @@ export function TimedExerciseScreen({
 
   function finishExercise() {
     const previousRpe = exercise.rpe
+    const previousLogged = !!exercise.rpe_logged
     updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, difficulty))
     logRpe(day.session_id!, exercise.id, difficulty).catch(() => {
-      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, previousRpe))
+      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, previousRpe, previousLogged))
     })
     navigate(afterExercisePath(dayNum, slotIndex, exerciseCount))
   }

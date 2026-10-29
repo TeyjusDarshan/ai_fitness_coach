@@ -76,10 +76,17 @@ class AnalysisRepository:
         day of a plan): the prescribed exercises with their set logs and RPE,
         the client's profile, and any joint pain they've reported. Returns
         None if the session doesn't exist.
+
+        Also carries the session's feedback_audio_path (None if the client
+        recorded no voice feedback), for the caller to transcribe — it is a
+        storage path, not something to send to the LLM.
         """
         sessions = (
             self.client.table("sessions")
-            .select("id, day_number, plan_id, is_period, plans(user_id, plan_type, parent_plan_id)")
+            .select(
+                "id, day_number, plan_id, is_period, feedback_audio_path, "
+                "plans(user_id, plan_type, parent_plan_id)"
+            )
             .eq("id", session_id)
             .execute()
             .data
@@ -126,6 +133,7 @@ class AnalysisRepository:
             "client_name": client_name,
             "plan_type": plan["plan_type"],
             "is_period": bool(session.get("is_period")),
+            "feedback_audio_path": session.get("feedback_audio_path"),
             "user_profile": profile,
             "joint_pain": [
                 {"joint": row["joints"]["name"], "pain_level": row["pain_level"]}

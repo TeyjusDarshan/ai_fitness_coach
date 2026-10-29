@@ -7,6 +7,7 @@ import logging
 
 from whatsapp_client import WhatsAppClient
 from workout_analysis_consumer.consumer import WORKOUT_COMPLETE_TOPIC, build_consumer
+from workout_analysis_consumer.feedback import transcribe_feedback
 from workout_analysis_consumer.kafka_producer import KafkaProducerClient
 from workout_analysis_consumer.repository import AnalysisRepository
 from workout_analysis_consumer.summarizer import generate_workout_summary
@@ -25,6 +26,20 @@ def _process_message(repo: AnalysisRepository, session_id: int, phone_number: st
         logger.warning("No session found for session_id=%s; skipping", session_id)
         return
     day_number = context["day_number"]
+
+    # Best-effort: an STT/storage failure shouldn't block the analysis, which
+    # is then just written without the client's voice feedback.
+    feedback_audio_path = context.pop("feedback_audio_path", None)
+    if feedback_audio_path:
+        try:
+            transcript = transcribe_feedback(feedback_audio_path)
+        except Exception:
+            logger.exception("Failed to transcribe voice feedback for session_id=%s", session_id)
+            transcript = None
+        if transcript:
+            context["client_voice_feedback"] = transcript
+    else:
+        logger.info("No voice feedback recorded for session_id=%s", session_id)
 
     analysis = generate_workout_summary(context)
 

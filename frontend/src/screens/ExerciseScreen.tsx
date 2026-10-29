@@ -121,16 +121,19 @@ function RepExerciseScreen() {
 
   function handleRpeChange(rpe: number) {
     const previousRpe = exercise!.rpe
+    const previousLogged = !!exercise!.rpe_logged
     updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, rpe))
     logRpe(day!.session_id!, exercise!.id, rpe).catch(() => {
-      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, previousRpe))
+      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, previousRpe, previousLogged))
     })
   }
 
   function handleBeginNext() {
     // If the user never touched the effort slider, log the Medium default
     // it's already displaying rather than leaving this exercise's RPE unset.
-    if (exercise!.rpe == null) {
+    // Checks rpe_logged, not rpe: the server reports an unrated exercise as
+    // rpe 8, so rpe is never null here.
+    if (!exercise!.rpe_logged) {
       handleRpeChange(DEFAULT_RPE)
     }
 
