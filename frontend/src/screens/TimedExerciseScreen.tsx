@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { logRpe, logSet } from '../api'
 import { CircularCountdown } from '../components/CircularCountdown'
+import { DEFAULT_RPE } from '../components/EffortSlider'
 import { Icon } from '../components/Icon'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { REST_BETWEEN_SETS_SECONDS } from '../constants'
@@ -58,7 +59,8 @@ export function TimedExerciseScreen({
     const last = [...exercise.set_logs].sort((a, b) => b.set_number - a.set_number)[0]
     return last?.completed_reps ?? 0
   })
-  const [difficulty, setDifficulty] = useState<number | null>(null)
+  // Preselects Moderate, matching the rep screen's effort slider default.
+  const [difficulty, setDifficulty] = useState(exercise.rpe ?? DEFAULT_RPE)
 
   const target = targetRepsForSet(exercise, setIdx)
   const timerSeconds =
@@ -113,7 +115,6 @@ export function TimedExerciseScreen({
   }
 
   function finishExercise() {
-    if (difficulty == null) return
     const previousRpe = exercise.rpe
     updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, difficulty))
     logRpe(day.session_id!, exercise.id, difficulty).catch(() => {
@@ -303,7 +304,7 @@ export function TimedExerciseScreen({
             ))}
           </div>
           <p className="timed__muted">Your feedback helps your coach adjust your plan.</p>
-          <button className="btn-primary timed__cta" disabled={difficulty == null} onClick={finishExercise}>
+          <button className="btn-primary timed__cta" onClick={finishExercise}>
             Next
             <Icon name="chevronRight" size={18} />
           </button>
