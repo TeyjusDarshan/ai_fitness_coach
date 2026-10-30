@@ -1,4 +1,4 @@
-import { LEVELS, levelIndexForRpe } from './EffortSlider'
+import { LEVELS, levelIndexForRpe } from './effortLevels'
 import { repUnit, targetRepsForSet } from '../utils'
 import type { ExerciseEntry } from '../types'
 

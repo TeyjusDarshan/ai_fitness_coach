@@ -1,6 +1,8 @@
 """Voice feedback recordings: the private `voice-feedback` Supabase Storage
-bucket, one object per session (`session_<id>.<ext>`), its path kept in
-sessions.feedback_audio_path. The bucket is private, so recordings are only
+bucket, one object per session (`session_<id>.<ext>`, its path kept in
+sessions.feedback_audio_path) and per exercise of a session
+(`session_<id>_exercise_<session_exercise_id>.<ext>`, kept in
+session_exercises.feedback_audio_path). The bucket is private, so recordings are only
 ever read through short-lived signed URLs."""
 from typing import Optional
 
@@ -38,3 +40,8 @@ def feedback_storage() -> BlobStorageManager:
 def feedback_path(session_id: int, content_type: str) -> Optional[str]:
     extension = EXTENSIONS_BY_CONTENT_TYPE.get(content_type)
     return f"session_{session_id}.{extension}" if extension else None
+
+
+def exercise_feedback_path(session_id: int, session_exercise_id: int, content_type: str) -> Optional[str]:
+    extension = EXTENSIONS_BY_CONTENT_TYPE.get(content_type)
+    return f"session_{session_id}_exercise_{session_exercise_id}.{extension}" if extension else None

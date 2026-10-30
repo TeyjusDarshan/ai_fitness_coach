@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { logRpe, logSet } from '../api'
+import { logSet } from '../api'
 import { CircularCountdown } from '../components/CircularCountdown'
-import { DEFAULT_RPE } from '../components/EffortSlider'
 import { Icon } from '../components/Icon'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { REST_BETWEEN_SETS_SECONDS } from '../constants'
 import { useAppState } from '../state/AppStateContext'
 import { useCountdown } from '../state/useCountdown'
 import { playTick, unlockTickSound } from '../state/tickSound'
-import { afterExercisePath, formatClock, targetRepsForSet, withRpeLogged, withSetLogged, withSetLogRemoved } from '../utils'
+import { formatClock, targetRepsForSet, withSetLogged, withSetLogRemoved } from '../utils'
 import type { DashboardDay, ExerciseEntry } from '../types'
 
 // The 3-2-1 before each hold.
@@ -17,32 +16,23 @@ const GET_READY_SECONDS = 3
 
 const DEFAULT_TIP = 'Keep your body in a straight line and breathe normally.'
 
-// Easy / Moderate / Hard, stored as the same RPE values the rep screen's
-// effort slider uses (see LEVELS in EffortSlider).
-const DIFFICULTIES = [
-  { label: 'Easy', rpe: 6, face: 'easy' },
-  { label: 'Moderate', rpe: 8, face: 'moderate' },
-  { label: 'Hard', rpe: 10, face: 'hard' },
-] as const
-
-type Phase = 'intro' | 'countdown' | 'active' | 'rest' | 'next-set' | 'done' | 'difficulty'
+type Phase = 'intro' | 'countdown' | 'active' | 'rest' | 'next-set' | 'done'
 
 // A hold measured in seconds (exercises.is_time_based), run as a guided
 // flow: intro → 3-2-1 → timer (pause / end early) → rest → "set complete"
-// (waits for Start) → 3-2-1 → … → "Great job" → how hard was it → next
-// exercise.
+// (waits for Start) → 3-2-1 → … → "Great job" → the feedback screen shared
+// with rep exercises (ExerciseFeedbackScreen: how it felt, optional voice
+// note) → next exercise.
 // Starts at the first set with no log, so reopening it resumes; each set's
 // seconds held are logged as that set's completed_reps.
 export function TimedExerciseScreen({
   day,
   exercise,
   slotIndex,
-  exerciseCount,
 }: {
   day: DashboardDay
   exercise: ExerciseEntry
   slotIndex: number
-  exerciseCount: number
 }) {
   const { updateDashboard } = useAppState()
   const navigate = useNavigate()
@@ -59,8 +49,6 @@ export function TimedExerciseScreen({
     const last = [...exercise.set_logs].sort((a, b) => b.set_number - a.set_number)[0]
     return last?.completed_reps ?? 0
   })
-  // Preselects Moderate, matching the rep screen's effort slider default.
-  const [difficulty, setDifficulty] = useState(exercise.rpe ?? DEFAULT_RPE)
 
   const target = targetRepsForSet(exercise, setIdx)
   const timerSeconds =
@@ -114,16 +102,6 @@ export function TimedExerciseScreen({
     finishSet(Math.max(0, Math.round(target - msLeft / 1000)))
   }
 
-  function finishExercise() {
-    const previousRpe = exercise.rpe
-    const previousLogged = !!exercise.rpe_logged
-    updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, difficulty))
-    logRpe(day.session_id!, exercise.id, difficulty).catch(() => {
-      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise.id, previousRpe, previousLogged))
-    })
-    navigate(afterExercisePath(dayNum, slotIndex, exerciseCount))
-  }
-
   const allTargetsMet = Array.from({ length: totalSets }, (_, i) => i).every((i) => {
     const log = exercise.set_logs.find((l) => l.set_number === i + 1)
     return log !== undefined && log.completed_reps >= targetRepsForSet(exercise, i)
@@ -138,7 +116,7 @@ export function TimedExerciseScreen({
         </button>
         <span className="timed__bar-title">{exercise.name}</span>
         <span className="timed__bar-set">
-          {phase !== 'done' && phase !== 'difficulty' && totalSets > 1 ? `Set ${setIdx + 1}/${totalSets}` : ''}
+          {phase !== 'done' && totalSets > 1 ? `Set ${setIdx + 1}/${totalSets}` : ''}
         </span>
       </header>
 
@@ -280,51 +258,16 @@ export function TimedExerciseScreen({
               Perfect hold!
             </span>
           )}
-          <button className="btn-primary timed__cta" onClick={() => setPhase('difficulty')}>
-            Next
-            <Icon name="chevronRight" size={18} />
-          </button>
-        </div>
-      )}
-
-      {phase === 'difficulty' && (
-        <div className="timed__center">
-          <h2 className="timed__heading">How difficult was that exercise?</h2>
-          <div className="timed__faces" role="radiogroup" aria-label="Difficulty">
-            {DIFFICULTIES.map((d) => (
-              <button
-                key={d.rpe}
-                role="radio"
-                aria-checked={difficulty === d.rpe}
-                className={`timed__face${difficulty === d.rpe ? ' timed__face--selected' : ''}`}
-                onClick={() => setDifficulty(d.rpe)}
-              >
-                <Face kind={d.face} />
-                <span>{d.label}</span>
-              </button>
-            ))}
-          </div>
-          <p className="timed__muted">Your feedback helps your coach adjust your plan.</p>
-          <button className="btn-primary timed__cta" onClick={finishExercise}>
+          <button
+            className="btn-primary timed__cta"
+            onClick={() => navigate(`/day/${dayNum}/exercise/${slotIndex}/feedback`)}
+          >
             Next
             <Icon name="chevronRight" size={18} />
           </button>
         </div>
       )}
     </div>
-  )
-}
-
-function Face({ kind }: { kind: 'easy' | 'moderate' | 'hard' }) {
-  const mouth =
-    kind === 'easy' ? 'M8 14c1 2 2.4 3 4 3s3-1 4-3' : kind === 'moderate' ? 'M8.5 14.5c1 1.2 2.2 1.8 3.5 1.8s2.5-.6 3.5-1.8' : 'M8.5 16.5c1-1.4 2.2-2 3.5-2s2.5.6 3.5 2'
-  return (
-    <svg viewBox="0 0 24 24" width="34" height="34" aria-hidden>
-      <circle cx="12" cy="12" r="10" fill="currentColor" opacity=".9" />
-      <circle cx="9" cy="10" r="1.2" fill="#3a2a10" />
-      <circle cx="15" cy="10" r="1.2" fill="#3a2a10" />
-      <path d={mouth} stroke="#3a2a10" strokeWidth="1.6" fill="none" strokeLinecap="round" />
-    </svg>
   )
 }
 

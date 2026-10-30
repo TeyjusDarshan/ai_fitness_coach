@@ -7,6 +7,17 @@ const MAX_RECORDING_SECONDS = 180
 // mp4 on Safari. First one this browser can record wins.
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus']
 
+// Speech, not music: mono at 24 kbps (Opus, or AAC on Safari) stays clear
+// for the coach and the transcription, at about a quarter of the browsers'
+// default size (~180 KB per minute).
+const AUDIO_BITS_PER_SECOND = 24_000
+const MIC_CONSTRAINTS: MediaTrackConstraints = {
+  channelCount: 1,
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+}
+
 export type RecorderPhase = 'idle' | 'recording' | 'recorded'
 
 // Records one voice note with MediaRecorder: start() asks for the microphone
@@ -49,13 +60,13 @@ export function useVoiceRecorder(onRecorded: (recording: Blob) => void) {
   const start = useCallback(async () => {
     setError(null)
     try {
-      stream.current = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.current = await navigator.mediaDevices.getUserMedia({ audio: MIC_CONSTRAINTS })
     } catch {
       setError('We could not use your microphone. Allow microphone access in your browser settings and try again.')
       return
     }
     const mimeType = MIME_TYPES.find((type) => MediaRecorder.isTypeSupported(type))
-    const rec = new MediaRecorder(stream.current, mimeType ? { mimeType } : undefined)
+    const rec = new MediaRecorder(stream.current, { mimeType, audioBitsPerSecond: AUDIO_BITS_PER_SECOND })
     const chunks: Blob[] = []
     rec.ondataavailable = (e) => {
       if (e.data.size > 0) chunks.push(e.data)

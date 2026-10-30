@@ -1,4 +1,4 @@
-import { LEVELS, levelIndexForRpe } from './components/EffortSlider'
+import { LEVELS, levelIndexForRpe } from './components/effortLevels'
 import { COACH_WHATSAPP_NUMBER, REST_BETWEEN_EXERCISES_SECONDS } from './constants'
 import type {
   Dashboard,

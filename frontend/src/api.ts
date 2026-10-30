@@ -66,6 +66,21 @@ export function uploadFeedbackAudio(sessionId: number, recording: Blob): Promise
   return request(`/sessions/${sessionId}/feedback-audio`, { method: 'POST', body: form, headers: {} })
 }
 
+// The client's optional voice note on one exercise, from its feedback screen.
+export function uploadExerciseFeedbackAudio(
+  sessionId: number,
+  sessionExerciseId: number,
+  recording: Blob,
+): Promise<{ feedback_audio_path: string }> {
+  const form = new FormData()
+  form.append('audio', recording, 'feedback')
+  return request(`/sessions/${sessionId}/exercises/${sessionExerciseId}/feedback-audio`, {
+    method: 'POST',
+    body: form,
+    headers: {},
+  })
+}
+
 export function logSet(
   sessionId: number,
   sessionExerciseId: number,
