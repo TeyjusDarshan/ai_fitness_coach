@@ -12,7 +12,12 @@ from datetime import date
 from typing import Dict, List
 
 from backend.repository import workout_plan_repository
-from backend.repository.workout_plan_repository import PainLevel, WorkoutPlanRepository, is_session_missed
+from backend.repository.workout_plan_repository import (
+    PainLevel,
+    PlanRegenerationError,
+    WorkoutPlanRepository,
+    is_session_missed,
+)
 import pytest
 
 
@@ -52,12 +57,17 @@ class FakeTable:
         self._neq = []
         self._insert_rows = None
         self._update = None
+        self._delete = False
 
     def select(self, *_args, **_kwargs):
         return self
 
     def update(self, values):
         self._update = values
+        return self
+
+    def delete(self):
+        self._delete = True
         return self
 
     def is_(self, key, value):
@@ -131,6 +141,10 @@ class FakeTable:
         if self._update is not None:
             for r in matched:
                 r.update(self._update)
+        if self._delete:
+            # No cascade: child rows stay, as nothing reads them back here.
+            self.rows[:] = [r for r in self.rows if not any(r is m for m in matched)]
+            self.query_log.append(f"delete:{self.name}")
         return FakeResponse(matched)
 
 
@@ -263,6 +277,49 @@ def test_missing_rpe_falls_back_to_hard():
 
     [new_row] = client.inserted["session_exercises"]
     assert new_row["reps"] == "9,9,9"
+
+
+def test_missing_rpe_with_every_set_hit_counts_as_correct_not_hard():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    previous = [_row(id=1, reps="10,9,9", session_exercise_set_logs=_hit("10,9,9"))]
+    source = _after_streak(client, _source_plan(), previous)
+    this_week = [_row(id=2, reps="10,9,9", session_exercise_rpe=None,
+                      session_exercise_set_logs=_hit("10,9,9"))]
+
+    _progress(repo, "usr_1", source, this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    # Same as a logged RPE 8 after a two-week streak: the ramp advances by 1.
+    assert new_row["reps"] == "10,10,9"
+
+
+def test_missing_rpe_with_every_set_hit_but_no_streak_is_copied():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    this_week = [_row(reps="10,10,10", session_exercise_rpe=None, session_exercise_set_logs=_hit("10,10,10"))]
+
+    _progress(repo, "usr_1", _source_plan(), this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "10,10,10"
+
+
+def test_missing_rpe_with_a_set_short_is_hard_from_performed_reps():
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 20}])
+    repo = _repo(client)
+
+    this_week = [_row(reps="10,10,10", session_exercise_rpe=None, session_exercise_set_logs=_hit("10,10,8"))]
+
+    _progress(repo, "usr_1", _source_plan(), this_week)
+
+    [new_row] = client.inserted["session_exercises"]
+    assert new_row["reps"] == "9,9,7"
 
 
 def test_correct_rpe_bumps_only_the_next_uncaught_up_set_by_one_after_two_weeks_at_target():
@@ -1156,3 +1213,72 @@ def test_history_never_closes_or_progresses_a_plan(monkeypatch):
 
 def test_history_for_a_client_with_no_plans_is_empty():
     assert _repo(FakeSupabaseClient()).get_user_workout_history("usr_new") == {"scheduled": [], "past": []}
+
+
+# --- coach rebuilding the current week ---------------------------------------------
+
+def _seed_week_to_regenerate(client, started_day=None, parent_plan_id=6):
+    """Plan 7 (unfinished, 2026-10-12..16, see _seed_unfinished_plan) as the
+    progression of plan 6, whose day 1/3/5 sessions all had 10,10,10 rated
+    hard (rpe 10) with every set done — so progressing plan 6 again gives
+    9,9,9."""
+    _seed_unfinished_plan(client, {1: None, 3: None, 5: None})
+    client.tables["plans"][0]["parent_plan_id"] = parent_plan_id
+    if started_day is not None:
+        next(s for s in client.tables["sessions"] if s["day_number"] == started_day)["started_at"] = (
+            "2026-10-12T09:00:00+00:00"
+        )
+    client.seed("plans", [{
+        "id": 6, "user_id": "usr_1", "plan_type": "3_day", "completed": True,
+        "completed_at": "2026-10-11T18:00:00+00:00", "parent_plan_id": None,
+        "plan_selection_reason": None, "medical_clearance_warning": None,
+        "coach_notes": "keep it gentle", "safety_summary": None,
+    }])
+    client.seed("sessions", [
+        {"id": 60 + day, "plan_id": 6, "day_number": day,
+         "scheduled_date": date(2026, 10, 4 + day).isoformat(),
+         "completed_at": "2026-10-05T10:30:00+00:00", "is_period": False,
+         "session_exercises": [_row(id=600 + day, reps="10,10,10", session_exercise_rpe={"rpe": 10},
+                                    session_exercise_set_logs=_hit("10,10,10"))]}
+        for day in (1, 3, 5)
+    ])
+
+
+def test_regenerating_the_current_week_replaces_it_with_a_fresh_progression_on_the_same_dates(monkeypatch):
+    client = FakeSupabaseClient()
+    _seed_week_to_regenerate(client)
+    set_today(monkeypatch, date(2026, 10, 12))
+    repo = _repo(client)
+
+    new_plan = repo.regenerate_current_plan("usr_1")
+
+    assert "delete:plans" in client.query_log
+    assert [p["id"] for p in client.tables["plans"]] == [6, new_plan["id"]]
+    assert new_plan["parent_plan_id"] == 6
+    assert new_plan["coach_notes"] == "keep it gentle"
+    assert sorted((s["day_number"], s["scheduled_date"]) for s in client.inserted["sessions"]) == [
+        (1, "2026-10-12"), (3, "2026-10-14"), (5, "2026-10-16"),
+    ]
+    assert [row["reps"] for row in client.inserted["session_exercises"]] == ["9,9,9"] * 3
+
+
+@pytest.mark.parametrize("setup, message", [
+    (dict(started_day=3), "already been started"),
+    (dict(parent_plan_id=None), "first plan"),
+])
+def test_regenerating_is_refused_without_deleting_anything(monkeypatch, setup, message):
+    client = FakeSupabaseClient()
+    _seed_week_to_regenerate(client, **setup)
+    set_today(monkeypatch, date(2026, 10, 12))
+    repo = _repo(client)
+
+    with pytest.raises(PlanRegenerationError, match=message):
+        repo.regenerate_current_plan("usr_1")
+
+    assert "delete:plans" not in client.query_log
+    assert "plans" not in client.inserted
+
+
+def test_regenerating_with_no_current_week_is_refused():
+    with pytest.raises(PlanRegenerationError, match="no current week"):
+        _repo(FakeSupabaseClient()).regenerate_current_plan("usr_1")

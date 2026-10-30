@@ -2,8 +2,9 @@
 
 Lists clients and, for one client, their profile basics, reported joint
 pain, period days, app sign-in status, and every past and scheduled workout
-(see WorkoutPlanRepository.get_user_workout_history) — read-only. The one
-write is the coach editing an upcoming workout's sets and reps. The client's
+(see WorkoutPlanRepository.get_user_workout_history) — read-only. The
+writes are the coach editing an upcoming workout's sets and reps, and
+rebuilding the client's current week from progression. The client's
 recorded voice feedback is fetched separately, per session, through
 GET /api/admin/sessions/<id>/feedback-audio (backend/app.py).
 """
@@ -12,7 +13,12 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from backend.auth import auth_repo, require_admin
-from backend.repository.workout_plan_repository import WorkoutPlanRepository, app_today, workout_status
+from backend.repository.workout_plan_repository import (
+    PlanRegenerationError,
+    WorkoutPlanRepository,
+    app_today,
+    workout_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,3 +133,21 @@ def edit_prescription(session_exercise_id):
         logger.exception("Failed to edit session_exercise_id=%s", session_exercise_id)
         return jsonify({"error": "Failed to save the change."}), 500
     return jsonify({"id": session_exercise_id, "sets": sets, "reps": stored}), 200
+
+
+@admin_monitor_bp.post("/api/admin/users/<user_id>/regenerate-plan")
+@require_admin
+def regenerate_plan(user_id):
+    """Delete the client's current week and progress it again from the
+    previous one (see WorkoutPlanRepository.regenerate_current_plan). 409
+    when it can't be rebuilt, e.g. a workout in it was already started."""
+    if not plan_repo.user_exists(user_id):
+        return jsonify({"error": f"No client with id {user_id}."}), 404
+    try:
+        plan = plan_repo.regenerate_current_plan(user_id)
+    except PlanRegenerationError as exc:
+        return jsonify({"error": str(exc)}), 409
+    except Exception:
+        logger.exception("Failed to regenerate the current plan for user_id=%s", user_id)
+        return jsonify({"error": "Failed to rebuild this week. Try again."}), 500
+    return jsonify({"plan_id": plan["id"]}), 200

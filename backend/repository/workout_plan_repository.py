@@ -49,7 +49,9 @@ PROGRESSION_MIN_REPS = 1
 # _compute_progressed_reps snaps it to whichever of these it's closest to.
 RPE_TOO_EASY, RPE_CORRECT, RPE_HARD = 6, 8, 10
 _RPE_BUCKETS = (RPE_TOO_EASY, RPE_CORRECT, RPE_HARD)
-PROGRESSION_FALLBACK_RPE = RPE_HARD  # no rpe was ever logged -> assume hard
+# No rpe was ever logged: assume correct if every set hit its target, else hard.
+PROGRESSION_UNRATED_HIT_RPE = RPE_CORRECT
+PROGRESSION_FALLBACK_RPE = RPE_HARD
 PROGRESSION_CORRECT_STEP = 1
 PROGRESSION_EASY_STEP = 2
 PROGRESSION_HARD_STEP = 1
@@ -124,6 +126,10 @@ def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
                 "missed": not session.get("completed_at"),
             })
     return rows
+
+
+class PlanRegenerationError(Exception):
+    """Why a client's current week can't be rebuilt (shown to the coach)."""
 
 
 class PainLevel(Enum):
@@ -240,11 +246,11 @@ def _compute_progressed_reps(
     last week's targets are copied forward unchanged. Coming down (RPE 10,
     missing RPE, injury) is never held back by this.
 
-    A missing RPE, or an injury_multiplier below 1.0 (the exercise loads a
-    joint the user has reported pain in — see _injury_multiplier_for_exercise),
-    is always treated as RPE 10 regardless of what was reported — an injury
-    caps volume outright, the same way a missing RPE can't be trusted to
-    justify progressing.
+    A missing RPE counts as RPE 8 (correct) when every set hit its target,
+    and RPE 10 otherwise. An injury_multiplier below 1.0 (the exercise loads
+    a joint the user has reported pain in — see
+    _injury_multiplier_for_exercise) is always treated as RPE 10 regardless
+    of what was reported — an injury caps volume outright.
 
     An exercise from a missed session (see is_session_missed) carries its
     targets forward unchanged rather than taking the missing-RPE path: the
@@ -269,9 +275,12 @@ def _compute_progressed_reps(
         return target_reps
     else:
         reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe")
-        rpe_bucket = (
-            _nearest_rpe_bucket(reported_rpe) if reported_rpe is not None else PROGRESSION_FALLBACK_RPE
-        )
+        if reported_rpe is not None:
+            rpe_bucket = _nearest_rpe_bucket(reported_rpe)
+        elif _hit_target(exercise_row):
+            rpe_bucket = PROGRESSION_UNRATED_HIT_RPE
+        else:
+            rpe_bucket = PROGRESSION_FALLBACK_RPE
 
     missed = bool(exercise_row.get("missed"))
     if rpe_bucket == RPE_HARD or not (missed or _hit_target(exercise_row)):
@@ -747,8 +756,47 @@ class WorkoutPlanRepository:
         }
         return sources, previous_rows
 
+    def regenerate_current_plan(self, user_id: str) -> dict:
+        """Rebuild the user's current (unfinished) week: delete it and run
+        progression again from the plan it was progressed from, keeping its
+        calendar dates. For when progression's rules or its inputs (e.g. RPE)
+        changed after the week was generated.
+
+        Raises PlanRegenerationError when there's no current week, it isn't a
+        progression of an earlier plan, or any of its workouts was already
+        started (deleting it would lose what was logged).
+        """
+        current = self.get_unfinished_plan(user_id)
+        if current is None:
+            raise PlanRegenerationError("This client has no current week to rebuild.")
+        plan_row = self.client.table("plans").select("*").eq("id", current["id"]).execute().data[0]
+        parent_id = plan_row.get("parent_plan_id")
+        if parent_id is None:
+            raise PlanRegenerationError(
+                "This is the client's first plan, so there's no earlier week to progress from."
+            )
+        if any(s.get("started_at") for s in current["sessions"].values()):
+            raise PlanRegenerationError(
+                "A workout in this week has already been started, so it can't be rebuilt."
+            )
+        parents = self.client.table("plans").select("*").eq("id", parent_id).execute().data
+        if not parents:
+            raise PlanRegenerationError("The week this one was progressed from no longer exists.")
+        parent_sessions = self._fetch_plan_sessions(parent_id, PROGRESSION_SESSIONS_SELECT)
+        start_date = min(
+            date.fromisoformat(s["scheduled_date"]) - timedelta(days=day_number - 1)
+            for day_number, s in current["sessions"].items()
+        ) if current["sessions"] else None
+
+        # Delete first: plans_one_unfinished_per_user allows only one
+        # unfinished plan. If progression then fails, the parent is still
+        # completed, so retrying (or POST .../progress-plan) rebuilds it.
+        self.client.table("plans").delete().eq("id", current["id"]).execute()
+        return self.create_progressed_plan(user_id, parents[0], parent_sessions, start_date=start_date)
+
     def create_progressed_plan(
-        self, user_id: str, source_plan: dict, source_sessions: List[dict]
+        self, user_id: str, source_plan: dict, source_sessions: List[dict],
+        start_date: Optional[date] = None,
     ) -> dict:
         """Insert the next plan by carrying forward source_plan's sessions and
         their exercises, recalculating each exercise row's `reps` via
@@ -760,7 +808,8 @@ class WorkoutPlanRepository:
         PROGRESSION_SCHEDULE_OFFSET (one week) after it — unless that week
         would start before today (the source plan closed late, e.g. a user
         returning after a break), in which case the new plan starts today
-        so it isn't born with its sessions already missed.
+        so it isn't born with its sessions already missed. A given start_date
+        (regenerate_current_plan keeping a week's dates) overrides both.
 
         Exercises from a missed session carry forward unchanged (see
         _compute_progressed_reps), as do exercises that haven't yet held
@@ -812,7 +861,8 @@ class WorkoutPlanRepository:
                 date.fromisoformat(s["scheduled_date"]) - timedelta(days=s["day_number"] - 1)
                 for s in source_sessions
             )
-            start_date = max(source_start + PROGRESSION_SCHEDULE_OFFSET, app_today())
+            if start_date is None:
+                start_date = max(source_start + PROGRESSION_SCHEDULE_OFFSET, app_today())
             session_ids = self._insert_sessions(
                 plan["id"],
                 {s["day_number"]: scheduled_date_for(start_date, s["day_number"]) for s in source_sessions},

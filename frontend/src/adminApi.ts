@@ -221,6 +221,14 @@ export function fetchFeedbackAudioUrl(adminKey: string, sessionId: number): Prom
   return adminRequest(adminKey, `/admin/sessions/${sessionId}/feedback-audio`)
 }
 
+// Delete the client's current week and progress it again from the previous
+// one, on the same dates. Refused (409) once a workout in it was started.
+export function regeneratePlan(adminKey: string, userId: string): Promise<{ plan_id: number }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/regenerate-plan`, {
+    method: 'POST',
+  })
+}
+
 // Change an upcoming workout's sets and per-set targets for one exercise
 // (reps, or seconds for a timed exercise). Returns the stored values.
 export function editPrescription(
