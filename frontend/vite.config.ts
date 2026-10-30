@@ -4,6 +4,10 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  // Shown on the dashboard (src/buildInfo.ts) to tell deploys apart.
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
     react(),
     VitePWA({
@@ -16,6 +20,23 @@ export default defineConfig({
       // untouched by the service worker (NetworkOnly by default).
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg}'],
+        // Page loads go to the network first, so opening the app after a
+        // deploy always gets the new index.html (and through it the new
+        // hashed JS/CSS) instead of the old precached shell, which would
+        // otherwise run until src/pwaUpdate.ts gets to swap workers. The
+        // cached page is only used offline, or when the network is slow.
+        navigateFallback: null,
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages',
+              networkTimeoutSeconds: 4,
+              expiration: { maxEntries: 20 },
+            },
+          },
+        ],
       },
       manifest: {
         name: 'AI Fitness Coach',
