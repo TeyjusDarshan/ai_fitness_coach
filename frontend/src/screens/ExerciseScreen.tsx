@@ -42,7 +42,6 @@ export function ExerciseScreen() {
         day={day}
         exercise={exercise}
         slotIndex={Number(slotIndex)}
-        exerciseCount={exercises.length}
       />
     )
   }

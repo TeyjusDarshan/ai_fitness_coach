@@ -46,7 +46,7 @@ Edited in the Workout Builder board; its per-exercise loaded joints (with a high
 | `dominant` | bool, nullable | |
 | `equipment_id` | int4, nullable, FK → `equipment.id` | single-valued per exercise; no cascade |
 | `min_reps` / `max_reps` | int2, nullable | rep range |
-| `is_time_based` | bool, default `false` | true for static holds measured in **seconds** rather than reps — currently Superman, Static split squat, standing wall plank, Knee plank, full plank, Side Plank, Dead-Bug. For these, `min_reps`/`max_reps` (and the sets' `reps` in `session_exercises`) are seconds. Set with the Workout Builder form's "Timed hold" checkbox. Returned on dashboard exercise entries; the PWA runs these with the timed flow (`TimedExerciseScreen`: countdown, hold timer, rest, difficulty) and logs seconds held as `completed_reps`. Progression steps them +5 s (correct) / +10 s (easy) / −5 s (hard) instead of ±1/2 reps (`TIMED_*_STEP`); the analysis consumer marks them `unit: seconds` |
+| `is_time_based` | bool, default `false` | true for static holds measured in **seconds** rather than reps — currently Superman, Static split squat, standing wall plank, Knee plank, full plank, Side Plank, Dead-Bug. For these, `min_reps`/`max_reps` (and the sets' `reps` in `session_exercises`) are seconds. Set with the Workout Builder form's "Timed hold" checkbox. Returned on dashboard exercise entries; the PWA runs these with the timed flow (`TimedExerciseScreen`: countdown, hold timer, rest, then the same feedback screen as rep exercises) and logs seconds held as `completed_reps`. Progression steps them +5 s (correct) / +10 s (easy) / −5 s (hard) instead of ±1/2 reps (`TIMED_*_STEP`); the analysis consumer marks them `unit: seconds` |
 | `avoid_if` | text, nullable | contraindications |
 | `on_board` | bool, default `true` | |
 | `board_x` / `board_y` | float8, nullable | board coordinates |
@@ -180,7 +180,7 @@ Unique: (`session_exercise_id`, `set_number`) — one log row per set, and makes
 
 ### `session_exercise_rpe` — perceived exertion per prescribed exercise
 
-One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe` — RPE is logged once per exercise (not per set). In the PWA, after a rep exercise's sets "Next Exercise" opens an "Exercise Complete!" feedback screen (`/day/:n/exercise/:slot/feedback`): Easier than expected / About right / Too difficult log RPE 6 / 8 / 10, and "Skip this time" logs 8. She can also record an optional voice note there (`session_exercises.feedback_audio_path`). It then goes on to the rest timer, or the cool-down after the last exercise. Timed holds ask Easy / Moderate / Hard (same values) at the end of their own flow.
+One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe` — RPE is logged once per exercise (not per set). In the PWA, after an exercise's sets "Next Exercise" opens an "Exercise Complete!" feedback screen (`/day/:n/exercise/:slot/feedback`): Easier than expected / About right / Too difficult log RPE 6 / 8 / 10, and "Skip this time" logs 8. She can also record an optional voice note there (`session_exercises.feedback_audio_path`). It then goes on to the rest timer, or the cool-down after the last exercise. Timed holds reach the same screen from their "Great Job!" step.
 
 | Column | Type | Notes |
 |---|---|---|

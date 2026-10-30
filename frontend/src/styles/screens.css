@@ -2467,38 +2467,6 @@
   height: 44px;
   box-shadow: none;
 }
-.timed__faces {
-  display: flex;
-  justify-content: center;
-  gap: 14px;
-  margin: 18px 0 8px;
-}
-.timed__face {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 92px;
-  padding: 14px 6px 10px;
-  border: 2px solid transparent;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  color: #f6c84c;
-  font-size: 15px;
-  cursor: pointer;
-}
-.timed__face span {
-  color: var(--ink-secondary);
-}
-.timed__face--selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: #7fb38c;
-}
-.timed__face--selected span {
-  color: var(--heading);
-  font-weight: 700;
-}
 @media (prefers-reduced-motion: reduce) {
   .timed__wave span {
     animation: none;
