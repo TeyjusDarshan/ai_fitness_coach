@@ -2249,3 +2249,10 @@
   width: auto;
   padding: 10px 22px;
 }
+
+.build-version {
+  margin: 24px 0 8px;
+  text-align: center;
+  font-size: 11px;
+  opacity: 0.5;
+}

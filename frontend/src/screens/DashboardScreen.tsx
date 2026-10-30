@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { HeroHeader } from '../components/HeroHeader'
 import { WorkoutPanel } from '../components/WorkoutPanel'
 import { useAppState } from '../state/AppStateContext'
+import { BUILD_LABEL } from '../buildInfo'
 import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useStartWorkout } from '../state/useStartWorkout'
 
@@ -57,6 +58,7 @@ export function DashboardScreen() {
         ))}
       </div>
       {dashboard.coach_notes && <p className="dashboard-coach-notes">{dashboard.coach_notes}</p>}
+      <p className="build-version">{BUILD_LABEL}</p>
       <PeriodPrompt {...periodPrompt} />
     </div>
   )
