@@ -5,6 +5,7 @@ import {
   fetchClientMonitor,
   fetchClients,
   fetchFeedbackAudioUrl,
+  regeneratePlan,
   type ClientMonitor,
   type ClientSummary,
   type MonitorWorkout,
@@ -17,7 +18,8 @@ import { humanize } from './planDraft'
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
 // what was logged, the AI analysis and the client's own voice feedback.
-// An upcoming workout's sets and reps can be edited per exercise.
+// An upcoming workout's sets and reps can be edited per exercise, and the
+// current week can be rebuilt from progression.
 export function MonitorFlow({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
   const [query, setQuery] = useState('')
@@ -96,7 +98,14 @@ export function MonitorFlow({ adminKey, onUnauthorized }: { adminKey: string; on
         {error && <div className="error-banner">{error}</div>}
         {!selected && !error && <p className="admin__muted">Pick a client to see their workouts.</p>}
         {loading && <div className="spinner" />}
-        {monitor && <ClientDetail adminKey={adminKey} monitor={monitor} onUnauthorized={onUnauthorized} />}
+        {monitor && (
+          <ClientDetail
+            adminKey={adminKey}
+            monitor={monitor}
+            onUnauthorized={onUnauthorized}
+            onPlanChanged={() => void openClient(monitor.client.user_id)}
+          />
+        )}
       </section>
     </div>
   )
@@ -106,10 +115,12 @@ function ClientDetail({
   adminKey,
   monitor,
   onUnauthorized,
+  onPlanChanged,
 }: {
   adminKey: string
   monitor: ClientMonitor
   onUnauthorized: () => void
+  onPlanChanged: () => void
 }) {
   const { client, workouts } = monitor
   const p = client.profile
@@ -165,6 +176,12 @@ function ClientDetail({
         )}
       </div>
 
+      <RegeneratePlan
+        adminKey={adminKey}
+        userId={client.user_id}
+        onUnauthorized={onUnauthorized}
+        onDone={onPlanChanged}
+      />
       <WorkoutSection title="Scheduled" workouts={workouts.scheduled} empty="Nothing scheduled.">
         {(w) => <WorkoutCard key={w.session_id} workout={w} adminKey={adminKey} onUnauthorized={onUnauthorized} />}
       </WorkoutSection>
@@ -172,6 +189,59 @@ function ClientDetail({
         {(w) => <WorkoutCard key={w.session_id} workout={w} adminKey={adminKey} onUnauthorized={onUnauthorized} />}
       </WorkoutSection>
     </>
+  )
+}
+
+// "Create progression": throws away the current week's workouts and builds
+// them again from last week's results (e.g. after the progression rules or
+// her logged effort changed). Only allowed before any of them is started.
+function RegeneratePlan({
+  adminKey,
+  userId,
+  onUnauthorized,
+  onDone,
+}: {
+  adminKey: string
+  userId: string
+  onUnauthorized: () => void
+  onDone: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function regenerate() {
+    if (
+      !window.confirm(
+        "Delete this week's upcoming workouts and create them again from last week's progression?",
+      )
+    )
+      return
+    setBusy(true)
+    setError(null)
+    try {
+      await regeneratePlan(adminKey, userId)
+      onDone()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onUnauthorized()
+        return
+      }
+      setError(err instanceof Error ? err.message : 'Failed to create the progression.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card admin__section monitor__regenerate">
+      <button className="btn-secondary" disabled={busy} onClick={() => void regenerate()}>
+        {busy ? 'Creating…' : 'Create progression'}
+      </button>
+      <span className="admin__muted">
+        Rebuilds this week's workouts from last week's results, on the same dates.
+      </span>
+      {error && <div className="error-banner">{error}</div>}
+    </div>
   )
 }
 

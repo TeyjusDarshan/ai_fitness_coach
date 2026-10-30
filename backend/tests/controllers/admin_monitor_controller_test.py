@@ -161,3 +161,45 @@ def test_editing_an_unknown_slot_is_404(editing):
     client, controller = editing
     controller.plan_repo.get_session_exercise_for_edit.return_value = None
     assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}).status_code == 404
+
+
+def test_regenerate_plan_requires_the_admin_key(monitor):
+    client, _ = monitor
+    assert client.post("/api/admin/users/usr_1/regenerate-plan").status_code == 401
+
+
+def test_regenerate_plan_rebuilds_the_current_week(monitor, monkeypatch):
+    client, controller = monitor
+    monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=True))
+    regenerate = MagicMock(return_value={"id": 42})
+    monkeypatch.setattr(controller.plan_repo, "regenerate_current_plan", regenerate)
+
+    response = client.post("/api/admin/users/usr_1/regenerate-plan", headers=ADMIN_HEADERS)
+
+    assert response.status_code == 200
+    assert response.get_json() == {"plan_id": 42}
+    regenerate.assert_called_once_with("usr_1")
+
+
+def test_regenerate_plan_refusal_is_a_409_with_the_reason(monitor, monkeypatch):
+    from backend.repository.workout_plan_repository import PlanRegenerationError
+
+    client, controller = monitor
+    monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=True))
+    monkeypatch.setattr(controller.plan_repo, "regenerate_current_plan", MagicMock(
+        side_effect=PlanRegenerationError("A workout in this week has already been started, so it can't be rebuilt.")
+    ))
+
+    response = client.post("/api/admin/users/usr_1/regenerate-plan", headers=ADMIN_HEADERS)
+
+    assert response.status_code == 409
+    assert "already been started" in response.get_json()["error"]
+
+
+def test_regenerate_plan_for_an_unknown_client_is_a_404(monitor, monkeypatch):
+    client, controller = monitor
+    monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=False))
+
+    response = client.post("/api/admin/users/nobody/regenerate-plan", headers=ADMIN_HEADERS)
+
+    assert response.status_code == 404

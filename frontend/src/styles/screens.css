@@ -2256,3 +2256,13 @@
   font-size: 11px;
   opacity: 0.5;
 }
+
+.monitor__regenerate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.monitor__regenerate .error-banner {
+  flex-basis: 100%;
+}
