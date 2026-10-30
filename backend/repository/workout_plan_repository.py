@@ -128,6 +128,10 @@ def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
     return rows
 
 
+# update_session_exercise_prescription's default: leave the note as it is.
+_KEEP = object()
+
+
 class PlanRegenerationError(Exception):
     """Why a client's current week can't be rebuilt (shown to the coach)."""
 
@@ -1323,11 +1327,37 @@ class WorkoutPlanRepository:
         )
         return rows[0] if rows else None
 
-    def update_session_exercise_prescription(self, session_exercise_id: int, sets: int, reps: str) -> None:
-        """Set an exercise slot's prescribed sets and per-set target(s)."""
+    def get_current_plan_notes(self, user_id: str) -> Optional[dict]:
+        """{"id", "coach_notes"} of the user's unfinished plan, or None.
+        Unlike get_unfinished_plan this never closes or progresses it."""
+        rows = (
+            self.client.table("plans")
+            .select("id, coach_notes")
+            .eq("user_id", user_id)
+            .eq("completed", False)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def update_coach_notes(self, plan_id: int, coach_notes: Optional[str]) -> None:
+        """Set a plan's coach notes. Progression copies them into each next
+        plan, so they carry forward from here."""
+        self.client.table("plans").update({"coach_notes": coach_notes}).eq("id", plan_id).execute()
+
+    def update_session_exercise_prescription(
+        self, session_exercise_id: int, sets: int, reps: str, note: Any = _KEEP
+    ) -> None:
+        """Set an exercise slot's prescribed sets and per-set target(s), and
+        its coach note when one is given (None clears it)."""
+        values: Dict[str, Any] = {"sets": sets, "reps": reps}
+        if note is not _KEEP:
+            values["note"] = note
         (
             self.client.table("session_exercises")
-            .update({"sets": sets, "reps": reps})
+            .update(values)
             .eq("id", session_exercise_id)
             .execute()
         )

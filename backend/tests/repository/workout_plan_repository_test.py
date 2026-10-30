@@ -1282,3 +1282,30 @@ def test_regenerating_is_refused_without_deleting_anything(monkeypatch, setup, m
 def test_regenerating_with_no_current_week_is_refused():
     with pytest.raises(PlanRegenerationError, match="no current week"):
         _repo(FakeSupabaseClient()).regenerate_current_plan("usr_1")
+
+
+def test_coach_notes_are_read_from_and_written_to_the_unfinished_plan():
+    client = FakeSupabaseClient()
+    client.seed("plans", [
+        {"id": 6, "user_id": "usr_1", "completed": True, "coach_notes": "old week"},
+        {"id": 7, "user_id": "usr_1", "completed": False, "coach_notes": "this week"},
+    ])
+    repo = _repo(client)
+
+    assert repo.get_current_plan_notes("usr_1") == client.tables["plans"][1]
+
+    repo.update_coach_notes(7, "Keep the knees soft")
+
+    assert [p["coach_notes"] for p in client.tables["plans"]] == ["old week", "Keep the knees soft"]
+
+
+def test_prescription_edit_changes_the_note_only_when_given():
+    client = FakeSupabaseClient()
+    client.seed("session_exercises", [{"id": 70, "sets": 3, "reps": "10", "note": "keep form tight"}])
+    repo = _repo(client)
+
+    repo.update_session_exercise_prescription(70, 4, "12")
+    assert client.tables["session_exercises"][0] == {"id": 70, "sets": 4, "reps": "12", "note": "keep form tight"}
+
+    repo.update_session_exercise_prescription(70, 4, "12", note=None)
+    assert client.tables["session_exercises"][0]["note"] is None

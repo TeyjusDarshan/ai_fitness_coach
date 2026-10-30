@@ -6,6 +6,7 @@ import {
   fetchClients,
   fetchFeedbackAudioUrl,
   regeneratePlan,
+  saveCoachNotes,
   type ClientMonitor,
   type ClientSummary,
   type MonitorWorkout,
@@ -19,7 +20,7 @@ import { humanize } from './planDraft'
 // pain, period days, app sign-in, then every scheduled and past workout with
 // what was logged, the AI analysis and the client's own voice feedback.
 // An upcoming workout's sets and reps can be edited per exercise, and the
-// current week can be rebuilt from progression.
+// current week's coach notes edited or the week rebuilt from progression.
 export function MonitorFlow({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
   const [query, setQuery] = useState('')
@@ -176,6 +177,16 @@ function ClientDetail({
         )}
       </div>
 
+      {monitor.current_plan && (
+        <CoachNotes
+          // Remount when the week changes (e.g. after "Create progression").
+          key={monitor.current_plan.id}
+          adminKey={adminKey}
+          userId={client.user_id}
+          initial={monitor.current_plan.coach_notes ?? ''}
+          onUnauthorized={onUnauthorized}
+        />
+      )}
       <RegeneratePlan
         adminKey={adminKey}
         userId={client.user_id}
@@ -189,6 +200,74 @@ function ClientDetail({
         {(w) => <WorkoutCard key={w.session_id} workout={w} adminKey={adminKey} onUnauthorized={onUnauthorized} />}
       </WorkoutSection>
     </>
+  )
+}
+
+// The notes shown at the bottom of the client's dashboard. Saved on the
+// current week; progression copies them into each following week.
+function CoachNotes({
+  adminKey,
+  userId,
+  initial,
+  onUnauthorized,
+}: {
+  adminKey: string
+  userId: string
+  initial: string
+  onUnauthorized: () => void
+}) {
+  const [saved, setSaved] = useState(initial)
+  const [draft, setDraft] = useState(initial)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [justSaved, setJustSaved] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await saveCoachNotes(adminKey, userId, draft)
+      const stored = result.coach_notes ?? ''
+      setSaved(stored)
+      setDraft(stored)
+      setJustSaved(true)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onUnauthorized()
+        return
+      }
+      setError(err instanceof Error ? err.message : 'Failed to save the notes.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card admin__section monitor__coach-notes">
+      <label className="monitor__label" htmlFor="coach-notes">
+        Coach notes
+      </label>
+      <textarea
+        id="coach-notes"
+        className="login-screen__input admin__textarea"
+        rows={3}
+        maxLength={2000}
+        placeholder="Shown to the client at the bottom of their workouts."
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value)
+          setJustSaved(false)
+        }}
+        disabled={busy}
+      />
+      <div className="monitor__row">
+        <button className="btn-secondary" disabled={busy || draft.trim() === saved.trim()} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save notes'}
+        </button>
+        {justSaved && <span className="admin__muted">Saved</span>}
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+    </div>
   )
 }
 
@@ -341,8 +420,10 @@ function WorkoutCard({
                   exercise={exercise}
                   adminKey={adminKey}
                   onUnauthorized={onUnauthorized}
-                  onSaved={(sets, reps) => {
-                    setExercises((prev) => prev.map((ex) => (ex.id === exercise.id ? { ...ex, sets, reps } : ex)))
+                  onSaved={(sets, reps, note) => {
+                    setExercises((prev) =>
+                      prev.map((ex) => (ex.id === exercise.id ? { ...ex, sets, reps, note } : ex)),
+                    )
                     setEditing(null)
                   }}
                   onCancel={() => setEditing(null)}
@@ -394,9 +475,10 @@ function PrescriptionEditor({
   exercise: ExerciseEntry
   adminKey: string
   onUnauthorized: () => void
-  onSaved: (sets: number, reps: string) => void
+  onSaved: (sets: number, reps: string, note: string | null) => void
   onCancel: () => void
 }) {
+  const [note, setNote] = useState(exercise.note ?? '')
   const [targets, setTargets] = useState<string[]>(() =>
     Array.from({ length: exercise.sets ?? 1 }, (_, i) => String(targetRepsForSet(exercise, i))),
   )
@@ -418,8 +500,8 @@ function PrescriptionEditor({
     setSaving(true)
     setError(null)
     try {
-      const result = await editPrescription(adminKey, exercise.id, values.length, values)
-      onSaved(result.sets, result.reps)
+      const result = await editPrescription(adminKey, exercise.id, values.length, values, note)
+      onSaved(result.sets, result.reps, result.note)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onUnauthorized()
       else setError(err instanceof Error ? err.message : 'Could not save.')
@@ -455,6 +537,17 @@ function PrescriptionEditor({
           </label>
         ))}
       </div>
+      <label className="monitor__editor-note">
+        <span className="monitor__label">Coach note</span>
+        <textarea
+          className="login-screen__input admin__textarea"
+          rows={2}
+          maxLength={500}
+          placeholder="e.g. Keep your back straight"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </label>
       {error && <div className="admin__hint admin__hint--error">{error}</div>}
       <div className="monitor__editor-actions">
         <button type="button" className="btn-link" onClick={onCancel} disabled={saving}>

@@ -3,8 +3,9 @@
 Lists clients and, for one client, their profile basics, reported joint
 pain, period days, app sign-in status, and every past and scheduled workout
 (see WorkoutPlanRepository.get_user_workout_history) — read-only. The
-writes are the coach editing an upcoming workout's sets and reps, and
-rebuilding the client's current week from progression. The client's
+writes are the coach editing an upcoming workout's sets and reps, editing
+the current week's coach notes, and rebuilding the current week from
+progression. The client's
 recorded voice feedback is fetched separately, per session, through
 GET /api/admin/sessions/<id>/feedback-audio (backend/app.py).
 """
@@ -30,6 +31,9 @@ plan_repo = WorkoutPlanRepository()
 # timed exercise, hence the generous ceiling.
 MAX_SETS = 10
 MAX_TARGET = 600
+
+MAX_COACH_NOTES = 2000
+MAX_EXERCISE_NOTE = 500
 
 
 def _profile_basics(profile):
@@ -88,10 +92,11 @@ def client_monitor(user_id):
             "sign_in": sign_in,
         }
         workouts = plan_repo.get_user_workout_history(user_id)
+        current_plan = plan_repo.get_current_plan_notes(user_id)
     except Exception:
         logger.exception("Failed to load monitor for user_id=%s", user_id)
         return jsonify({"error": "Failed to load this client."}), 500
-    return jsonify({"client": client, "workouts": workouts}), 200
+    return jsonify({"client": client, "workouts": workouts, "current_plan": current_plan}), 200
 
 
 def _is_count(value, upper):
@@ -103,7 +108,8 @@ def _is_count(value, upper):
 def edit_prescription(session_exercise_id):
     """Change an upcoming workout's sets and per-set targets for one
     exercise: `{"sets": 3, "reps": [12, 12, 10]}` (one target per set; reps,
-    or seconds for a timed exercise). Only while the workout is still
+    or seconds for a timed exercise), and optionally its coach note
+    (`"note"`; blank or null clears it, left out keeps it). Only while the workout is still
     scheduled and none of this exercise's sets are logged. Stored like
     progression writes it: one number when every set matches, else a
     comma-separated per-set list. Becomes the baseline next week's
@@ -114,6 +120,13 @@ def edit_prescription(session_exercise_id):
         return jsonify({"error": f"'sets' must be a whole number from 1 to {MAX_SETS}."}), 400
     if not isinstance(reps, list) or len(reps) != sets or not all(_is_count(r, MAX_TARGET) for r in reps):
         return jsonify({"error": f"'reps' must list one target (1-{MAX_TARGET}) per set."}), 400
+    note_given = "note" in body
+    note = body.get("note")
+    if note is not None and not isinstance(note, str):
+        return jsonify({"error": "'note' must be text."}), 400
+    note = (note or "").strip() or None
+    if note is not None and len(note) > MAX_EXERCISE_NOTE:
+        return jsonify({"error": f"The note can be at most {MAX_EXERCISE_NOTE} characters."}), 400
 
     row = plan_repo.get_session_exercise_for_edit(session_exercise_id)
     if row is None:
@@ -128,11 +141,17 @@ def edit_prescription(session_exercise_id):
 
     stored = str(reps[0]) if len(set(reps)) == 1 else ",".join(str(r) for r in reps)
     try:
-        plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored)
+        if note_given:
+            plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored, note=note)
+        else:
+            plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored)
     except Exception:
         logger.exception("Failed to edit session_exercise_id=%s", session_exercise_id)
         return jsonify({"error": "Failed to save the change."}), 500
-    return jsonify({"id": session_exercise_id, "sets": sets, "reps": stored}), 200
+    result = {"id": session_exercise_id, "sets": sets, "reps": stored}
+    if note_given:
+        result["note"] = note
+    return jsonify(result), 200
 
 
 @admin_monitor_bp.post("/api/admin/users/<user_id>/regenerate-plan")
@@ -151,3 +170,30 @@ def regenerate_plan(user_id):
         logger.exception("Failed to regenerate the current plan for user_id=%s", user_id)
         return jsonify({"error": "Failed to rebuild this week. Try again."}), 500
     return jsonify({"plan_id": plan["id"]}), 200
+
+
+@admin_monitor_bp.patch("/api/admin/users/<user_id>/coach-notes")
+@require_admin
+def edit_coach_notes(user_id):
+    """Replace the coach notes on the client's current week:
+    `{"coach_notes": "..."}` (blank or null clears them). Shown on the
+    client's dashboard, and carried into each following week."""
+    body = request.get_json(silent=True) or {}
+    notes = body.get("coach_notes")
+    if notes is not None and not isinstance(notes, str):
+        return jsonify({"error": "'coach_notes' must be text."}), 400
+    notes = (notes or "").strip() or None
+    if notes is not None and len(notes) > MAX_COACH_NOTES:
+        return jsonify({"error": f"Coach notes can be at most {MAX_COACH_NOTES} characters."}), 400
+
+    if not plan_repo.user_exists(user_id):
+        return jsonify({"error": f"No client with id {user_id}."}), 404
+    plan = plan_repo.get_current_plan_notes(user_id)
+    if plan is None:
+        return jsonify({"error": "This client has no current week to add notes to."}), 409
+    try:
+        plan_repo.update_coach_notes(plan["id"], notes)
+    except Exception:
+        logger.exception("Failed to edit coach notes for user_id=%s", user_id)
+        return jsonify({"error": "Failed to save the notes."}), 500
+    return jsonify({"id": plan["id"], "coach_notes": notes}), 200

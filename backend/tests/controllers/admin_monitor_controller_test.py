@@ -28,6 +28,7 @@ def monitor(app_module, monkeypatch):
     monkeypatch.setattr(repo, "list_joint_pain", MagicMock(return_value=[{"joint": "knee", "pain_level": "mild"}]))
     monkeypatch.setattr(repo, "list_period_days", MagicMock(return_value=["2026-10-12"]))
     monkeypatch.setattr(repo, "get_user_workout_history", MagicMock(return_value={"scheduled": [], "past": [{"session_id": 5}]}))
+    monkeypatch.setattr(repo, "get_current_plan_notes", MagicMock(return_value={"id": 7, "coach_notes": "Go slow"}))
     monkeypatch.setattr(controller.auth_repo, "passkey_summary", MagicMock(
         side_effect=lambda user_id=None: {"usr_1": {"passkeys": 1, "last_used_at": "2026-10-12T05:00:00+00:00"}}
     ))
@@ -122,6 +123,28 @@ def test_editing_an_upcoming_exercise_stores_sets_and_targets(editing, reps, sto
     controller.plan_repo.update_session_exercise_prescription.assert_called_once_with(70, 4, stored)
 
 
+@pytest.mark.parametrize("sent, stored", [
+    ("  Squeeze at the top  ", "Squeeze at the top"),
+    ("", None),
+    (None, None),
+])
+def test_editing_can_change_the_exercise_note(editing, sent, stored):
+    client, controller = editing
+
+    response = _edit(client, {"sets": 3, "reps": [10, 10, 10], "note": sent})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"id": 70, "sets": 3, "reps": "10", "note": stored}
+    controller.plan_repo.update_session_exercise_prescription.assert_called_once_with(70, 3, "10", note=stored)
+
+
+@pytest.mark.parametrize("note", [5, "x" * 501])
+def test_editing_rejects_a_bad_note(editing, note):
+    client, controller = editing
+    assert _edit(client, {"sets": 1, "reps": [10], "note": note}).status_code == 400
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
 def test_editing_needs_the_admin_key(editing):
     client, controller = editing
     assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}, headers={}).status_code == 401
@@ -203,3 +226,57 @@ def test_regenerate_plan_for_an_unknown_client_is_a_404(monitor, monkeypatch):
     response = client.post("/api/admin/users/nobody/regenerate-plan", headers=ADMIN_HEADERS)
 
     assert response.status_code == 404
+
+
+def test_monitor_includes_the_current_weeks_coach_notes(monitor):
+    client, _ = monitor
+
+    response = client.get("/api/admin/users/usr_1/monitor", headers=ADMIN_HEADERS)
+
+    assert response.get_json()["current_plan"] == {"id": 7, "coach_notes": "Go slow"}
+
+
+@pytest.mark.parametrize("sent, stored", [
+    ("  Keep the knees soft  ", "Keep the knees soft"),
+    ("   ", None),
+    (None, None),
+])
+def test_coach_notes_are_saved_on_the_current_week(monitor, monkeypatch, sent, stored):
+    client, controller = monitor
+    monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=True))
+    update = MagicMock()
+    monkeypatch.setattr(controller.plan_repo, "update_coach_notes", update)
+
+    response = client.patch(
+        "/api/admin/users/usr_1/coach-notes", json={"coach_notes": sent}, headers=ADMIN_HEADERS
+    )
+
+    assert response.status_code == 200
+    assert response.get_json() == {"id": 7, "coach_notes": stored}
+    update.assert_called_once_with(7, stored)
+
+
+@pytest.mark.parametrize("body", [{"coach_notes": 5}, {"coach_notes": "x" * 2001}])
+def test_invalid_coach_notes_are_rejected(monitor, body):
+    client, _ = monitor
+
+    response = client.patch("/api/admin/users/usr_1/coach-notes", json=body, headers=ADMIN_HEADERS)
+
+    assert response.status_code == 400
+
+
+def test_coach_notes_without_a_current_week_is_a_409(monitor, monkeypatch):
+    client, controller = monitor
+    monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=True))
+    monkeypatch.setattr(controller.plan_repo, "get_current_plan_notes", MagicMock(return_value=None))
+
+    response = client.patch(
+        "/api/admin/users/usr_1/coach-notes", json={"coach_notes": "hi"}, headers=ADMIN_HEADERS
+    )
+
+    assert response.status_code == 409
+
+
+def test_coach_notes_require_the_admin_key(monitor):
+    client, _ = monitor
+    assert client.patch("/api/admin/users/usr_1/coach-notes", json={"coach_notes": "hi"}).status_code == 401

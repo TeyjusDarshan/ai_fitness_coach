@@ -206,6 +206,8 @@ export interface ClientMonitor {
     sign_in: { passkeys: number; last_used_at: string | null }
   }
   workouts: { scheduled: MonitorWorkout[]; past: MonitorWorkout[] }
+  // The client's unfinished week, if any — where coach notes are edited.
+  current_plan: { id: number; coach_notes: string | null } | null
 }
 
 export function fetchClients(adminKey: string): Promise<ClientSummary[]> {
@@ -221,6 +223,18 @@ export function fetchFeedbackAudioUrl(adminKey: string, sessionId: number): Prom
   return adminRequest(adminKey, `/admin/sessions/${sessionId}/feedback-audio`)
 }
 
+// Replace the coach notes on the client's current week (blank clears them).
+export function saveCoachNotes(
+  adminKey: string,
+  userId: string,
+  coachNotes: string,
+): Promise<{ id: number; coach_notes: string | null }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/coach-notes`, {
+    method: 'PATCH',
+    body: JSON.stringify({ coach_notes: coachNotes }),
+  })
+}
+
 // Delete the client's current week and progress it again from the previous
 // one, on the same dates. Refused (409) once a workout in it was started.
 export function regeneratePlan(adminKey: string, userId: string): Promise<{ plan_id: number }> {
@@ -229,16 +243,18 @@ export function regeneratePlan(adminKey: string, userId: string): Promise<{ plan
   })
 }
 
-// Change an upcoming workout's sets and per-set targets for one exercise
-// (reps, or seconds for a timed exercise). Returns the stored values.
+// Change an upcoming workout's sets, per-set targets (reps, or seconds for a
+// timed exercise) and coach note (blank clears it) for one exercise.
+// Returns the stored values.
 export function editPrescription(
   adminKey: string,
   sessionExerciseId: number,
   sets: number,
   reps: number[],
-): Promise<{ id: number; sets: number; reps: string }> {
+  note: string,
+): Promise<{ id: number; sets: number; reps: string; note: string | null }> {
   return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ sets, reps }),
+    body: JSON.stringify({ sets, reps, note }),
   })
 }
