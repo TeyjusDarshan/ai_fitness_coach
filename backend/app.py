@@ -34,6 +34,7 @@ from backend.repository.workout_plan_repository import (
     WorkoutPlanRepository,
     app_today,
     is_session_missed,
+    workout_duration_seconds,
     workout_status,
 )
 
@@ -79,9 +80,18 @@ DASHBOARD_PAST_WORKOUTS = 2
 def _dashboard_workout(workout, today, plan_closed=False):
     """A _workout_entries entry with its dashboard status and display date.
     An uncompleted workout of an already-closed plan counts as missed even if
-    its date hadn't arrived (the coach closed the plan early)."""
+    its date hadn't arrived (the coach closed the plan early). is_today marks
+    the one the dashboard's Today card shows: completed or scheduled today."""
     status, shown = workout_status(workout, today, plan_closed)
-    return {**workout, "status": status, "date": shown, "is_next": False, "can_start": False}
+    return {
+        **workout,
+        "status": status,
+        "date": shown,
+        "is_today": shown == today.isoformat(),
+        "duration_seconds": workout_duration_seconds(workout),
+        "is_next": False,
+        "can_start": False,
+    }
 
 
 def _dashboard_workouts(user_id, existing, today):
@@ -278,6 +288,61 @@ def get_dashboard(user_id):
         "session_duration_minutes": session_duration_minutes,
         "days": days,
         "workouts": _dashboard_workouts(user_id, existing, today),
+    }), 200
+
+
+# Page size bounds for the dashboard's Past Workouts list.
+PAST_WORKOUTS_DEFAULT_LIMIT = 2
+PAST_WORKOUTS_MAX_LIMIT = 20
+
+# Coach-facing fields of get_user_workout_history entries the client's own
+# past-workouts list doesn't show.
+_COACH_ONLY_WORKOUT_FIELDS = ("analysis", "analysis_audio_url", "has_feedback")
+
+
+@app.get("/api/users/<user_id>/past-workouts")
+@require_auth
+def get_past_workouts(user_id):
+    """One page of the client's past workouts (completed or missed, across
+    every plan, newest first) for the dashboard's Past Workouts section,
+    which loads more on demand: ?offset=0&limit=2. Also returns the totals so
+    the section can show its counts before it's opened.
+
+    Reads the whole history on each page (get_user_workout_history) — a
+    client has tens of sessions, so slicing here is cheaper than paging in
+    SQL across the plans/sessions join."""
+    if user_id != g.user_id:
+        return jsonify({"error": "You don't have access to this user's plan."}), 403
+    try:
+        offset = int(request.args.get("offset", 0))
+        limit = int(request.args.get("limit", PAST_WORKOUTS_DEFAULT_LIMIT))
+    except ValueError:
+        return jsonify({"error": "'offset' and 'limit' must be whole numbers."}), 400
+    if offset < 0:
+        return jsonify({"error": "'offset' can't be negative."}), 400
+    limit = max(1, min(PAST_WORKOUTS_MAX_LIMIT, limit))
+
+    try:
+        past = plan_repo.get_user_workout_history(user_id)["past"]
+    except Exception:
+        app.logger.exception("Failed to load past workouts for user_id=%s", user_id)
+        return jsonify({"error": "Failed to load past workouts."}), 500
+
+    today = app_today().isoformat()
+    page = [
+        {
+            **{k: v for k, v in workout.items() if k not in _COACH_ONLY_WORKOUT_FIELDS},
+            "is_today": workout["date"] == today,
+            "is_next": False,
+            "can_start": False,
+        }
+        for workout in past[offset:offset + limit]
+    ]
+    return jsonify({
+        "workouts": page,
+        "total": len(past),
+        "completed": sum(1 for w in past if w["status"] == "completed"),
+        "missed": sum(1 for w in past if w["status"] == "missed"),
     }), 200
 
 

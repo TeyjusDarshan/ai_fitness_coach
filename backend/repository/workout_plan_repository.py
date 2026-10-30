@@ -112,6 +112,16 @@ def workout_status(workout: dict, today: date, plan_closed: bool = False) -> Tup
     return status, workout["scheduled_date"]
 
 
+def workout_duration_seconds(workout: dict) -> Optional[int]:
+    """Seconds from started_at to completed_at, or None until both are set."""
+    if not (workout.get("started_at") and workout.get("completed_at")):
+        return None
+    return int(
+        (datetime.fromisoformat(workout["completed_at"]) - datetime.fromisoformat(workout["started_at"]))
+        .total_seconds()
+    )
+
+
 def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
     """Pull each session's nested session_exercises rows out into one list,
     tagging every row with its session's day_number and whether that session
@@ -1396,17 +1406,11 @@ class WorkoutPlanRepository:
                 analysis = session.get("session_analysis") or {}
                 if isinstance(analysis, list):
                     analysis = analysis[0] if analysis else {}
-                duration = None
-                if workout.get("started_at") and workout.get("completed_at"):
-                    duration = int(
-                        (datetime.fromisoformat(workout["completed_at"]) - datetime.fromisoformat(workout["started_at"]))
-                        .total_seconds()
-                    )
                 entries.append({
                     **workout,
                     "status": status,
                     "date": shown,
-                    "duration_seconds": duration,
+                    "duration_seconds": workout_duration_seconds(workout),
                     "analysis": analysis.get("analysis"),
                     "analysis_audio_url": analysis.get("audio_url"),
                 })

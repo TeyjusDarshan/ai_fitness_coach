@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { DashboardWorkout, WorkoutStatus } from '../types'
-import { WORKOUT_STATUS_LABELS, formatDayDate, workoutDateLabel } from '../utils'
+import { WORKOUT_STATUS_LABELS, formatDayDate, formatMinutes, workoutDateLabel } from '../utils'
 import { Icon, type IconName } from './Icon'
 
 const STATUS_ICONS: Record<WorkoutStatus, IconName> = {
@@ -34,6 +34,9 @@ export function WorkoutPanel({ workout, timerLabel, onStart }: Props) {
         <div className="workout-panel__meta">
           <span>{workoutDateLabel(workout)}</span>
           {status === 'scheduled' && timerLabel && <span>Timer: {timerLabel}</span>}
+          {status === 'completed' && workout.duration_seconds != null && (
+            <span>{formatMinutes(workout.duration_seconds)}</span>
+          )}
         </div>
         <div className="workout-panel__actions">
           <Link className="workout-panel__view" to={`/workout/${workout.session_id}`}>

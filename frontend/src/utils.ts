@@ -59,6 +59,16 @@ export function firstIncompleteIndex(day: DashboardDay): number {
   return idx === -1 ? 0 : idx
 }
 
+// "40 min" — how long a finished workout took, rounded to the minute.
+export function formatMinutes(totalSeconds: number): string {
+  return `${Math.max(1, Math.round(totalSeconds / 60))} min`
+}
+
+// Today's date (YYYY-MM-DD) in the app's timezone, matching the server's.
+export function appTodayIso(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+}
+
 export function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60

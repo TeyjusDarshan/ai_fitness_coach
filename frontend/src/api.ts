@@ -1,4 +1,4 @@
-import type { Dashboard, DayCompleteSummary, SetLog } from './types'
+import type { Dashboard, DayCompleteSummary, PastWorkoutsPage, SetLog } from './types'
 
 class ApiError extends Error {
   status: number
@@ -39,6 +39,14 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function fetchDashboard(userId: string): Promise<Dashboard> {
   return request<Dashboard>(`/users/${encodeURIComponent(userId)}/dashboard`)
+}
+
+// Past workouts (completed or missed, every plan, newest first), a page at a
+// time for the dashboard's Past Workouts "Load more".
+export function fetchPastWorkouts(userId: string, offset: number, limit: number): Promise<PastWorkoutsPage> {
+  return request<PastWorkoutsPage>(
+    `/users/${encodeURIComponent(userId)}/past-workouts?offset=${offset}&limit=${limit}`,
+  )
 }
 
 // `isPeriod` is only sent when the user answered the "on your period?" prompt;

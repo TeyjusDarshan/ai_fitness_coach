@@ -68,6 +68,10 @@ export interface DashboardWorkout {
   scheduled_date: string
   started_at: string | null
   completed_at: string | null
+  // Completed today or scheduled for today — the dashboard's Today card.
+  is_today: boolean
+  // Time from start to finish, once completed.
+  duration_seconds: number | null
   // The first scheduled workout.
   is_next: boolean
   // Scheduled for today — the only workout that can be started.
@@ -89,6 +93,14 @@ export interface Dashboard {
   session_duration_minutes: number | null
   days: DashboardDay[]
   workouts: DashboardWorkout[]
+}
+
+// One page of GET /users/<id>/past-workouts, plus the totals across every page.
+export interface PastWorkoutsPage {
+  workouts: DashboardWorkout[]
+  total: number
+  completed: number
+  missed: number
 }
 
 export interface DayCompleteSummary {

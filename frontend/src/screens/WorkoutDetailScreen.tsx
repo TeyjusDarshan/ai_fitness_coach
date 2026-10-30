@@ -11,13 +11,14 @@ import { youtubeThumbnailUrl } from '../youtube'
 // Read-only view of one workout panel: what's prescribed for a scheduled or
 // missed workout, and what was logged set by set for a completed one.
 export function WorkoutDetailScreen() {
-  const { dashboard } = useAppState()
+  const { dashboard, pastWorkouts } = useAppState()
   const navigate = useNavigate()
   const { sessionId } = useParams()
   const { start, error, periodPrompt } = useStartWorkout()
 
   if (!dashboard) return null
-  const workout = dashboard.workouts.find((w) => w.session_id === Number(sessionId))
+  // Older past workouts are only in the dashboard's "Load more" list.
+  const workout = [...dashboard.workouts, ...pastWorkouts].find((w) => w.session_id === Number(sessionId))
   if (!workout) return <Navigate to="/" replace />
 
   const completed = workout.status === 'completed'

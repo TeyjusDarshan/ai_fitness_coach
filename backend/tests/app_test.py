@@ -329,6 +329,89 @@ def test_dashboard_workouts_reach_back_into_the_previous_plan(app_module, sign_i
     app_module.plan_repo.get_previous_plan_workouts.assert_called_once_with("usr_1", 7)
 
 
+def test_dashboard_workouts_mark_todays_and_carry_their_duration(app_module, sign_in, monkeypatch):
+    workouts = _dashboard_with_workouts(app_module, sign_in, monkeypatch, [
+        _workout(13, 7, "2026-10-13", started_at="2026-10-13T03:00:00+00:00",
+                 completed_at="2026-10-13T03:40:00+00:00"),
+        _workout(15, 7, "2026-10-15"),
+    ])
+
+    assert [(w["session_id"], w["is_today"], w["duration_seconds"]) for w in workouts] == [
+        (13, True, 2400),
+        (15, False, None),
+    ]
+
+
+# --- past workouts ----------------------------------------------------------------
+
+def _history_entry(session_id, status, shown_date):
+    return {
+        **_workout(session_id, 7, shown_date),
+        "status": status,
+        "date": shown_date,
+        "duration_seconds": 1800 if status == "completed" else None,
+        "analysis": "coach text",
+        "analysis_audio_url": "https://audio",
+        "has_feedback": True,
+    }
+
+
+@pytest.fixture
+def past_history(app_module, monkeypatch):
+    # Newest first, as get_user_workout_history returns them; TODAY is 2026-10-13.
+    past = [
+        _history_entry(5, "completed", "2026-10-13"),
+        _history_entry(4, "missed", "2026-10-11"),
+        _history_entry(3, "completed", "2026-10-09"),
+        _history_entry(2, "completed", "2026-10-07"),
+        _history_entry(1, "completed", "2026-10-05"),
+    ]
+    history = MagicMock(return_value={"scheduled": [], "past": past})
+    monkeypatch.setattr(app_module.plan_repo, "get_user_workout_history", history)
+    return history
+
+
+@pytest.mark.parametrize("query, expected_ids", [
+    ("", [5, 4]),
+    ("?offset=2&limit=2", [3, 2]),
+    ("?offset=4&limit=2", [1]),
+    ("?offset=9", []),
+])
+def test_past_workouts_are_paged_newest_first_with_totals(sign_in, past_history, query, expected_ids):
+    response = sign_in("usr_1").get(f"/api/users/usr_1/past-workouts{query}")
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert [w["session_id"] for w in body["workouts"]] == expected_ids
+    assert (body["total"], body["completed"], body["missed"]) == (5, 4, 1)
+
+
+def test_past_workouts_drop_coach_only_fields_and_mark_today(sign_in, past_history):
+    [today, missed] = sign_in("usr_1").get("/api/users/usr_1/past-workouts").get_json()["workouts"]
+
+    for workout in (today, missed):
+        assert not {"analysis", "analysis_audio_url", "has_feedback"} & workout.keys()
+        assert (workout["is_next"], workout["can_start"]) == (False, False)
+    assert (today["is_today"], today["duration_seconds"]) == (True, 1800)
+    assert missed["is_today"] is False
+
+
+@pytest.mark.parametrize("query, expected", [("?limit=0", 1), ("?limit=500", 5)])
+def test_past_workouts_limit_is_clamped(sign_in, past_history, query, expected):
+    body = sign_in("usr_1").get(f"/api/users/usr_1/past-workouts{query}").get_json()
+    assert len(body["workouts"]) == expected
+
+
+@pytest.mark.parametrize("query", ["?offset=-1", "?offset=abc", "?limit=x"])
+def test_past_workouts_reject_bad_paging(sign_in, past_history, query):
+    assert sign_in("usr_1").get(f"/api/users/usr_1/past-workouts{query}").status_code == 400
+
+
+def test_past_workouts_of_another_user_are_forbidden(sign_in, past_history):
+    assert sign_in("usr_1").get("/api/users/usr_2/past-workouts").status_code == 403
+    past_history.assert_not_called()
+
+
 # --- voice feedback ---------------------------------------------------------------
 
 @pytest.fixture
