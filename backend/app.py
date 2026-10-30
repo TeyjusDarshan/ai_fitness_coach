@@ -227,6 +227,11 @@ def progress_plan(user_id):
     return jsonify(_plan_response(plan_repo.get_unfinished_plan(user_id))), 200
 
 
+# Plant points per completed workout, shown on the dashboard. The levels they
+# unlock are worked out by the PWA (frontend/src/plant3d/levels.ts).
+POINTS_PER_WORKOUT = 25
+
+
 @app.get("/api/users/<user_id>/dashboard")
 @require_auth
 def get_dashboard(user_id):
@@ -288,6 +293,7 @@ def get_dashboard(user_id):
         "session_duration_minutes": session_duration_minutes,
         "days": days,
         "workouts": _dashboard_workouts(user_id, existing, today),
+        "points": plan_repo.count_completed_sessions(user_id) * POINTS_PER_WORKOUT,
     }), 200
 
 
@@ -540,6 +546,10 @@ def complete_session(session_id):
     if summary is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404
 
+    # For the PWA's grow screen: her points now, and what this workout added.
+    newly_completed = summary.pop("newly_completed", False)
+    summary["points_earned"] = POINTS_PER_WORKOUT if newly_completed else 0
+    summary["points"] = plan_repo.count_completed_sessions(g.user_id) * POINTS_PER_WORKOUT
     return jsonify(summary), 200
 
 

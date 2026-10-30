@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { CollapsibleSection } from '../components/CollapsibleSection'
-import { HeroHeader } from '../components/HeroHeader'
+import { LevelCard } from '../components/LevelCard'
+import { PlantHero } from '../components/PlantHero'
 import { Icon } from '../components/Icon'
 import { WorkoutPanel } from '../components/WorkoutPanel'
 import { useAppState } from '../state/AppStateContext'
@@ -8,9 +9,12 @@ import { BUILD_LABEL } from '../buildInfo'
 import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useStartWorkout } from '../state/useStartWorkout'
 import { appTodayIso, formatDayDate } from '../utils'
+import { levelForPoints } from '../plant3d/levels'
 
 export function DashboardScreen() {
   const {
+    userId,
+    displayName,
     dashboard,
     loading,
     error,
@@ -75,6 +79,8 @@ export function DashboardScreen() {
       ? 'Great job today! Check below for upcoming and past sessions.'
       : "Today's workout is ready. Check below for upcoming and past sessions."
 
+  const plantLevel = levelForPoints(dashboard.points ?? 0)
+
   const panel = (workout: (typeof dashboard.workouts)[number]) => (
     <WorkoutPanel
       key={workout.session_id}
@@ -85,55 +91,60 @@ export function DashboardScreen() {
   )
 
   return (
-    <div className="screen">
-      <HeroHeader />
-      <h1 className="screen-title">Your Workouts</h1>
-      <p className="dashboard__subtitle">{subtitle}</p>
-      {startError && <div className="error-banner">{startError}</div>}
+    <div className="screen dashboard-screen">
+      <PlantHero name={displayName ?? ''} userId={userId ?? ''} step={plantLevel.level} />
+      <LevelCard points={dashboard.points ?? 0} plantLevel={plantLevel} />
 
-      <div className="today-row">
-        <span className="today-chip">
-          <Icon name="calendar" size={20} />
-          Today
-        </span>
-        <span className="today-row__date">{formatDayDate(appTodayIso())}</span>
+      {/* Only this part scrolls; the plant and level card stay put. */}
+      <div className="dashboard__scroll">
+        <h2 className="screen-title">Your Workouts</h2>
+        <p className="dashboard__subtitle">{subtitle}</p>
+        {startError && <div className="error-banner">{startError}</div>}
+
+        <div className="today-row">
+          <span className="today-chip">
+            <Icon name="calendar" size={20} />
+            Today
+          </span>
+          <span className="today-row__date">{formatDayDate(appTodayIso())}</span>
+        </div>
+        {!today && <p className="dashboard__rest">Rest day today — enjoy the break.</p>}
+        {featured && <div className="workout-list">{panel(featured)}</div>}
+
+        {upcoming.length > 0 && (
+          <CollapsibleSection
+            title="Upcoming Workouts"
+            summary={`${upcoming.length} scheduled`}
+            icon="calendar"
+            variant="upcoming"
+          >
+            <div className="workout-list">{upcoming.map(panel)}</div>
+          </CollapsibleSection>
+        )}
+
+        {(past.length > 0 || hasMorePast || pastError) && (
+          <CollapsibleSection
+            title="Past Workouts"
+            summary={
+              pastTotals
+                ? `${pastCompleted} completed${pastMissed > 0 ? ` · ${pastMissed} missed` : ''}`
+                : 'Could not load'
+            }
+            icon="clock"
+            variant="past"
+          >
+            <div className="workout-list">{past.map(panel)}</div>
+            {pastError && <div className="error-banner">{pastError}</div>}
+            {hasMorePast && (
+              <button className="btn-secondary load-more" disabled={pastLoading} onClick={() => void loadMorePast()}>
+                {pastLoading ? 'Loading…' : 'Load more'}
+              </button>
+            )}
+          </CollapsibleSection>
+        )}
+        {dashboard.coach_notes && <p className="dashboard-coach-notes">{dashboard.coach_notes}</p>}
+        <p className="build-version">{BUILD_LABEL}</p>
       </div>
-      {!today && <p className="dashboard__rest">Rest day today — enjoy the break.</p>}
-      {featured && <div className="workout-list">{panel(featured)}</div>}
-
-      {upcoming.length > 0 && (
-        <CollapsibleSection
-          title="Upcoming Workouts"
-          summary={`${upcoming.length} scheduled`}
-          icon="calendar"
-          variant="upcoming"
-        >
-          <div className="workout-list">{upcoming.map(panel)}</div>
-        </CollapsibleSection>
-      )}
-
-      {(past.length > 0 || hasMorePast || pastError) && (
-        <CollapsibleSection
-          title="Past Workouts"
-          summary={
-            pastTotals
-              ? `${pastCompleted} completed${pastMissed > 0 ? ` · ${pastMissed} missed` : ''}`
-              : 'Could not load'
-          }
-          icon="clock"
-          variant="past"
-        >
-          <div className="workout-list">{past.map(panel)}</div>
-          {pastError && <div className="error-banner">{pastError}</div>}
-          {hasMorePast && (
-            <button className="btn-secondary load-more" disabled={pastLoading} onClick={() => void loadMorePast()}>
-              {pastLoading ? 'Loading…' : 'Load more'}
-            </button>
-          )}
-        </CollapsibleSection>
-      )}
-      {dashboard.coach_notes && <p className="dashboard-coach-notes">{dashboard.coach_notes}</p>}
-      <p className="build-version">{BUILD_LABEL}</p>
       <PeriodPrompt {...periodPrompt} />
     </div>
   )

@@ -689,6 +689,15 @@ def test_complete_session_does_not_recomplete_an_already_completed_plan():
     assert "plans" not in client.inserted
 
 
+def test_complete_session_is_new_only_the_first_time():
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at=None)
+    repo = _repo(client)
+
+    assert repo.complete_session(5)["newly_completed"] is True
+    assert repo.complete_session(5)["newly_completed"] is False
+
+
 def test_complete_session_unknown_session_returns_none():
     assert _repo(FakeSupabaseClient()).complete_session(404) is None
 
@@ -1309,3 +1318,12 @@ def test_prescription_edit_changes_the_note_only_when_given():
 
     repo.update_session_exercise_prescription(70, 4, "12", note=None)
     assert client.tables["session_exercises"][0]["note"] is None
+
+
+def test_completed_sessions_are_counted_across_every_plan_of_the_user():
+    # 61 (plan 6) and 71 (plan 7) are completed; usr_other's session isn't counted.
+    assert _repo(_history_client()).count_completed_sessions("usr_1") == 2
+
+
+def test_a_client_with_no_plans_has_no_completed_sessions():
+    assert _repo(FakeSupabaseClient()).count_completed_sessions("usr_new") == 0

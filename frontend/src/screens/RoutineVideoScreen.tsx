@@ -44,7 +44,7 @@ export function RoutineVideoScreen({ kind }: { kind: 'warmup' | 'cooldown' }) {
 
   function handleDone() {
     const next =
-      kind === 'warmup' ? `/day/${dayNum}/exercise/${firstIncompleteIndex(day!)}` : `/day/${dayNum}/summary`
+      kind === 'warmup' ? `/day/${dayNum}/exercise/${firstIncompleteIndex(day!)}` : `/day/${dayNum}/grow`
     navigate(next, { replace: true })
   }
 

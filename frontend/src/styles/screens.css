@@ -41,52 +41,285 @@
 
 /* ---------- Dashboard ---------- */
 
-.hero-header {
+/* The dashboard fills the screen without scrolling: the plant and level card
+   stay put and only .dashboard__scroll (Your Workouts) scrolls. */
+.dashboard-screen {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.dashboard__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -20px;
+  padding: 4px 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.plant-hero {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  min-height: 170px;
-  margin: -8px -4px 24px;
-  padding: 24px 20px 20px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, #fbf3df 0%, #f3ead2 45%, #dfe9d6 100%);
+  flex-shrink: 0;
+  /* About half the screen, so the plant is the centrepiece. */
+  height: clamp(280px, 50dvh, 640px);
+  margin: -24px -20px 0;
+  padding-top: env(safe-area-inset-top);
+  /* Sunlit backdrop that fades into the page at the bottom, under the level card. */
+  background:
+    linear-gradient(180deg, rgba(246, 241, 231, 0) 78%, var(--bg) 100%),
+    radial-gradient(110% 45% at 50% 82%, #f3e3c3 0%, rgba(243, 227, 195, 0) 70%),
+    linear-gradient(180deg, #f7f0e1 0%, #f8efdc 100%);
   overflow: hidden;
 }
 
-.hero-header__text {
-  position: relative;
-  z-index: 1;
-  align-self: center;
+.plant-hero__greeting {
+  position: absolute;
+  z-index: 2;
+  top: calc(20px + env(safe-area-inset-top));
+  left: 20px;
+  right: 90px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hero-header__title {
-  font-size: 21px;
+.plant-hero__sun {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 24px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #f9d98a;
+  box-shadow: 0 0 40px 12px rgba(249, 217, 138, 0.45);
+}
+
+.plant-hero__foliage {
+  position: absolute;
+  bottom: 16%;
+  width: 26%;
+  max-width: 120px;
+  color: #7fb069;
+  opacity: 0.75;
+}
+
+.plant-hero__foliage--left {
+  left: -4%;
+}
+
+.plant-hero__foliage--right {
+  right: -4%;
+  width: 20%;
+  color: #8fbf73;
+}
+
+.plant-hero__canvas {
+  position: absolute;
+  z-index: 1;
+  /* Below the greeting, so butterflies never fly over it, and above the
+     level card's overlap, so it never covers the pot. */
+  inset: calc(58px + env(safe-area-inset-top)) 0 56px;
+}
+
+.plant-hero__canvas canvas {
+  display: block;
+  /* Touches and swipes on the plant blow it about (PlantScene), not the page. */
+  touch-action: none;
+}
+
+.level-card {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  /* Overlaps the backdrop's fade instead of meeting it at an edge. */
+  margin: -56px 0 18px;
+  padding: 12px 18px 14px;
+  border: 1px solid #cfe3cd;
+  border-radius: var(--radius-lg);
+  background: #e6f1e3;
+}
+
+.level-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.level-card__icon {
+  color: #3f8f45;
+}
+
+.level-card__level {
+  flex: 1;
+  font-size: 20px;
   font-weight: 800;
-  line-height: 1.2;
   color: var(--heading);
 }
 
-.hero-header__tagline {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--ink);
+.level-card__points {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-secondary);
 }
 
-.hero-header__underline {
-  display: block;
-  width: 32px;
-  height: 3px;
-  margin-top: 10px;
-  border-radius: 2px;
-  background: var(--warning);
+.level-card__bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #d9e2d6;
+  overflow: hidden;
 }
 
-.hero-header__art {
-  width: 118px;
-  height: 103px;
+.level-card__tip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+}
+
+.level-card__tip svg {
   flex-shrink: 0;
-  margin: 0 -8px -12px 0;
+  color: #3f8f45;
+}
+
+.level-card__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #4caf50;
+  transition: width 0.8s ease;
+}
+
+.level-card--instant .level-card__fill {
+  transition: none;
+}
+
+/* ---------- Grow screen (between the workout and its summary) ---------- */
+
+.grow-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+  padding: calc(24px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
+  background:
+    radial-gradient(110% 40% at 50% 70%, #f3e3c3 0%, rgba(243, 227, 195, 0) 70%),
+    linear-gradient(180deg, #f7f0e1 0%, #f8efdc 60%, var(--bg) 100%);
+}
+
+.grow-screen__head {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+}
+
+.grow-screen__title {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+}
+
+.grow-screen__subtitle {
+  margin: 6px 0 0;
+  font-size: 16px;
+  color: var(--ink-secondary);
+}
+
+.grow-screen__subtitle--level {
+  color: #3f8f45;
+  font-weight: 700;
+  animation: grow-banner 0.6s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+.grow-screen__stage {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  margin: 0 -20px;
+}
+
+.grow-screen__stage .plant-hero__canvas {
+  inset: 0;
+}
+
+.grow-screen__points {
+  position: absolute;
+  z-index: 2;
+  top: 6%;
+  left: 50%;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  background: #4caf50;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.35);
+  pointer-events: none;
+  animation: grow-points 0.6s ease-out both;
+}
+
+.grow-screen__foot {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+}
+
+.grow-screen__foot .level-card {
+  margin: 0 0 16px;
+}
+
+.grow-screen__continue {
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.grow-screen__continue--shown {
+  opacity: 1;
+  transform: none;
+}
+
+/* +25 pops in and settles, staying in view until she moves on. */
+@keyframes grow-points {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 24px) scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: translate(-50%, -4px) scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes grow-banner {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .workout-list {

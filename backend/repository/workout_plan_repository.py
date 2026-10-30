@@ -1154,6 +1154,9 @@ class WorkoutPlanRepository:
         if session is None:
             return None
 
+        # False when re-completing (e.g. re-opening a finished workout's
+        # summary): it earns no new grow points.
+        newly_completed = session.get("completed_at") is None
         now = datetime.now(timezone.utc)
         # Defensive fallback: complete_session called without a prior start_session.
         started_at = session.get("started_at") or now.isoformat()
@@ -1212,6 +1215,7 @@ class WorkoutPlanRepository:
             "sets_completed": sets_completed,
             "total_sets": total_sets,
             "plan_completed": plan_completed,
+            "newly_completed": newly_completed,
         }
 
     @staticmethod
@@ -1371,6 +1375,22 @@ class WorkoutPlanRepository:
             .eq("id", session_exercise_id)
             .execute()
         )
+
+    def count_completed_sessions(self, user_id: str) -> int:
+        """How many workouts the user has finished, across all of their plans
+        (period sessions included, missed ones not). Drives the dashboard's
+        plant points."""
+        plans = self.client.table("plans").select("id").eq("user_id", user_id).execute().data
+        if not plans:
+            return 0
+        sessions = (
+            self.client.table("sessions")
+            .select("completed_at")
+            .in_("plan_id", [plan["id"] for plan in plans])
+            .execute()
+            .data
+        )
+        return sum(1 for session in sessions if session.get("completed_at"))
 
     def get_user_workout_history(self, user_id: str) -> Dict[str, List[dict]]:
         """Every workout across all of the user's plans, split into
