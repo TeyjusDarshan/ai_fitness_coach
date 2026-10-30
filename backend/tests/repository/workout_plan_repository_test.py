@@ -1309,3 +1309,12 @@ def test_prescription_edit_changes_the_note_only_when_given():
 
     repo.update_session_exercise_prescription(70, 4, "12", note=None)
     assert client.tables["session_exercises"][0]["note"] is None
+
+
+def test_completed_sessions_are_counted_across_every_plan_of_the_user():
+    # 61 (plan 6) and 71 (plan 7) are completed; usr_other's session isn't counted.
+    assert _repo(_history_client()).count_completed_sessions("usr_1") == 2
+
+
+def test_a_client_with_no_plans_has_no_completed_sessions():
+    assert _repo(FakeSupabaseClient()).count_completed_sessions("usr_new") == 0

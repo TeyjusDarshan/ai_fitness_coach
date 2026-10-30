@@ -41,52 +41,139 @@
 
 /* ---------- Dashboard ---------- */
 
-.hero-header {
+/* The dashboard fills the screen without scrolling: the plant and level card
+   stay put and only .dashboard__scroll (Your Workouts) scrolls. */
+.dashboard-screen {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.dashboard__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0 -20px;
+  padding: 4px 20px calc(24px + env(safe-area-inset-bottom));
+}
+
+.plant-hero {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  min-height: 170px;
-  margin: -8px -4px 24px;
-  padding: 24px 20px 20px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, #fbf3df 0%, #f3ead2 45%, #dfe9d6 100%);
+  flex-shrink: 0;
+  height: clamp(220px, 36dvh, 360px);
+  margin: -24px -20px 0;
+  padding-top: env(safe-area-inset-top);
+  background:
+    radial-gradient(120% 60% at 50% 100%, #f3e3c3 0%, rgba(243, 227, 195, 0) 60%),
+    linear-gradient(180deg, #f7f0e1 0%, #f8efdc 70%, #f1e2c4 100%);
   overflow: hidden;
 }
 
-.hero-header__text {
-  position: relative;
-  z-index: 1;
-  align-self: center;
+.plant-hero__greeting {
+  position: absolute;
+  z-index: 2;
+  top: calc(20px + env(safe-area-inset-top));
+  left: 20px;
+  right: 90px;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.hero-header__title {
-  font-size: 21px;
+.plant-hero__sun {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 24px;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #f9d98a;
+  box-shadow: 0 0 40px 12px rgba(249, 217, 138, 0.45);
+}
+
+.plant-hero__foliage {
+  position: absolute;
+  bottom: 6%;
+  width: 26%;
+  max-width: 120px;
+  color: #7fb069;
+  opacity: 0.75;
+}
+
+.plant-hero__foliage--left {
+  left: -4%;
+}
+
+.plant-hero__foliage--right {
+  right: -4%;
+  width: 20%;
+  color: #8fbf73;
+}
+
+.plant-hero__canvas {
+  position: absolute;
+  z-index: 1;
+  /* Below the greeting, so butterflies never fly over it. */
+  inset: calc(58px + env(safe-area-inset-top)) 0 0;
+}
+
+.plant-hero__canvas canvas {
+  display: block;
+}
+
+.level-card {
+  flex-shrink: 0;
+  margin: -6px 0 18px;
+  padding: 12px 18px 14px;
+  border: 1px solid #cfe3cd;
+  border-radius: var(--radius-lg);
+  background: #e6f1e3;
+}
+
+.level-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.level-card__icon {
+  color: #3f8f45;
+}
+
+.level-card__level {
+  flex: 1;
+  font-size: 20px;
   font-weight: 800;
-  line-height: 1.2;
   color: var(--heading);
 }
 
-.hero-header__tagline {
-  margin-top: 8px;
-  font-size: 13px;
-  color: var(--ink);
+.level-card__points {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-secondary);
 }
 
-.hero-header__underline {
+.level-card__bar {
+  height: 12px;
+  border-radius: 999px;
+  background: #d9e2d6;
+  overflow: hidden;
+}
+
+.level-card__fill {
   display: block;
-  width: 32px;
-  height: 3px;
-  margin-top: 10px;
-  border-radius: 2px;
-  background: var(--warning);
-}
-
-.hero-header__art {
-  width: 118px;
-  height: 103px;
-  flex-shrink: 0;
-  margin: 0 -8px -12px 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #4caf50;
+  transition: width 0.8s ease;
 }
 
 .workout-list {

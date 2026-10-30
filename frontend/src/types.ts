@@ -93,6 +93,8 @@ export interface Dashboard {
   session_duration_minutes: number | null
   days: DashboardDay[]
   workouts: DashboardWorkout[]
+  // Plant points: 25 per completed workout, across every plan.
+  points: number
 }
 
 // One page of GET /users/<id>/past-workouts, plus the totals across every page.

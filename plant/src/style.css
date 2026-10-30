@@ -1,0 +1,137 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: radial-gradient(ellipse at 50% 35%, #fffaf0 0%, #f3e9d8 55%, #e6d6bd 100%);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #3b3226;
+}
+
+#app,
+#app canvas {
+  position: fixed;
+  inset: 0;
+  display: block;
+}
+
+.title {
+  position: fixed;
+  top: 22px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5d8a3a;
+  pointer-events: none;
+}
+
+.controls {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 18px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(80, 60, 30, 0.15);
+  user-select: none;
+}
+
+.info {
+  width: 260px;
+  text-align: center;
+}
+
+.count {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+}
+
+.caption {
+  margin: 4px 0 8px;
+  font-size: 17px;
+  font-weight: 600;
+  min-height: 1.3em;
+}
+
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d9cdb8;
+  transition: background 0.3s, transform 0.3s;
+}
+
+.dots span.done {
+  background: #8cc65a;
+}
+
+.dots span.current {
+  background: #ff5fa2;
+  transform: scale(1.35);
+}
+
+button {
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 14px;
+  background: #5d8a3a;
+  color: white;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s, opacity 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background: #4b7430;
+}
+
+button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+@media (max-width: 560px) {
+  .controls {
+    gap: 8px;
+    padding: 10px;
+  }
+  .info {
+    width: 170px;
+  }
+  .caption {
+    font-size: 14px;
+  }
+  button {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+}

@@ -1372,6 +1372,22 @@ class WorkoutPlanRepository:
             .execute()
         )
 
+    def count_completed_sessions(self, user_id: str) -> int:
+        """How many workouts the user has finished, across all of their plans
+        (period sessions included, missed ones not). Drives the dashboard's
+        plant points."""
+        plans = self.client.table("plans").select("id").eq("user_id", user_id).execute().data
+        if not plans:
+            return 0
+        sessions = (
+            self.client.table("sessions")
+            .select("completed_at")
+            .in_("plan_id", [plan["id"] for plan in plans])
+            .execute()
+            .data
+        )
+        return sum(1 for session in sessions if session.get("completed_at"))
+
     def get_user_workout_history(self, user_id: str) -> Dict[str, List[dict]]:
         """Every workout across all of the user's plans, split into
         {"scheduled": soonest first, "past": newest first}, each with its

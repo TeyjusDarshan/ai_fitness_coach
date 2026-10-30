@@ -279,6 +279,7 @@ def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts, previou
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
     monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=list(previous)))
+    monkeypatch.setattr(app_module.plan_repo, "count_completed_sessions", MagicMock(return_value=3))
     response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
     assert response.status_code == 200
     return response.get_json()["workouts"]
@@ -340,6 +341,16 @@ def test_dashboard_workouts_mark_todays_and_carry_their_duration(app_module, sig
         (13, True, 2400),
         (15, False, None),
     ]
+
+
+def test_dashboard_gives_25_points_per_completed_workout(app_module, sign_in, monkeypatch):
+    _dashboard_with_workouts(app_module, sign_in, monkeypatch, [])
+    count = app_module.plan_repo.count_completed_sessions
+
+    body = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()
+
+    assert body["points"] == 75
+    count.assert_called_with("usr_1")
 
 
 # --- past workouts ----------------------------------------------------------------

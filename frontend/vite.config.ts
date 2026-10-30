@@ -60,6 +60,10 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    // The lazily loaded 3D plant chunk (three.js) is ~580 kB on its own.
+    chunkSizeWarningLimit: 650,
+  },
   server: {
     proxy: {
       '/api': 'http://localhost:8001',

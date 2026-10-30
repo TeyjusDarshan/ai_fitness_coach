@@ -63,6 +63,12 @@ const PATHS = {
     </>
   ),
   stop: <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />,
+  leaf: (
+    <>
+      <path d="M5 19c0-8 5-14 15-15-1 10-7 15-15 15Z" fill="currentColor" fillOpacity="0.25" />
+      <path d="M5 19c3-5 6-8 10-10" />
+    </>
+  ),
   trophy: (
     <>
       <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />

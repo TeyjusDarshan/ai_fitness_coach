@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gardener</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <h1 class="title">Gardener</h1>
+
+    <nav class="controls">
+      <button id="prev" type="button" aria-label="Previous step">← Previous</button>
+      <div class="info">
+        <div class="count">Step <span id="step">0</span> of <span id="total">12</span></div>
+        <div id="caption" class="caption"></div>
+        <div id="dots" class="dots"></div>
+      </div>
+      <button id="next" type="button" aria-label="Next step">Next →</button>
+    </nav>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
