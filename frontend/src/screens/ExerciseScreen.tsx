@@ -2,16 +2,14 @@ import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { SetRow } from '../components/SetRow'
-import { EffortSlider, DEFAULT_RPE } from '../components/EffortSlider'
 import { Icon } from '../components/Icon'
 import { useAppState } from '../state/AppStateContext'
-import { logSet, logRpe } from '../api'
+import { logSet } from '../api'
 import {
-  afterExercisePath,
   flattenExercises,
+  isExerciseComplete,
   restPath,
   targetRepsForSet,
-  withRpeLogged,
   withSetLogged,
   withSetLogRemoved,
 } from '../utils'
@@ -113,31 +111,16 @@ function RepExerciseScreen() {
 
     // Confirming a set that doesn't yet finish the exercise triggers a 1:30
     // rest before the next set; finishing the last set instead leaves the
-    // user on "Begin Next Workout" to start the between-exercise rest.
+    // user on "Next Exercise", which asks how it felt.
     if (!willComplete) {
       navigate(restPath(dayNum, REST_BETWEEN_SETS_SECONDS, `/day/${dayNum}/exercise/${slotIdx}`))
     }
   }
 
-  function handleRpeChange(rpe: number) {
-    const previousRpe = exercise!.rpe
-    const previousLogged = !!exercise!.rpe_logged
-    updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, rpe))
-    logRpe(day!.session_id!, exercise!.id, rpe).catch(() => {
-      updateDashboard((prev) => withRpeLogged(prev, dayNum, exercise!.id, previousRpe, previousLogged))
-    })
-  }
-
-  function handleBeginNext() {
-    // If the user never touched the effort slider, log the Medium default
-    // it's already displaying rather than leaving this exercise's RPE unset.
-    // Checks rpe_logged, not rpe: the server reports an unrated exercise as
-    // rpe 8, so rpe is never null here.
-    if (!exercise!.rpe_logged) {
-      handleRpeChange(DEFAULT_RPE)
-    }
-
-    navigate(afterExercisePath(dayNum, slotIdx, exercises.length))
+  // How it felt is asked on its own screen, which then moves on to the rest
+  // (or, after the last exercise, the cool-down).
+  function handleNext() {
+    navigate(`/day/${dayNum}/exercise/${slotIdx}/feedback`)
   }
 
   return (
@@ -163,10 +146,22 @@ function RepExerciseScreen() {
         })}
       </div>
 
-      <EffortSlider rpe={exercise.rpe} onChange={handleRpeChange} />
+      {isExerciseComplete(exercise) && (
+        <div className="sets-done" role="status">
+          <Icon name="activity" size={22} className="sets-done__pulse" />
+          <span className="sets-done__check">
+            <Icon name="check" size={18} />
+          </span>
+          <span>
+            <strong>All sets completed!</strong>
+            <br />
+            Great job!
+          </span>
+        </div>
+      )}
 
-      <button className="btn-primary begin-next-btn" onClick={handleBeginNext}>
-        Begin Next Workout <Icon name="chevronRight" size={18} />
+      <button className="btn-primary begin-next-btn" onClick={handleNext}>
+        Next Exercise <Icon name="chevronRight" size={18} />
       </button>
     </div>
   )

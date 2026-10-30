@@ -549,3 +549,79 @@ def test_coach_can_get_a_feedback_link_with_the_admin_key(app_module, monkeypatc
 
     assert ok.status_code == 200
     assert ok.get_json()["url"].startswith("https://signed.example/")
+
+
+# --- per-exercise voice notes (feedback screen) ------------------------------------
+
+@pytest.fixture
+def exercise_51(app_module, monkeypatch, storage):
+    """Session 42's exercise 51, with no voice note yet."""
+    _session_42(app_module, monkeypatch)
+    row = {"id": 51, "session_id": 42, "feedback_audio_path": None}
+    lookup = MagicMock(side_effect=lambda seid, session_id=None: (
+        row if seid == 51 and session_id in (None, 42) else None
+    ))
+    monkeypatch.setattr(app_module.plan_repo, "get_session_exercise", lookup)
+    monkeypatch.setattr(app_module.plan_repo, "set_exercise_feedback_audio_path", MagicMock())
+    return row
+
+
+def _upload_exercise_note(client, seid=51, mimetype="audio/webm;codecs=opus"):
+    import io
+
+    return client.post(
+        f"/api/sessions/42/exercises/{seid}/feedback-audio",
+        data={"audio": (io.BytesIO(b"note"), "feedback", mimetype)},
+        content_type="multipart/form-data",
+    )
+
+
+def test_exercise_voice_note_is_stored_against_the_exercise(app_module, sign_in, storage, exercise_51):
+    response = _upload_exercise_note(sign_in("usr_1"))
+
+    assert response.status_code == 200
+    assert response.get_json() == {"feedback_audio_path": "session_42_exercise_51.webm"}
+    storage.store.assert_called_once_with(b"note", "session_42_exercise_51.webm", "audio/webm")
+    app_module.plan_repo.set_exercise_feedback_audio_path.assert_called_once_with(51, "session_42_exercise_51.webm")
+    app_module.plan_repo.set_feedback_audio_path.assert_not_called()
+
+
+def test_rerecording_an_exercise_note_in_another_format_removes_the_old_file(sign_in, storage, exercise_51):
+    exercise_51["feedback_audio_path"] = "session_42_exercise_51.webm"
+
+    response = _upload_exercise_note(sign_in("usr_1"), mimetype="audio/mp4")
+
+    assert response.get_json() == {"feedback_audio_path": "session_42_exercise_51.m4a"}
+    storage.remove.assert_called_once_with("session_42_exercise_51.webm")
+
+
+def test_exercise_voice_note_rejects_unsupported_audio(sign_in, storage, exercise_51):
+    assert _upload_exercise_note(sign_in("usr_1"), mimetype="video/mp4").status_code == 415
+    storage.store.assert_not_called()
+
+
+def test_exercise_voice_note_for_an_exercise_of_another_session_is_404(sign_in, storage, exercise_51):
+    assert _upload_exercise_note(sign_in("usr_1"), seid=99).status_code == 404
+    storage.store.assert_not_called()
+
+
+def test_exercise_voice_note_on_another_users_session_is_refused(app_module, sign_in, monkeypatch, storage, exercise_51):
+    _session_42(app_module, monkeypatch, owner="usr_2")
+
+    assert _upload_exercise_note(sign_in("usr_1")).status_code == 403
+    storage.store.assert_not_called()
+
+
+def test_coach_gets_a_link_to_an_exercise_voice_note(app_module, monkeypatch, storage, exercise_51):
+    monkeypatch.setenv("ADMIN_API_KEY", "k")
+    client = app_module.app.test_client()
+    url = "/api/admin/session-exercises/51/feedback-audio"
+
+    assert client.get(url).status_code == 401
+    assert client.get(url, headers={"X-Admin-Key": "k"}).status_code == 404  # none recorded yet
+
+    exercise_51["feedback_audio_path"] = "session_42_exercise_51.webm"
+    ok = client.get(url, headers={"X-Admin-Key": "k"})
+
+    assert ok.status_code == 200
+    storage.create_signed_url.assert_called_once_with("session_42_exercise_51.webm", 3600)

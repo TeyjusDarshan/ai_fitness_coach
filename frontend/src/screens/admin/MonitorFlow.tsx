@@ -4,6 +4,7 @@ import {
   editPrescription,
   fetchClientMonitor,
   fetchClients,
+  fetchExerciseFeedbackAudioUrl,
   fetchFeedbackAudioUrl,
   regeneratePlan,
   saveCoachNotes,
@@ -354,6 +355,48 @@ function WorkoutSection({
   )
 }
 
+// The client's voice note on one exercise (from its feedback screen),
+// fetched as a signed link when the coach presses play.
+function ExerciseVoiceNote({
+  exerciseId,
+  adminKey,
+  onUnauthorized,
+}: {
+  exerciseId: number
+  adminKey: string
+  onUnauthorized: () => void
+}) {
+  const [url, setUrl] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      setUrl((await fetchExerciseFeedbackAudioUrl(adminKey, exerciseId)).url)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onUnauthorized()
+      else setError(err instanceof Error ? err.message : 'Could not load the recording.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="monitor__exercise-note">
+      {url ? (
+        <audio controls autoPlay src={url} />
+      ) : (
+        <button className="btn-link" disabled={loading} onClick={() => void load()}>
+          {loading ? 'Loading…' : '▶ Voice note'}
+        </button>
+      )}
+      {error && <div className="admin__hint admin__hint--error">{error}</div>}
+    </div>
+  )
+}
+
 function WorkoutCard({
   workout,
   adminKey,
@@ -394,7 +437,9 @@ function WorkoutCard({
           {workout.name ?? `Day ${workout.day_number}`}
           {workout.is_period && <span className="monitor__chip monitor__chip--period">Period</span>}
           {workout.analysis && <span className="monitor__chip">AI summary</span>}
-          {workout.has_feedback && <span className="monitor__chip">Voice note</span>}
+          {(workout.has_feedback || workout.exercises.some((ex) => ex.has_feedback)) && (
+            <span className="monitor__chip">Voice note</span>
+          )}
         </span>
         <span className={`workout-panel__status workout-panel__status--${workout.status}`}>
           {WORKOUT_STATUS_LABELS[workout.status]}
@@ -432,6 +477,9 @@ function WorkoutCard({
                 <Prescription exercise={exercise} />
               )}
               {done && <LoggedSets exercise={exercise} />}
+              {exercise.has_feedback && (
+                <ExerciseVoiceNote exerciseId={exercise.id} adminKey={adminKey} onUnauthorized={onUnauthorized} />
+              )}
             </div>
           ))}
 

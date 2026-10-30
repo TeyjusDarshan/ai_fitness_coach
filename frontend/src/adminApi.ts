@@ -258,3 +258,8 @@ export function editPrescription(
     body: JSON.stringify({ sets, reps, note }),
   })
 }
+
+// A short-lived link to the client's voice note on one exercise of a session.
+export function fetchExerciseFeedbackAudioUrl(adminKey: string, sessionExerciseId: number): Promise<{ url: string }> {
+  return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}/feedback-audio`)
+}

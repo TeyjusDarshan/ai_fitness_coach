@@ -714,6 +714,26 @@ def test_start_session_stamps_started_at_only_once():
     assert repo.start_session(3)["started_at"] == "2026-10-14T10:00:00+00:00"
 
 
+
+def test_exercise_voice_note_path_is_found_only_within_its_session():
+    client = FakeSupabaseClient()
+    client.seed("session_exercises", [{"id": 51, "session_id": 5, "feedback_audio_path": None}])
+    repo = _repo(client)
+
+    assert repo.get_session_exercise(51, session_id=6) is None
+    repo.set_exercise_feedback_audio_path(51, "session_5_exercise_51.webm")
+
+    assert repo.get_session_exercise(51, session_id=5)["feedback_audio_path"] == "session_5_exercise_51.webm"
+    assert repo.get_session_exercise(51)["session_id"] == 5
+
+
+def test_exercise_entry_says_whether_it_has_a_voice_note():
+    with_note = _row(exercises={"id": 100, "name": "Squat"}, feedback_audio_path="session_5_exercise_51.webm")
+    without = _row(exercises={"id": 100, "name": "Squat"})
+
+    assert WorkoutPlanRepository._exercise_entry(with_note)["has_feedback"] is True
+    assert WorkoutPlanRepository._exercise_entry(without)["has_feedback"] is False
+
 # --- missed sessions -----------------------------------------------------------
 
 @pytest.mark.parametrize("scheduled_date, completed_at, missed", [

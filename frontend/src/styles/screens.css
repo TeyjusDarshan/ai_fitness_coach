@@ -759,44 +759,304 @@
   color: #fff;
 }
 
-.effort-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 18px;
-  padding: 16px 18px;
-  border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-}
-.effort-slider__title {
+.sets-done {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--heading);
-}
-.effort-slider__title svg {
-  color: var(--success);
-}
-.effort-slider__input {
-  width: 100%;
-  accent-color: var(--accent);
-}
-.effort-slider__labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 14px 18px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  font-size: 14px;
   color: var(--ink-secondary);
 }
-.effort-slider__label--active {
+.sets-done strong {
+  font-size: 16px;
   color: var(--heading);
-  font-size: 15px;
-  font-weight: 700;
+}
+.sets-done__pulse {
+  flex-shrink: 0;
+  color: var(--success);
+}
+.sets-done__check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
 }
 
 .begin-next-btn {
   margin-top: 4px;
+}
+
+/* ---------- Exercise feedback (after a rep exercise) ---------- */
+
+.feedback-screen {
+  align-items: center;
+  text-align: center;
+  min-height: 100dvh;
+}
+.feedback-screen__back {
+  align-self: flex-start;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: -8px 0 0 -8px;
+  border: none;
+  background: none;
+  color: var(--heading);
+  cursor: pointer;
+}
+.feedback-screen__badge {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 2px;
+}
+.feedback-screen__check {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  animation: feedback-badge 0.5s ease-out both;
+}
+.feedback-screen__check svg {
+  stroke-width: 3.2;
+}
+/* Three short rays either side of the badge: up, level, down. */
+.feedback-screen__rays {
+  position: relative;
+  width: 22px;
+  height: 52px;
+  /* the level ray; the slanted ones are ::before / ::after */
+  background: linear-gradient(#7cc49a, #7cc49a) center / 20px 3px no-repeat;
+  animation: feedback-rays 0.5s 0.25s ease-out both;
+}
+.feedback-screen__rays::before,
+.feedback-screen__rays::after {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+  background: #7cc49a;
+}
+.feedback-screen__rays--left::before {
+  top: 4px;
+  right: 2px;
+  transform: rotate(35deg);
+}
+.feedback-screen__rays--left::after {
+  bottom: 4px;
+  right: 2px;
+  transform: rotate(-35deg);
+}
+.feedback-screen__rays--right::before {
+  top: 4px;
+  left: 2px;
+  transform: rotate(-35deg);
+}
+.feedback-screen__rays--right::after {
+  bottom: 4px;
+  left: 2px;
+  transform: rotate(35deg);
+}
+.feedback-screen__title {
+  margin: 18px 0 0;
+  max-width: 340px;
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--heading);
+}
+.feedback-screen__options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  margin-top: 22px;
+}
+.feedback-option {
+  --tone: var(--success);
+  --tone-soft: #eef7f0;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 16px 18px;
+  border: 1.5px solid color-mix(in srgb, var(--tone) 45%, transparent);
+  border-radius: var(--radius-md);
+  background: var(--tone-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+.feedback-option--about {
+  --tone: #3b82e0;
+  --tone-soft: #eef4fd;
+}
+.feedback-option--hard {
+  --tone: #f06a2b;
+  --tone-soft: #fdf1ea;
+}
+.feedback-option--selected {
+  border-color: var(--tone);
+  border-width: 2.5px;
+  padding: 15px 17px;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 18%, transparent);
+}
+.feedback-option:active {
+  transform: scale(0.98);
+}
+.feedback-option__face {
+  flex-shrink: 0;
+  color: var(--tone);
+}
+.feedback-option__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.feedback-option__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.feedback-option--about .feedback-option__title {
+  color: #1f5fb8;
+}
+.feedback-option--hard .feedback-option__title {
+  color: #d4561b;
+}
+.feedback-option__hint {
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.feedback-screen__skip {
+  margin: 18px 0 16px;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--heading);
+  cursor: pointer;
+}
+.feedback-screen__skip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.feedback-screen__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin: 14px 0 12px;
+  font-size: 14px;
+  color: var(--danger);
+}
+
+.feedback-voice {
+  width: 100%;
+  margin-top: 18px;
+}
+.feedback-voice__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.feedback-voice__mic {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  border: 1.5px solid #a9d3b8;
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--surface);
+}
+.feedback-voice__mic--live {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+  animation: mic-pulse 1.3s ease-in-out infinite;
+}
+.feedback-voice__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.feedback-voice__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--heading);
+}
+.feedback-voice__hint {
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.feedback-voice__recorded {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+}
+.feedback-voice__recorded-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.feedback-voice__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--success);
+}
+.feedback-voice__player {
+  width: 100%;
+  height: 36px;
+}
+.feedback-voice__error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  text-align: left;
+  color: var(--danger);
+}
+.feedback-screen__next {
+  width: 100%;
+  margin-top: auto;
+}
+
+@keyframes feedback-badge {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+@keyframes feedback-rays {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
 }
 
 /* ---------- Rest timer ---------- */
@@ -2409,8 +2669,12 @@
   border-radius: var(--radius-md);
   background: var(--surface-alt);
 }
-.monitor__feedback audio {
+.monitor__feedback audio,
+.monitor__exercise-note audio {
   width: 100%;
+}
+.monitor__exercise-note {
+  margin-top: 6px;
 }
 .monitor__analysis {
   margin: 0;

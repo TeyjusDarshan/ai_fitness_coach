@@ -5,6 +5,7 @@ import { EnrollScreen } from './screens/EnrollScreen'
 import { LoginScreen } from './screens/LoginScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
+import { ExerciseFeedbackScreen } from './screens/ExerciseFeedbackScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
 import { GrowScreen } from './screens/GrowScreen'
@@ -101,6 +102,14 @@ function App() {
         element={
           <RequireAuth>
             <ExerciseScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/exercise/:slotIndex/feedback"
+        element={
+          <RequireAuth>
+            <ExerciseFeedbackScreen />
           </RequireAuth>
         }
       />

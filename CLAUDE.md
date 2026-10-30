@@ -159,6 +159,7 @@ One row per prescribed exercise slot within a session. Deliberately does **not**
 | `reps` | varchar, nullable | |
 | `rep_range` | varchar, nullable | |
 | `note` | text, nullable | |
+| `feedback_audio_path` | text, nullable | object path (`session_<sid>_exercise_<id>.<ext>`) in the private `voice-feedback` bucket of the client's optional voice note about this exercise, recorded on the PWA's exercise feedback screen and uploaded when she moves on (`POST /api/sessions/<sid>/exercises/<id>/feedback-audio`, same types/size limit as the session note; a re-record overwrites). Returned as `has_feedback` on exercise entries; the coach plays it in Monitor clients via `GET /api/admin/session-exercises/<id>/feedback-audio` (`X-Admin-Key`, signed URL). Not used by the analysis consumer, and not carried forward by progression |
 | `created_at` | timestamptz, default `now()` | |
 
 Per-set completion and RPE are tracked in the child tables below rather than on this row.
@@ -179,7 +180,7 @@ Unique: (`session_exercise_id`, `set_number`) — one log row per set, and makes
 
 ### `session_exercise_rpe` — perceived exertion per prescribed exercise
 
-One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe` — RPE is logged once per exercise (not per set).
+One row per `session_exercises` row, written via `WorkoutPlanRepository.log_rpe` — RPE is logged once per exercise (not per set). In the PWA, after a rep exercise's sets "Next Exercise" opens an "Exercise Complete!" feedback screen (`/day/:n/exercise/:slot/feedback`): Easier than expected / About right / Too difficult log RPE 6 / 8 / 10, and "Skip this time" logs 8. She can also record an optional voice note there (`session_exercises.feedback_audio_path`). It then goes on to the rest timer, or the cool-down after the last exercise. Timed holds ask Easy / Moderate / Hard (same values) at the end of their own flow.
 
 | Column | Type | Notes |
 |---|---|---|

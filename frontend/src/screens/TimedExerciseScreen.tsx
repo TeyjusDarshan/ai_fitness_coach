@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { logRpe, logSet } from '../api'
 import { CircularCountdown } from '../components/CircularCountdown'
-import { DEFAULT_RPE } from '../components/EffortSlider'
+import { DEFAULT_RPE } from '../components/effortLevels'
 import { Icon } from '../components/Icon'
 import { VideoPlayer } from '../components/VideoPlayer'
 import { REST_BETWEEN_SETS_SECONDS } from '../constants'
@@ -17,8 +17,8 @@ const GET_READY_SECONDS = 3
 
 const DEFAULT_TIP = 'Keep your body in a straight line and breathe normally.'
 
-// Easy / Moderate / Hard, stored as the same RPE values the rep screen's
-// effort slider uses (see LEVELS in EffortSlider).
+// Easy / Moderate / Hard, stored as the same RPE values the rep exercises'
+// feedback screen uses (see LEVELS in effortLevels).
 const DIFFICULTIES = [
   { label: 'Easy', rpe: 6, face: 'easy' },
   { label: 'Moderate', rpe: 8, face: 'moderate' },

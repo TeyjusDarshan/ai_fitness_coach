@@ -1010,6 +1010,28 @@ class WorkoutPlanRepository:
         """Point the session at its voice-feedback recording in storage."""
         self.client.table("sessions").update({"feedback_audio_path": path}).eq("id", session_id).execute()
 
+    def get_session_exercise(self, session_exercise_id: int, session_id: Optional[int] = None) -> Optional[dict]:
+        """{id, session_id, feedback_audio_path} of one session_exercises row,
+        or None if it doesn't exist (or, given session_id, isn't in that session)."""
+        query = (
+            self.client.table("session_exercises")
+            .select("id, session_id, feedback_audio_path")
+            .eq("id", session_exercise_id)
+        )
+        if session_id is not None:
+            query = query.eq("session_id", session_id)
+        rows = query.execute().data
+        return rows[0] if rows else None
+
+    def set_exercise_feedback_audio_path(self, session_exercise_id: int, path: str) -> None:
+        """Point one exercise of a session at its voice-note recording in storage."""
+        (
+            self.client.table("session_exercises")
+            .update({"feedback_audio_path": path})
+            .eq("id", session_exercise_id)
+            .execute()
+        )
+
     def start_session(self, session_id: int, is_period: bool = False) -> dict:
         """Stamp started_at on a session the first time it's started.
 
@@ -1478,4 +1500,6 @@ class WorkoutPlanRepository:
             # `rpe` above defaults to 8 (Medium); this says whether it was
             # actually rated.
             "rpe_logged": (row.get("session_exercise_rpe") or {}).get("rpe") is not None,
+            # A voice note recorded on the exercise's feedback screen.
+            "has_feedback": bool(row.get("feedback_audio_path")),
         }

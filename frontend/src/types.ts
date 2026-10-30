@@ -25,6 +25,8 @@ export interface ExerciseEntry {
   rpe: number | null
   // Whether `rpe` was actually rated (the server reports an unrated one as 8).
   rpe_logged?: boolean
+  // Whether she left a voice note on its feedback screen.
+  has_feedback?: boolean
 }
 
 // 'missed': a training day whose date passed without it being completed —
