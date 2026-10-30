@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
-import { completeSession, uploadFeedbackAudio } from '../api'
+import { uploadFeedbackAudio } from '../api'
 import { Icon } from '../components/Icon'
 import { Laurel } from '../components/Laurel'
 import { ShareProgress, type SharePhase } from '../components/ShareProgress'
 import { buildCoachShareMessage, capitalize, coachWhatsAppShareUrl, formatDuration } from '../utils'
 import { useVoiceRecorder } from '../state/useVoiceRecorder'
+import { useCompleteSession } from '../state/useCompleteSession'
 import type { DayCompleteSummary } from '../types'
 
 // How long "Preparing to open WhatsApp" shows before WhatsApp opens.
@@ -18,9 +19,10 @@ export function SummaryScreen() {
   const { dayNumber } = useParams()
   const dayNum = Number(dayNumber)
 
-  const [summary, setSummary] = useState<DayCompleteSummary | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const fired = useRef(false)
+  // The grow screen completes the workout and hands its result over; on a
+  // reload or a direct link this screen completes it itself.
+  const handedOver = (useLocation().state as { summary?: DayCompleteSummary } | null)?.summary
+  const { summary, error } = useCompleteSession(dayNum, handedOver)
 
   // The recording stays on the device until she taps Share, which uploads it
   // (behind the ShareProgress screen) and then opens WhatsApp.
@@ -36,17 +38,6 @@ export function SummaryScreen() {
     recordingRef.current = null
     recorder.reset()
   }
-
-  useEffect(() => {
-    if (fired.current || !dashboard) return
-    const sessionId = dashboard.days.find((d) => d.day_number === dayNum)?.session_id
-    if (sessionId == null) return
-    fired.current = true
-    completeSession(sessionId)
-      .then(setSummary)
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to complete this day.'))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashboard])
 
   async function handleBackToDashboard() {
     try {

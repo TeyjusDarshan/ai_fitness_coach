@@ -114,4 +114,8 @@ export interface DayCompleteSummary {
   sets_completed: number
   total_sets: number
   plan_completed: boolean
+  // Grow points after this workout, and how many it added (0 if it was
+  // already completed before).
+  points: number
+  points_earned: number
 }

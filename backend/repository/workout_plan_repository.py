@@ -1154,6 +1154,9 @@ class WorkoutPlanRepository:
         if session is None:
             return None
 
+        # False when re-completing (e.g. re-opening a finished workout's
+        # summary): it earns no new grow points.
+        newly_completed = session.get("completed_at") is None
         now = datetime.now(timezone.utc)
         # Defensive fallback: complete_session called without a prior start_session.
         started_at = session.get("started_at") or now.isoformat()
@@ -1212,6 +1215,7 @@ class WorkoutPlanRepository:
             "sets_completed": sets_completed,
             "total_sets": total_sets,
             "plan_completed": plan_completed,
+            "newly_completed": newly_completed,
         }
 
     @staticmethod

@@ -45,16 +45,36 @@ def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-
 
 # --- complete ------------------------------------------------------------------
 
-def test_complete_session_success_returns_summary(app_module, sign_in, monkeypatch):
+@pytest.fixture(autouse=True)
+def completed_count(app_module, monkeypatch):
+    count = MagicMock(return_value=4)
+    monkeypatch.setattr(app_module.plan_repo, "count_completed_sessions", count)
+    return count
+
+
+def test_complete_session_success_returns_summary_with_points(app_module, sign_in, monkeypatch, completed_count):
     _session_42(app_module, monkeypatch)
-    summary = _summary()
-    monkeypatch.setattr(app_module.plan_repo, "complete_session", MagicMock(return_value=summary))
+    monkeypatch.setattr(
+        app_module.plan_repo, "complete_session", MagicMock(return_value={**_summary(), "newly_completed": True})
+    )
 
     response = sign_in("usr_1").post("/api/sessions/42/complete")
 
     assert response.status_code == 200
-    assert response.get_json() == summary
+    assert response.get_json() == {**_summary(), "points": 100, "points_earned": 25}
     app_module.plan_repo.complete_session.assert_called_once_with(42)
+    completed_count.assert_called_once_with("usr_1")
+
+
+def test_recompleting_a_session_earns_no_points(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, completed_at="2026-10-13T04:00:00+00:00")
+    monkeypatch.setattr(
+        app_module.plan_repo, "complete_session", MagicMock(return_value={**_summary(), "newly_completed": False})
+    )
+
+    body = sign_in("usr_1").post("/api/sessions/42/complete").get_json()
+
+    assert (body["points"], body["points_earned"]) == (100, 0)
 
 
 def test_complete_session_not_found_returns_404(app_module, sign_in, monkeypatch):

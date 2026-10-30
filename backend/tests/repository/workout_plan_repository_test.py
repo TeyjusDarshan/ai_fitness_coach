@@ -689,6 +689,15 @@ def test_complete_session_does_not_recomplete_an_already_completed_plan():
     assert "plans" not in client.inserted
 
 
+def test_complete_session_is_new_only_the_first_time():
+    client = FakeSupabaseClient()
+    _seed_plan_with_sessions(client, day3_completed_at=None)
+    repo = _repo(client)
+
+    assert repo.complete_session(5)["newly_completed"] is True
+    assert repo.complete_session(5)["newly_completed"] is False
+
+
 def test_complete_session_unknown_session_returns_none():
     assert _repo(FakeSupabaseClient()).complete_session(404) is None
 

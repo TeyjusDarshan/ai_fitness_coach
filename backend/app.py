@@ -546,6 +546,10 @@ def complete_session(session_id):
     if summary is None:
         return jsonify({"error": f"Session {session_id} not found."}), 404
 
+    # For the PWA's grow screen: her points now, and what this workout added.
+    newly_completed = summary.pop("newly_completed", False)
+    summary["points_earned"] = POINTS_PER_WORKOUT if newly_completed else 0
+    summary["points"] = plan_repo.count_completed_sessions(g.user_id) * POINTS_PER_WORKOUT
     return jsonify(summary), 200
 
 

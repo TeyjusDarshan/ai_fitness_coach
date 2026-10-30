@@ -1,14 +1,35 @@
 import * as THREE from 'three'
 import { Magic } from './Magic.js'
-import { LAST_STEP, PottedPlant } from './PottedPlant.js'
+import { PottedPlant } from './PottedPlant.js'
+import { smoothstep } from './geometry.js'
 
 // Seconds each growth step takes.
 const STEP_DURATION = 1.4
-// Camera framing for the empty pot and for the fully grown bush; it eases
-// between them as the plant grows, so a small plant isn't lost in the box and
-// a big one isn't cut off.
-const FRAME_SMALL = { lookY: -0.25, distance: 4.6 }
-const FRAME_FULL = { lookY: 0.8, distance: 6.3 }
+// The camera frames the plant from the pot's base to its top, which is
+// roughly this high at each step (stem plus buds/flowers, bush at step 9).
+// It grows unevenly — most of the height comes by the first bloom — so the
+// framing follows it rather than the step number.
+const PLANT_TOP = [0.1, 0.4, 0.65, 0.95, 1.25, 1.75, 2.0, 2.15, 2.25, 2.45, 2.45, 2.45]
+const POT_BASE = -1.05
+// Camera distance per unit of plant height framed, and the closest it comes
+// (so the empty pot isn't oversized).
+const DISTANCE_PER_HEIGHT = 1.95
+const MIN_DISTANCE = 5.2
+const MIN_LOOK_Y = -0.3
+
+// Touching the plant sends a gust through it: a damped spring on its lean.
+const GUST_STIFFNESS = 38 // springs back about once a second
+const GUST_DAMPING = 2.2 // settles in ~2 s
+const GUST_TAP = 0.9 // lean speed a tap gives
+const GUST_SWIPE = 0.012 // lean speed per pixel swiped
+const GUST_MAX_LEAN = 0.2 // radians
+
+/** PLANT_TOP at fractional step s, eased between steps like the plant itself. */
+function plantTop(s: number): number {
+  const i = Math.max(0, Math.min(PLANT_TOP.length - 1, Math.floor(s)))
+  if (i >= PLANT_TOP.length - 1) return PLANT_TOP[PLANT_TOP.length - 1]
+  return PLANT_TOP[i] + (PLANT_TOP[i + 1] - PLANT_TOP[i]) * smoothstep(0, 1, s - i)
+}
 
 /**
  * The dashboard's 3D potted plant (from the plant/ prototype), drawn into a
@@ -29,6 +50,11 @@ export class PlantScene {
   private step = 0 // where we're going
   private shown = 0 // fractional step currently on screen
   private container: HTMLElement
+  private raycaster = new THREE.Raycaster()
+  private pointer = new THREE.Vector2()
+  private lean = 0 // extra sideways lean from gusts (radians, + = to the left)
+  private leanSpeed = 0
+  private dragX: number | null = null // last x of a drag that started on the plant
 
   constructor(container: HTMLElement) {
     this.container = container
@@ -63,6 +89,12 @@ export class PlantScene {
     this.resizeObserver.observe(container)
     this.fit()
 
+    const canvas = this.renderer.domElement
+    canvas.addEventListener('pointerdown', this.onPointerDown)
+    canvas.addEventListener('pointermove', this.onPointerMove)
+    canvas.addEventListener('pointerup', this.onPointerUp)
+    canvas.addEventListener('pointercancel', this.onPointerUp)
+
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
@@ -77,6 +109,11 @@ export class PlantScene {
 
   dispose() {
     this.renderer.setAnimationLoop(null)
+    const canvas = this.renderer.domElement
+    canvas.removeEventListener('pointerdown', this.onPointerDown)
+    canvas.removeEventListener('pointermove', this.onPointerMove)
+    canvas.removeEventListener('pointerup', this.onPointerUp)
+    canvas.removeEventListener('pointercancel', this.onPointerUp)
     this.resizeObserver.disconnect()
     this.scene.traverse((object) => {
       const mesh = object as THREE.Mesh
@@ -87,6 +124,52 @@ export class PlantScene {
     this.renderer.dispose()
     this.renderer.forceContextLoss()
     this.renderer.domElement.remove()
+  }
+
+  /** Whether the pointer event lands on the plant (or its pot). */
+  private hitsPlant(event: PointerEvent): boolean {
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    this.pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1)
+    this.raycaster.setFromCamera(this.pointer, this.camera)
+    return this.raycaster.intersectObject(this.plant, true).length > 0
+  }
+
+  private onPointerDown = (event: PointerEvent) => {
+    if (!this.hitsPlant(event)) return
+    // Blow away from the finger: a touch on the right pushes it left.
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    this.puff(event.clientX > rect.left + rect.width / 2 ? 1 : -1)
+    this.dragX = event.clientX
+    this.renderer.domElement.setPointerCapture(event.pointerId)
+    navigator.vibrate?.(8)
+  }
+
+  /** A gust, as from a tap: `fromSide` 1 blows from the right (it leans left), -1 from the left. */
+  puff(fromSide: 1 | -1 = 1) {
+    this.leanSpeed += fromSide * GUST_TAP
+  }
+
+  // A swipe across the plant pushes it the way the finger moves.
+  private onPointerMove = (event: PointerEvent) => {
+    if (this.dragX === null) return
+    this.leanSpeed -= (event.clientX - this.dragX) * GUST_SWIPE
+    this.dragX = event.clientX
+  }
+
+  private onPointerUp = () => {
+    this.dragX = null
+  }
+
+  /** Step the gust spring and apply it: the plant leans, and its leaves flutter while it moves. */
+  private blow(dt: number, time: number) {
+    this.leanSpeed += (-GUST_STIFFNESS * this.lean - GUST_DAMPING * this.leanSpeed) * dt
+    this.lean = Math.max(-GUST_MAX_LEAN, Math.min(GUST_MAX_LEAN, this.lean + this.leanSpeed * dt))
+    // PottedPlant.update has just set its gentle idle sway; add the gust on top.
+    this.plant.plant.rotation.z += this.lean
+    const flutter = Math.min(1, Math.abs(this.leanSpeed))
+    this.plant.leaves.forEach((leaf, i) => {
+      leaf.mesh.rotation.x = flutter * 0.35 * Math.sin(time * 18 + i * 1.7)
+    })
   }
 
   private fit() {
@@ -125,12 +208,13 @@ export class PlantScene {
 
     this.plant.setStep(this.shown)
     this.plant.update(dt, time)
+    this.blow(dt, time)
     this.magic.update(dt, time)
 
     // A slow drift instead of the prototype's pointer parallax (no hover on phones).
-    const grown = this.shown / LAST_STEP
-    const lookY = FRAME_SMALL.lookY + (FRAME_FULL.lookY - FRAME_SMALL.lookY) * grown
-    const distance = (FRAME_SMALL.distance + (FRAME_FULL.distance - FRAME_SMALL.distance) * grown) * this.distanceFactor
+    const top = plantTop(this.shown)
+    const lookY = Math.max(MIN_LOOK_Y, (POT_BASE + top) / 2)
+    const distance = Math.max(MIN_DISTANCE, (top - POT_BASE) * DISTANCE_PER_HEIGHT) * this.distanceFactor
     this.lookAt.set(0, lookY, 0)
     this.camera.position.set(Math.sin(time * 0.25) * 0.35, lookY + 0.65 + Math.sin(time * 0.18) * 0.08, distance)
     this.camera.lookAt(this.lookAt)

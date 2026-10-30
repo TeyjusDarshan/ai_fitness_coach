@@ -7,6 +7,7 @@ import { DashboardScreen } from './screens/DashboardScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
 import { SummaryScreen } from './screens/SummaryScreen'
+import { GrowScreen } from './screens/GrowScreen'
 import { RoutineVideoScreen } from './screens/RoutineVideoScreen'
 import { WorkoutDetailScreen } from './screens/WorkoutDetailScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
@@ -108,6 +109,14 @@ function App() {
         element={
           <RequireAuth>
             <RestTimerScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/grow"
+        element={
+          <RequireAuth>
+            <GrowScreen />
           </RequireAuth>
         }
       />
