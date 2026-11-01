@@ -40,6 +40,8 @@ export interface LibraryExercise {
   loaded_joints: string[]
   min_reps: number | null
   max_reps: number | null
+  // A hold measured in seconds, so min/max_reps are seconds.
+  is_time_based: boolean
   avoid_if: string
 }
 
@@ -243,19 +245,28 @@ export function regeneratePlan(adminKey: string, userId: string): Promise<{ plan
   })
 }
 
+// The fields of an exercise entry that change when the coach swaps it.
+export type SwappedExercise = Pick<
+  ExerciseEntry,
+  'exercise_id' | 'name' | 'movement_type' | 'orientation' | 'dominant' | 'is_time_based' | 'equipment' | 'video_url' | 'rep_range'
+>
+
 // Change an upcoming workout's sets, per-set targets (reps, or seconds for a
-// timed exercise) and coach note (blank clears it) for one exercise.
-// Returns the stored values.
+// timed exercise) and coach note (blank clears it) for one exercise, and
+// optionally swap it for another library exercise (`exerciseId`; the targets
+// are then for the new one). Returns the stored values, plus the new
+// exercise's display fields when it was swapped.
 export function editPrescription(
   adminKey: string,
   sessionExerciseId: number,
   sets: number,
   reps: number[],
   note: string,
-): Promise<{ id: number; sets: number; reps: string; note: string | null }> {
+  exerciseId?: number,
+): Promise<{ id: number; sets: number; reps: string; note: string | null; exercise?: SwappedExercise }> {
   return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ sets, reps, note }),
+    body: JSON.stringify({ sets, reps, note, exercise_id: exerciseId }),
   })
 }
 

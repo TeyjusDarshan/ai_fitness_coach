@@ -92,7 +92,7 @@ def test_monitor_for_an_unknown_client_is_404(monitor):
 
 def _slot(completed_at=None, scheduled_date="2026-10-20", plan_completed=False, logs=()):
     return {
-        "id": 70, "sets": 3, "reps": "10",
+        "id": 70, "exercise_id": 4, "sets": 3, "reps": "10",
         "session_exercise_set_logs": [{"set_number": n} for n in logs],
         "sessions": {"id": 7, "scheduled_date": scheduled_date, "completed_at": completed_at,
                      "plans": {"user_id": "usr_1", "completed": plan_completed}},
@@ -177,6 +177,68 @@ def test_only_untouched_upcoming_workouts_can_be_edited(editing, slot):
     controller.plan_repo.get_session_exercise_for_edit.return_value = slot
 
     assert _edit(client, {"sets": 3, "reps": [10, 10, 10]}).status_code == 409
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+PLANK = {
+    "id": 9, "name": "Knee plank", "movement_type": "rotation", "orientation": "", "dominant": False,
+    "equipment": ["bodyweight"], "loaded_joints": ["spine"], "min_reps": 20, "max_reps": 45,
+    "is_time_based": True, "avoid_if": "", "video_url": "",
+}
+
+
+def test_editing_can_swap_the_exercise(editing, monkeypatch):
+    client, controller = editing
+    monkeypatch.setattr(controller.exercise_repo, "get_exercise", MagicMock(return_value=PLANK))
+
+    response = _edit(client, {"sets": 2, "reps": [20, 25], "exercise_id": 9})
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "id": 70, "sets": 2, "reps": "20,25",
+        "exercise": {
+            "exercise_id": 9, "name": "Knee plank", "movement_type": "rotation", "orientation": None,
+            "dominant": False, "is_time_based": True, "equipment": ["bodyweight"], "video_url": None,
+            "rep_range": "20-45",
+        },
+    }
+    controller.exercise_repo.get_exercise.assert_called_once_with(9)
+    controller.plan_repo.update_session_exercise_prescription.assert_called_once_with(
+        70, 2, "20,25", exercise=PLANK
+    )
+
+
+def test_sending_the_same_exercise_is_not_a_swap(editing, monkeypatch):
+    client, controller = editing
+    monkeypatch.setattr(controller.exercise_repo, "get_exercise", MagicMock())
+
+    response = _edit(client, {"sets": 3, "reps": [10, 10, 10], "exercise_id": 4})
+
+    assert response.status_code == 200
+    assert "exercise" not in response.get_json()
+    controller.exercise_repo.get_exercise.assert_not_called()
+    controller.plan_repo.update_session_exercise_prescription.assert_called_once_with(70, 3, "10")
+
+
+def test_swapping_to_an_unknown_exercise_is_rejected(editing, monkeypatch):
+    client, controller = editing
+    monkeypatch.setattr(controller.exercise_repo, "get_exercise", MagicMock(return_value=None))
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10], "exercise_id": 999}).status_code == 400
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+@pytest.mark.parametrize("exercise_id", ["9", True, 9.0])
+def test_swapping_rejects_a_bad_exercise_id(editing, exercise_id):
+    client, controller = editing
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10], "exercise_id": exercise_id}).status_code == 400
+    controller.plan_repo.update_session_exercise_prescription.assert_not_called()
+
+
+def test_swapping_is_refused_once_sets_are_logged(editing, monkeypatch):
+    client, controller = editing
+    controller.plan_repo.get_session_exercise_for_edit.return_value = _slot(logs=(1,))
+    monkeypatch.setattr(controller.exercise_repo, "get_exercise", MagicMock(return_value=PLANK))
+    assert _edit(client, {"sets": 3, "reps": [10, 10, 10], "exercise_id": 9}).status_code == 409
     controller.plan_repo.update_session_exercise_prescription.assert_not_called()
 
 

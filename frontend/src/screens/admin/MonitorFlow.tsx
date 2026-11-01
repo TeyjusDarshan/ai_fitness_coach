@@ -3,6 +3,7 @@ import { ApiError } from '../../api'
 import {
   editPrescription,
   fetchClientMonitor,
+  fetchPlanBuilderOptions,
   fetchClients,
   fetchExerciseFeedbackAudioUrl,
   fetchFeedbackAudioUrl,
@@ -10,7 +11,9 @@ import {
   saveCoachNotes,
   type ClientMonitor,
   type ClientSummary,
+  type LibraryExercise,
   type MonitorWorkout,
+  type SwappedExercise,
 } from '../../adminApi'
 import { LoggedSets, Prescription } from '../../components/ExerciseLog'
 import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, WORKOUT_STATUS_LABELS } from '../../utils'
@@ -20,7 +23,8 @@ import { humanize } from './planDraft'
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
 // what was logged, the AI analysis and the client's own voice feedback.
-// An upcoming workout's sets and reps can be edited per exercise, and the
+// An upcoming workout's exercises can be swapped and their sets and reps
+// edited, and the
 // current week's coach notes edited or the week rebuilt from progression.
 export function MonitorFlow({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
@@ -465,9 +469,9 @@ function WorkoutCard({
                   exercise={exercise}
                   adminKey={adminKey}
                   onUnauthorized={onUnauthorized}
-                  onSaved={(sets, reps, note) => {
+                  onSaved={(sets, reps, note, swapped) => {
                     setExercises((prev) =>
-                      prev.map((ex) => (ex.id === exercise.id ? { ...ex, sets, reps, note } : ex)),
+                      prev.map((ex) => (ex.id === exercise.id ? { ...ex, ...swapped, sets, reps, note } : ex)),
                     )
                     setEditing(null)
                   }}
@@ -513,6 +517,26 @@ function WorkoutCard({
 // Sets plus one target per set (reps, or seconds for a timed exercise).
 const MAX_SETS = 10
 
+// The exercise library, fetched once per admin key and shared by every
+// editor (it's the same list the plan builder uses).
+let libraryCache: { adminKey: string; promise: Promise<LibraryExercise[]> } | null = null
+function loadLibrary(adminKey: string): Promise<LibraryExercise[]> {
+  if (!libraryCache || libraryCache.adminKey !== adminKey) {
+    const promise = fetchPlanBuilderOptions(adminKey).then((options) => options.exercises)
+    promise.catch(() => {
+      if (libraryCache?.promise === promise) libraryCache = null
+    })
+    libraryCache = { adminKey, promise }
+  }
+  return libraryCache.promise
+}
+
+function libraryRange(ex: LibraryExercise): string {
+  const unit = ex.is_time_based ? 'sec' : 'reps'
+  if (ex.min_reps != null && ex.max_reps != null) return `${ex.min_reps}–${ex.max_reps} ${unit}`
+  return unit
+}
+
 function PrescriptionEditor({
   exercise,
   adminKey,
@@ -523,18 +547,64 @@ function PrescriptionEditor({
   exercise: ExerciseEntry
   adminKey: string
   onUnauthorized: () => void
-  onSaved: (sets: number, reps: string, note: string | null) => void
+  onSaved: (sets: number, reps: string, note: string | null, swapped?: SwappedExercise) => void
   onCancel: () => void
 }) {
+  const [library, setLibrary] = useState<LibraryExercise[] | null>(null)
+  const [libraryError, setLibraryError] = useState<string | null>(null)
+  const [exerciseId, setExerciseId] = useState(exercise.exercise_id)
   const [note, setNote] = useState(exercise.note ?? '')
   const [targets, setTargets] = useState<string[]>(() =>
     Array.from({ length: exercise.sets ?? 1 }, (_, i) => String(targetRepsForSet(exercise, i))),
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const unit = repUnit(exercise)
+  const chosen = library?.find((ex) => ex.id === exerciseId)
+  const swapping = exerciseId !== exercise.exercise_id
+  const unit = chosen ? (chosen.is_time_based ? 'sec' : 'reps') : repUnit(exercise)
   const values = targets.map(Number)
   const valid = values.every((v) => Number.isInteger(v) && v >= 1 && v <= 600)
+
+  useEffect(() => {
+    let live = true
+    loadLibrary(adminKey)
+      .then((exercises) => live && setLibrary(exercises))
+      .catch((err) => {
+        if (!live) return
+        if (err instanceof ApiError && err.status === 401) onUnauthorized()
+        else setLibraryError('Could not load the exercise list, so the exercise can\'t be swapped right now.')
+      })
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminKey])
+
+  // Same movement type first (the likely swaps), then everything else.
+  const groups = useMemo(() => {
+    if (!library) return []
+    const byType = new Map<string, LibraryExercise[]>()
+    for (const ex of library) {
+      const list = byType.get(ex.movement_type) ?? []
+      list.push(ex)
+      byType.set(ex.movement_type, list)
+    }
+    return [...byType.entries()].sort(([a], [b]) =>
+      a === exercise.movement_type ? -1 : b === exercise.movement_type ? 1 : a.localeCompare(b),
+    )
+  }, [library, exercise.movement_type])
+
+  function pickExercise(id: number) {
+    const next = library?.find((ex) => ex.id === id)
+    if (!next) return
+    const wasTimed = chosen ? chosen.is_time_based : exercise.is_time_based
+    setExerciseId(id)
+    // Reps and seconds don't carry over: start a new unit at its minimum.
+    if (next.is_time_based !== wasTimed) {
+      const start = String(next.min_reps ?? (next.is_time_based ? 30 : 8))
+      setTargets((prev) => prev.map(() => start))
+    }
+  }
 
   function setCount(next: number) {
     const count = Math.max(1, Math.min(MAX_SETS, next))
@@ -548,8 +618,15 @@ function PrescriptionEditor({
     setSaving(true)
     setError(null)
     try {
-      const result = await editPrescription(adminKey, exercise.id, values.length, values, note)
-      onSaved(result.sets, result.reps, result.note)
+      const result = await editPrescription(
+        adminKey,
+        exercise.id,
+        values.length,
+        values,
+        note,
+        swapping ? exerciseId : undefined,
+      )
+      onSaved(result.sets, result.reps, result.note, result.exercise)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) onUnauthorized()
       else setError(err instanceof Error ? err.message : 'Could not save.')
@@ -559,6 +636,36 @@ function PrescriptionEditor({
 
   return (
     <div className="monitor__editor">
+      <label className="monitor__editor-note">
+        <span className="monitor__label">Exercise</span>
+        {library ? (
+          <select
+            className="login-screen__input admin__select"
+            value={exerciseId}
+            onChange={(e) => pickExercise(Number(e.target.value))}
+          >
+            {groups.map(([type, list]) => (
+              <optgroup key={type} label={humanize(type)}>
+                {list.map((ex) => (
+                  <option key={ex.id} value={ex.id}>
+                    {ex.name} ({libraryRange(ex)})
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        ) : libraryError ? (
+          <span className="admin__hint admin__hint--error">{libraryError}</span>
+        ) : (
+          <span className="admin__muted">Loading exercises…</span>
+        )}
+        {swapping && chosen && (
+          <span className="admin__muted">
+            Swapping {exercise.name} for {chosen.name}
+            {chosen.avoid_if ? ` · Avoid if: ${chosen.avoid_if}` : ''}
+          </span>
+        )}
+      </label>
       <div className="monitor__editor-sets">
         <span className="monitor__label">Sets</span>
         <button type="button" className="monitor__step" onClick={() => setCount(targets.length - 1)} disabled={targets.length <= 1}>

@@ -61,6 +61,17 @@ class WorkoutRepository:
         )
         return [self._normalize_exercise(row) for row in rows]
 
+    def get_exercise(self, exercise_id: int) -> Optional[dict]:
+        """One exercise from the library, or None if there's no such id."""
+        rows = (
+            self.client.table("exercises")
+            .select("*, movement_types(name), equipment(name), exercise_loaded_joints(joints(name))")
+            .eq("id", exercise_id)
+            .execute()
+            .data
+        )
+        return self._normalize_exercise(rows[0]) if rows else None
+
     def get_progressions_or_regressions(self, exercise_id: int, direction: str) -> Optional[list[dict]]:
         """Return the progression/regression exercises linked to exercise_id.
 

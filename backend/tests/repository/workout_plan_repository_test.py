@@ -1340,6 +1340,23 @@ def test_prescription_edit_changes_the_note_only_when_given():
     assert client.tables["session_exercises"][0]["note"] is None
 
 
+def test_prescription_edit_can_swap_the_exercise_and_its_rep_range():
+    client = FakeSupabaseClient()
+    client.seed("session_exercises", [
+        {"id": 70, "exercise_id": 4, "sets": 3, "reps": "10", "rep_range": "8-12", "note": "keep form tight"},
+    ])
+    repo = _repo(client)
+
+    repo.update_session_exercise_prescription(70, 2, "20", exercise={"id": 9, "min_reps": 20, "max_reps": 45})
+
+    assert client.tables["session_exercises"][0] == {
+        "id": 70, "exercise_id": 9, "sets": 2, "reps": "20", "rep_range": "20-45", "note": "keep form tight",
+    }
+
+    repo.update_session_exercise_prescription(70, 2, "20", exercise={"id": 5, "min_reps": None, "max_reps": 12})
+    assert client.tables["session_exercises"][0]["rep_range"] is None
+
+
 def test_completed_sessions_are_counted_across_every_plan_of_the_user():
     # 61 (plan 6) and 71 (plan 7) are completed; usr_other's session isn't counted.
     assert _repo(_history_client()).count_completed_sessions("usr_1") == 2

@@ -3,7 +3,8 @@
 Lists clients and, for one client, their profile basics, reported joint
 pain, period days, app sign-in status, and every past and scheduled workout
 (see WorkoutPlanRepository.get_user_workout_history) — read-only. The
-writes are the coach editing an upcoming workout's sets and reps, editing
+writes are the coach editing an upcoming workout's sets and reps (or
+swapping one of its exercises for another from the library), editing
 the current week's coach notes, and rebuilding the current week from
 progression. The client's
 recorded voice feedback is fetched separately, per session, through
@@ -20,12 +21,14 @@ from backend.repository.workout_plan_repository import (
     app_today,
     workout_status,
 )
+from backend.repository.workout_repository import WorkoutRepository
 
 logger = logging.getLogger(__name__)
 
 admin_monitor_bp = Blueprint("admin_monitor", __name__)
 
 plan_repo = WorkoutPlanRepository()
+exercise_repo = WorkoutRepository()
 
 # Bounds on a coach-edited prescription. Targets are reps, or seconds for a
 # timed exercise, hence the generous ceiling.
@@ -109,7 +112,10 @@ def edit_prescription(session_exercise_id):
     """Change an upcoming workout's sets and per-set targets for one
     exercise: `{"sets": 3, "reps": [12, 12, 10]}` (one target per set; reps,
     or seconds for a timed exercise), and optionally its coach note
-    (`"note"`; blank or null clears it, left out keeps it). Only while the workout is still
+    (`"note"`; blank or null clears it, left out keeps it), and optionally
+    `"exercise_id"` to swap the slot to another library exercise (its rep
+    range comes along; the targets sent are for the new exercise). Only
+    while the workout is still
     scheduled and none of this exercise's sets are logged. Stored like
     progression writes it: one number when every set matches, else a
     comma-separated per-set list. Becomes the baseline next week's
@@ -127,6 +133,9 @@ def edit_prescription(session_exercise_id):
     note = (note or "").strip() or None
     if note is not None and len(note) > MAX_EXERCISE_NOTE:
         return jsonify({"error": f"The note can be at most {MAX_EXERCISE_NOTE} characters."}), 400
+    exercise_id = body.get("exercise_id")
+    if exercise_id is not None and (not isinstance(exercise_id, int) or isinstance(exercise_id, bool)):
+        return jsonify({"error": "'exercise_id' must be an exercise id."}), 400
 
     row = plan_repo.get_session_exercise_for_edit(session_exercise_id)
     if row is None:
@@ -139,19 +148,50 @@ def edit_prescription(session_exercise_id):
     if row.get("session_exercise_set_logs"):
         return jsonify({"error": "She has already logged sets for this exercise."}), 409
 
+    swap = None
+    if exercise_id is not None and exercise_id != row.get("exercise_id"):
+        try:
+            swap = exercise_repo.get_exercise(exercise_id)
+        except Exception:
+            logger.exception("Failed to look up exercise_id=%s", exercise_id)
+            return jsonify({"error": "Failed to save the change."}), 500
+        if swap is None:
+            return jsonify({"error": f"No exercise with id {exercise_id}."}), 400
+
     stored = str(reps[0]) if len(set(reps)) == 1 else ",".join(str(r) for r in reps)
+    kwargs = {}
+    if note_given:
+        kwargs["note"] = note
+    if swap is not None:
+        kwargs["exercise"] = swap
     try:
-        if note_given:
-            plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored, note=note)
-        else:
-            plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored)
+        plan_repo.update_session_exercise_prescription(session_exercise_id, sets, stored, **kwargs)
     except Exception:
         logger.exception("Failed to edit session_exercise_id=%s", session_exercise_id)
         return jsonify({"error": "Failed to save the change."}), 500
     result = {"id": session_exercise_id, "sets": sets, "reps": stored}
     if note_given:
         result["note"] = note
+    if swap is not None:
+        result["exercise"] = _swapped_exercise(swap)
     return jsonify(result), 200
+
+
+def _swapped_exercise(exercise):
+    """The display fields of a swapped-in exercise, shaped like the
+    monitor's exercise entries so the PWA can update the card in place."""
+    low, high = exercise.get("min_reps"), exercise.get("max_reps")
+    return {
+        "exercise_id": exercise["id"],
+        "name": exercise["name"],
+        "movement_type": exercise["movement_type"],
+        "orientation": exercise["orientation"] or None,
+        "dominant": exercise["dominant"],
+        "is_time_based": exercise["is_time_based"],
+        "equipment": exercise["equipment"],
+        "video_url": exercise["video_url"] or None,
+        "rep_range": f"{low}-{high}" if low is not None and high is not None else None,
+    }
 
 
 @admin_monitor_bp.post("/api/admin/users/<user_id>/regenerate-plan")

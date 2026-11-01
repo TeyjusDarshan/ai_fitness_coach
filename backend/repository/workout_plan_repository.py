@@ -142,6 +142,12 @@ def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
 _KEEP = object()
 
 
+def _rep_range(exercise: dict) -> Optional[str]:
+    """A library exercise's "min-max" rep range, or None if either is unset."""
+    low, high = exercise.get("min_reps"), exercise.get("max_reps")
+    return f"{low}-{high}" if low is not None and high is not None else None
+
+
 class PlanRegenerationError(Exception):
     """Why a client's current week can't be rebuilt (shown to the coach)."""
 
@@ -1354,7 +1360,7 @@ class WorkoutPlanRepository:
         rows = (
             self.client.table("session_exercises")
             .select(
-                "id, sets, reps, session_exercise_set_logs(set_number), "
+                "id, exercise_id, sets, reps, session_exercise_set_logs(set_number), "
                 "sessions(id, scheduled_date, completed_at, plans(user_id, completed))"
             )
             .eq("id", session_exercise_id)
@@ -1384,13 +1390,23 @@ class WorkoutPlanRepository:
         self.client.table("plans").update({"coach_notes": coach_notes}).eq("id", plan_id).execute()
 
     def update_session_exercise_prescription(
-        self, session_exercise_id: int, sets: int, reps: str, note: Any = _KEEP
+        self,
+        session_exercise_id: int,
+        sets: int,
+        reps: str,
+        note: Any = _KEEP,
+        exercise: Optional[dict] = None,
     ) -> None:
-        """Set an exercise slot's prescribed sets and per-set target(s), and
-        its coach note when one is given (None clears it)."""
+        """Set an exercise slot's prescribed sets and per-set target(s), its
+        coach note when one is given (None clears it), and — when `exercise`
+        (a library row) is given — swap the slot to that exercise, taking
+        its rep range."""
         values: Dict[str, Any] = {"sets": sets, "reps": reps}
         if note is not _KEEP:
             values["note"] = note
+        if exercise is not None:
+            values["exercise_id"] = exercise["id"]
+            values["rep_range"] = _rep_range(exercise)
         (
             self.client.table("session_exercises")
             .update(values)
