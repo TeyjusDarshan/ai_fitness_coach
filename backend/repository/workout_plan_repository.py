@@ -249,8 +249,10 @@ def _compute_progressed_reps(
     injury_multiplier: Optional[float] = None,
     previous_row: Optional[Dict[str, Any]] = None,
     is_time_based: bool = False,
-) -> List[int]:
-    """Next plan's per-set target reps list for one session_exercises row.
+    max_reps: Optional[int] = None,
+) -> Tuple[List[int], bool]:
+    """Next plan's per-set target reps list for one session_exercises row,
+    and whether it has outgrown the exercise (`advance`).
 
     Driven by the reported RPE and by whether every set's target was hit:
       - RPE 10 (hard), or any set short of its prescribed reps: every set
@@ -260,11 +262,12 @@ def _compute_progressed_reps(
         _bump_next_set) — only the next not-yet-bumped set goes up this week.
       - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
 
-    Going up (RPE 8 or 6) additionally requires the user to have hit the
+    Going up on RPE 8 additionally requires the user to have hit the
     targets two weeks in a row (_held_target_two_weeks, with previous_row
     being the previous plan's row for the same day and exercise); otherwise
-    last week's targets are copied forward unchanged. Coming down (RPE 10,
-    missing RPE, injury) is never held back by this.
+    last week's targets are copied forward unchanged. RPE 6 goes up straight
+    away, with no hold — she said it was too easy. Coming down (RPE 10,
+    missing RPE, injury) is never held back either.
 
     A missing RPE counts as RPE 8 (correct) when every set hit its target,
     and RPE 10 otherwise. An injury_multiplier below 1.0 (the exercise loads
@@ -277,6 +280,12 @@ def _compute_progressed_reps(
     user didn't struggle with it, they just didn't do it. An injury still
     overrides this, dropping 1 from the prescribed targets (nothing was
     performed to go on).
+
+    Going up never takes a set past the exercise's `max_reps` (when given):
+    the bumped set is capped there. Once every set is already at `max_reps`
+    and she earns another increase, the targets are returned unchanged with
+    `advance` True — _apply_rep_bounds then swaps the exercise for its
+    progression (or, with no progression edge, it stays at the max).
 
     For a timed exercise (is_time_based — targets are seconds held) the steps
     are TIMED_CORRECT_STEP / TIMED_EASY_STEP / TIMED_HARD_STEP seconds instead
@@ -292,7 +301,7 @@ def _compute_progressed_reps(
     if injury_multiplier is not None and injury_multiplier < 1.0:
         rpe_bucket = RPE_HARD
     elif exercise_row.get("missed"):
-        return target_reps
+        return target_reps, False
     else:
         reported_rpe = (exercise_row.get("session_exercise_rpe") or {}).get("rpe")
         if reported_rpe is not None:
@@ -305,12 +314,18 @@ def _compute_progressed_reps(
     missed = bool(exercise_row.get("missed"))
     if rpe_bucket == RPE_HARD or not (missed or _hit_target(exercise_row)):
         base_reps = target_reps if missed else _performed_reps(exercise_row, target_reps)
-        return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in base_reps]
-    if not _held_target_two_weeks(exercise_row, previous_row):
-        return target_reps
+        return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in base_reps], False
     if rpe_bucket == RPE_TOO_EASY:
-        return _bump_next_set(target_reps, easy_step)
-    return _bump_next_set(target_reps, correct_step)
+        step = easy_step
+    elif _held_target_two_weeks(exercise_row, previous_row):
+        step = correct_step
+    else:
+        return target_reps, False
+    if max_reps is None:
+        return _bump_next_set(target_reps, step), False
+    if min(target_reps) >= max_reps:
+        return target_reps, True
+    return [min(r, max_reps) for r in _bump_next_set(target_reps, step)], False
 
 
 class WorkoutPlanRepository:
@@ -671,13 +686,17 @@ class WorkoutPlanRepository:
     ) -> List[Dict[str, Any]]:
         """Swap or clamp each item against its exercise's own rep bounds.
 
-        Each item is {"exercise_id", "reps": per-set target list, "rep_range"}.
-        If any set is below the exercise's `min_reps` it is swapped for its
-        "lack of strength" regression with every set at that exercise's
-        `regress_to` bound (`max_reps` by default — the easier exercise starts
-        at the top of its range); above `max_reps`, for its progression with
-        every set at that exercise's `min_reps`. With no
-        matching edge, every set is clamped to the exercise's own min/max.
+        Each item is {"exercise_id", "reps": per-set target list, "rep_range"}
+        plus an optional "advance" flag (from _compute_progressed_reps: every
+        set is at `max_reps` and she earned another increase). If any set is
+        below the exercise's `min_reps` it is swapped for its "lack of
+        strength" regression with every set at that exercise's `regress_to`
+        bound (`max_reps` by default — the easier exercise starts at the top
+        of its range); with no regression edge every set is set to
+        `min_reps`. An item flagged "advance" is swapped for its progression
+        with every set at that exercise's `min_reps`; with no progression
+        edge it stays where it is. Any set over `max_reps` is capped there on
+        its own (sets below it are left alone).
         `rep_range` follows a swapped-in exercise's own min-max. Returns the
         items in the same order, same shape.
         """
@@ -689,14 +708,9 @@ class WorkoutPlanRepository:
             if item["exercise_id"] in rep_bounds
             and min(item["reps"]) < rep_bounds[item["exercise_id"]]["min_reps"]
         ]
-        above_max_ids = [
-            item["exercise_id"]
-            for item in items
-            if item["exercise_id"] in rep_bounds
-            and max(item["reps"]) > rep_bounds[item["exercise_id"]]["max_reps"]
-        ]
+        advance_ids = [item["exercise_id"] for item in items if item.get("advance")]
         regressions = self._fetch_regressions(below_min_ids)
-        progressions = self._fetch_progressions(above_max_ids)
+        progressions = self._fetch_progressions(advance_ids)
 
         replacement_ids = set(regressions.values()) | set(progressions.values())
         replacement_bounds = self._fetch_exercise_rep_bounds(list(replacement_ids))
@@ -717,15 +731,14 @@ class WorkoutPlanRepository:
                     rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
                 else:
                     next_reps_list = [bounds["min_reps"]] * len(next_reps_list)
+            elif item.get("advance") and progressions.get(exercise_id) is not None:
+                target_id = progressions[exercise_id]
+                exercise_id = target_id
+                target_bounds = replacement_bounds[target_id]
+                next_reps_list = [target_bounds["min_reps"]] * len(next_reps_list)
+                rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
             elif bounds is not None and max(next_reps_list) > bounds["max_reps"]:
-                target_id = progressions.get(exercise_id)
-                if target_id is not None:
-                    exercise_id = target_id
-                    target_bounds = replacement_bounds[target_id]
-                    next_reps_list = [target_bounds["min_reps"]] * len(next_reps_list)
-                    rep_range = f"{target_bounds['min_reps']}-{target_bounds['max_reps']}"
-                else:
-                    next_reps_list = [bounds["max_reps"]] * len(next_reps_list)
+                next_reps_list = [min(r, bounds["max_reps"]) for r in next_reps_list]
 
             resolved.append({"exercise_id": exercise_id, "reps": next_reps_list, "rep_range": rep_range})
         return resolved
@@ -739,8 +752,11 @@ class WorkoutPlanRepository:
         used. For each day this is the latest non-period session (the source
         plan's own, else the same day's session in the nearest ancestor plan
         via parent_plan_id, up to MAX_PROGRESSION_HOPS back), plus the
-        non-period session before it, whose rows (keyed (day_number,
-        exercise_id)) feed the two-week hold check.
+        completed non-period session before it, whose rows (keyed
+        (day_number, exercise_id)) feed the two-week hold check. Missed
+        sessions are skipped for that second one just like period ones: a
+        missed week carries its targets forward unchanged, so the week
+        before it is the one to compare against.
 
         A day with no non-period session anywhere in that history falls back
         to the period session itself, carried forward unchanged (its targets
@@ -756,7 +772,13 @@ class WorkoutPlanRepository:
         while plan_id and hops < MAX_PROGRESSION_HOPS and any(len(v) < 2 for v in found.values()):
             for session in self._fetch_plan_sessions(plan_id, PROGRESSION_SESSIONS_SELECT):
                 sessions = found.get(session["day_number"])
-                if sessions is not None and len(sessions) < 2 and not session.get("is_period"):
+                if (
+                    sessions is not None
+                    and len(sessions) < 2
+                    and not session.get("is_period")
+                    # The streak's earlier week must have been done, not missed.
+                    and (not sessions or session.get("completed_at"))
+                ):
                     sessions.append(session)
             parent = (
                 self.client.table("plans").select("parent_plan_id").eq("id", plan_id).execute().data
@@ -832,8 +854,9 @@ class WorkoutPlanRepository:
         (regenerate_current_plan keeping a week's dates) overrides both.
 
         Exercises from a missed session carry forward unchanged (see
-        _compute_progressed_reps), as do exercises that haven't yet held
-        their targets for two weeks running — the previous plan
+        _compute_progressed_reps), as do exercises rated RPE 8 (or unrated)
+        that haven't yet held their targets for two weeks running — the
+        previous plan
         (source_plan["parent_plan_id"]) supplies last week's row for that
         check.
 
@@ -846,11 +869,12 @@ class WorkoutPlanRepository:
         If the recalculated reps falls below the exercise's own `min_reps`
         (from `exercises`), the exercise is swapped for its "lack of
         strength" regression (`exercise_relationships`) and reps is set to
-        that regression's own `max_reps`. If it exceeds `max_reps`, the
-        exercise is swapped for its progression and reps is set to *that*
-        exercise's `min_reps`. If no matching regression/progression edge
-        exists, the exercise is kept as-is and reps is clamped to its own
-        min_reps/max_reps instead. `rep_range` is refreshed to match a
+        that regression's own `max_reps`. Going up, each set is capped at
+        `max_reps`; once every set is at `max_reps` and she earns another
+        increase, the exercise is swapped for its progression and reps is set
+        to *that* exercise's `min_reps`. If no matching regression/progression
+        edge exists, the exercise is kept as-is: every set goes to
+        `min_reps`, or stays at `max_reps`. `rep_range` is refreshed to match a
         swapped-in exercise's own min-max (per the "matched catalog row's
         f'{min_reps}-{max_reps}'" convention); everything else
         (category/slot_label/sets/note, and the day via its session) is
@@ -895,7 +919,7 @@ class WorkoutPlanRepository:
             [row["exercise_id"] for row in exercise_rows]
         )
         exercise_info = self._fetch_exercise_rep_bounds([row["exercise_id"] for row in exercise_rows])
-        computed_reps = {
+        computed = {
             row["id"]: _compute_progressed_reps(
                 row,
                 self._injury_multiplier_for_exercise(
@@ -903,13 +927,15 @@ class WorkoutPlanRepository:
                 ),
                 previous_rows.get((row["day_number"], row["exercise_id"])),
                 bool((exercise_info.get(row["exercise_id"]) or {}).get("is_time_based")),
+                (exercise_info.get(row["exercise_id"]) or {}).get("max_reps"),
             )
             for row in exercise_rows
         }
         resolved = self._apply_rep_bounds([
             {
                 "exercise_id": row["exercise_id"],
-                "reps": computed_reps[row["id"]],
+                "reps": computed[row["id"]][0],
+                "advance": computed[row["id"]][1],
                 "rep_range": row.get("rep_range"),
             }
             for row in exercise_rows
