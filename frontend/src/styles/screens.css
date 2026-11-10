@@ -2574,6 +2574,7 @@
 .monitor__chip--moderate { background: #fde3cf; color: #9a4a10; }
 .monitor__chip--severe { background: var(--danger-soft); color: var(--danger); }
 .monitor__chip--period { background: #fbe6ec; color: #a10f3a; }
+.monitor__chip--skipped { background: #fdf0dc; color: #8a4b08; }
 .monitor__section {
   display: flex;
   flex-direction: column;
@@ -3045,4 +3046,76 @@
   white-space: nowrap;
   padding-left: 12px;
   padding-right: 12px;
+}
+
+/* ---------- Cardio step log (CardioLog) ---------- */
+
+.cardio-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cardio-log__summary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--heading);
+}
+.cardio-log__flag {
+  color: var(--danger);
+}
+.cardio-log__round-title {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cardio-log__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cardio-log__step {
+  padding: 7px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.cardio-log__step:last-child {
+  border-bottom: none;
+}
+.cardio-log__line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+}
+.cardio-log__name {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--heading);
+  font-weight: 600;
+}
+.cardio-log__time {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-secondary);
+}
+.cardio-log__step--skipped .cardio-log__time,
+.cardio-log__rest.cardio-log__rest--skipped {
+  color: var(--danger);
+}
+.cardio-log__step--missing .cardio-log__name,
+.cardio-log__step--missing .cardio-log__time {
+  color: var(--ink-secondary);
+  font-weight: 400;
+}
+.cardio-log__rest {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
 }

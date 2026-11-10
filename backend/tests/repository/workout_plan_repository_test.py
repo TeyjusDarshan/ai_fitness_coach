@@ -97,7 +97,11 @@ class FakeTable:
 
     def upsert(self, row, on_conflict, ignore_duplicates=False):
         keys = on_conflict.split(",")
-        if any(all(r.get(k) == row[k] for k in keys) for r in self.rows):
+        existing = [r for r in self.rows if all(r.get(k) == row[k] for k in keys)]
+        if existing:
+            # Like PostgREST: ignore the row, or merge just its columns in.
+            if not ignore_duplicates:
+                existing[0].update(row)
             self._insert_rows = []
         else:
             self._insert_rows = [row]
@@ -1793,3 +1797,117 @@ def test_completing_a_period_cardio_session_reports_the_seconds_she_did():
     summary = _repo(client).complete_session(22)
 
     assert (summary["work_seconds"], summary["is_period"]) == (35, True)
+
+
+# ---------- cardio step log ----------
+
+def _logging_session(**overrides):
+    return {"id": 22, "kind": "cardio", "cardio_rounds": 2, "cardio_work_seconds": 30, "is_period": False,
+            **overrides}
+
+
+def _log_client():
+    client = FakeSupabaseClient()
+    client.seed("cardio_exercises", CIRCUIT)   # 2 active: Marching rows, Side step
+    return client
+
+
+def test_logging_an_exercise_fills_its_name_and_planned_seconds():
+    client = _log_client()
+
+    _repo(client).log_cardio_step(_logging_session(), 1, 1, "exercise", 12, 3, True)
+
+    [row] = client.tables["session_cardio_logs"]
+    assert (row["exercise_name"], row["cardio_exercise_id"], row["planned_seconds"]) == ("Side step", 2, 30)
+    assert (row["actual_seconds"], row["paused_seconds"], row["skipped"]) == (12, 3, True)
+    assert "rest_actual_seconds" not in row
+
+
+def test_an_exercise_and_its_rest_land_on_one_row():
+    client = _log_client()
+    repo = _repo(client)
+
+    repo.log_cardio_step(_logging_session(), 1, 0, "exercise", 30, 0, False)
+    repo.log_cardio_step(_logging_session(), 1, 0, "rest", 4, 0, True)
+
+    [row] = client.tables["session_cardio_logs"]
+    assert (row["actual_seconds"], row["skipped"]) == (30, False)
+    assert (row["rest_planned_seconds"], row["rest_actual_seconds"], row["rest_skipped"]) == (10, 4, True)
+
+
+def test_the_rest_after_a_rounds_last_exercise_is_the_round_rest():
+    client = _log_client()
+
+    _repo(client).log_cardio_step(_logging_session(), 1, 1, "rest", 30, 5, False)
+
+    [row] = client.tables["session_cardio_logs"]
+    assert (row["rest_planned_seconds"], row["rest_paused_seconds"]) == (30, 5)
+    # Still a valid row on its own: name and planned seconds are always sent.
+    assert (row["exercise_name"], row["planned_seconds"]) == ("Side step", 30)
+
+
+def test_a_period_session_logs_against_its_shorter_plan():
+    client = _log_client()
+
+    _repo(client).log_cardio_step(_logging_session(is_period=True), 1, 0, "rest", 7, 0, False)
+
+    [row] = client.tables["session_cardio_logs"]
+    assert (row["planned_seconds"], row["rest_planned_seconds"]) == (21, 7)
+
+
+@pytest.mark.parametrize("session, args", [
+    (_logging_session(kind="strength"), (1, 0, "exercise", 30, 0, False)),
+    (_logging_session(), (3, 0, "exercise", 30, 0, False)),     # only 2 rounds
+    (_logging_session(), (1, 2, "exercise", 30, 0, False)),     # only 2 exercises
+    (_logging_session(), (1, 0, "warmup", 30, 0, False)),
+    (_logging_session(), (1, 0, "exercise", 601, 0, False)),
+    (_logging_session(), (1, 0, "exercise", 30, -1, False)),
+    (_logging_session(), (2, 1, "rest", 10, 0, False)),         # nothing after the last one
+])
+def test_logging_a_step_that_doesnt_exist_is_refused(session, args):
+    from backend.repository.workout_plan_repository import CardioLogError
+
+    client = _log_client()
+    with pytest.raises(CardioLogError):
+        _repo(client).log_cardio_step(session, *args)
+    assert not client.tables.get("session_cardio_logs")
+
+
+def test_the_cardio_block_carries_the_log_and_its_summary(monkeypatch):
+    client = FakeSupabaseClient()
+    client.seed("plans", [{
+        "id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False, "completed_at": None,
+        "plan_selection_reason": None, "medical_clearance_warning": None,
+        "coach_notes": None, "safety_summary": None,
+    }])
+    client.seed("cardio_exercises", CIRCUIT)
+
+    def log_row(round_number, position, actual, skipped=False, paused=0, rest=None, rest_skipped=False):
+        return {"round": round_number, "position": position, "exercise_name": CIRCUIT[1 - position]["name"],
+                "planned_seconds": 30, "actual_seconds": actual, "paused_seconds": paused, "skipped": skipped,
+                "rest_planned_seconds": 10 if rest is not None else None, "rest_actual_seconds": rest,
+                "rest_paused_seconds": 0 if rest is not None else None, "rest_skipped": rest_skipped}
+
+    client.seed("sessions", [{
+        **_cardio_session(2, completed=True, level=(2, 30), plan_id=7), "id": 22,
+        "started_at": "2026-10-13T10:00:00+00:00", "scheduled_date": "2026-10-13",
+        # Out of order on purpose; round 2's second exercise was never reached.
+        "session_cardio_logs": [
+            log_row(2, 0, 30),
+            log_row(1, 1, 12, skipped=True, paused=40, rest=30),
+            log_row(1, 0, 30, rest=3, rest_skipped=True),
+        ],
+    }])
+
+    [workout] = _repo(client).get_unfinished_plan("usr_1", close_if_resolved=False)["workouts"]
+
+    cardio = workout["cardio"]
+    assert [(e["round"], e["position"]) for e in cardio["log"]] == [(1, 0), (1, 1), (2, 0)]
+    assert cardio["log_summary"] == {
+        "exercises_done": 2,
+        "exercises_skipped": 1,
+        "exercises_missing": 1,
+        "rests_skipped": 1,
+        "active_seconds": 72,
+        "paused_seconds": 40,
+    }

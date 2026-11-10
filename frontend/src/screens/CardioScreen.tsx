@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { CircularCountdown } from '../components/CircularCountdown'
 import { Icon } from '../components/Icon'
+import { logCardioStep } from '../api'
 import { useAppState } from '../state/AppStateContext'
 import { useCountdown } from '../state/useCountdown'
 import { useWakeLock } from '../state/useWakeLock'
 import { playTick, unlockTickSound } from '../state/tickSound'
-import { formatClock } from '../utils'
+import { formatClock, formatShortClock } from '../utils'
 import type { CardioExercise, CardioPlan } from '../types'
 
 // The circuit as a flat list of timed steps: get ready, then every exercise
@@ -59,7 +60,12 @@ export function CardioScreen() {
   const step = steps[stepIdx] as Step | undefined
   const running = step !== undefined && !paused
 
-  const msLeft = useCountdown(step?.seconds ?? 0, running, advance, stepIdx)
+  // Time this step has spent paused: what's banked, plus the pause under
+  // way (if any). Reset as each step starts.
+  const pausedMs = useRef(0)
+  const pausedSince = useRef<number | null>(null)
+
+  const msLeft = useCountdown(step?.seconds ?? 0, running, () => finishStep(false), stepIdx)
   const secondsLeft = Math.ceil(msLeft / 1000)
 
   useWakeLock(step !== undefined)
@@ -69,8 +75,27 @@ export function CardioScreen() {
     if (running && secondsLeft > 0 && secondsLeft <= 3) playTick()
   }, [running, secondsLeft])
 
-  function advance() {
-    if (step?.kind === 'work') navigator.vibrate?.(200)
+  // The current step is over — run out, or skipped. Record how it went
+  // (fire-and-forget, like set logs: a lost one only leaves a gap in the
+  // history), then move on.
+  function finishStep(skipped: boolean) {
+    if (!step) return
+    const now = Date.now()
+    const pausedTotal = pausedMs.current + (pausedSince.current === null ? 0 : now - pausedSince.current)
+    pausedMs.current = 0
+    pausedSince.current = null
+
+    const target = stepLogTarget(step, plan?.exercises.length ?? 0)
+    if (target && day?.session_id) {
+      logCardioStep(day.session_id, {
+        ...target,
+        actual_seconds: skipped ? Math.max(0, Math.round(step.seconds - msLeft / 1000)) : step.seconds,
+        paused_seconds: Math.round(pausedTotal / 1000),
+        skipped,
+      }).catch(() => {})
+    }
+
+    if (step.kind === 'work') navigator.vibrate?.(200)
     if (stepIdx + 1 >= steps.length) {
       navigate(`/day/${dayNum}/cardio/rate`, { replace: true })
       return
@@ -81,12 +106,18 @@ export function CardioScreen() {
   function skip() {
     unlockTickSound()
     setPaused(false)
-    advance()
+    finishStep(true)
   }
 
   function togglePause() {
     unlockTickSound()
-    setPaused((p) => !p)
+    if (paused) {
+      if (pausedSince.current !== null) pausedMs.current += Date.now() - pausedSince.current
+      pausedSince.current = null
+    } else {
+      pausedSince.current = Date.now()
+    }
+    setPaused(!paused)
   }
 
   if (!day || !plan || day.locked || day.status === 'missed' || plan.exercises.length === 0) {
@@ -134,7 +165,7 @@ export function CardioScreen() {
         exercise={exercise}
         playing={step.kind === 'work' && !paused}
         // During an exercise, the time left; before one, how long it will run.
-        badge={shortClock(step.kind === 'work' ? secondsLeft : plan.work_seconds)}
+        badge={formatShortClock(step.kind === 'work' ? secondsLeft : plan.work_seconds)}
       />
 
       {step.kind === 'ready' && (
@@ -242,9 +273,17 @@ export function CardioScreen() {
   )
 }
 
-// "0:30" — the clip badge's compact form of formatClock's "00:30".
-function shortClock(seconds: number): string {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+// Which session_cardio_logs row (and which half of it) a step belongs to:
+// an exercise is its own; a rest belongs to the exercise before it — for a
+// round rest, the previous round's last one. The get-ready isn't logged.
+function stepLogTarget(
+  step: Step,
+  count: number,
+): { round: number; position: number; part: 'exercise' | 'rest' } | null {
+  if (step.kind === 'work') return { round: step.round, position: step.exercise, part: 'exercise' }
+  if (step.kind === 'rest') return { round: step.round, position: step.exercise - 1, part: 'rest' }
+  if (step.kind === 'round-rest') return { round: step.round - 1, position: count - 1, part: 'rest' }
+  return null
 }
 
 // One per exercise, in turn.

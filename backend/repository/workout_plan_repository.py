@@ -43,7 +43,8 @@ SESSION_EXERCISE_JOIN = (
 )
 
 # A plan's sessions (one per training day) with their exercises nested in.
-PLAN_SESSIONS_SELECT = f"*, session_exercises({SESSION_EXERCISE_JOIN})"
+# (A cardio session's step-by-step record comes along as session_cardio_logs.)
+PLAN_SESSIONS_SELECT = f"*, session_exercises({SESSION_EXERCISE_JOIN}), session_cardio_logs(*)"
 
 # Lighter than SESSION_EXERCISE_JOIN: progression only needs exercise_id (not
 # the nested exercises(...) join) since it's carried forward as-is into the
@@ -65,6 +66,10 @@ CARDIO_HISTORY_SELECT = (
 
 # Public Storage bucket holding the cardio circuit's clips and poster frames.
 CARDIO_VIDEO_BUCKET = "cardio-videos"
+# A logged cardio step's seconds (done or paused) must fall in 0..this.
+CARDIO_LOG_MAX_SECONDS = 600
+CARDIO_LOG_PARTS = ("exercise", "rest")
+
 # How long the cardio circuit (cardio_exercises) is cached per repository.
 CARDIO_CIRCUIT_TTL_SECONDS = 300
 
@@ -134,6 +139,45 @@ def _cardio_media_url(path: Optional[str]) -> Optional[str]:
     return f"{base}/storage/v1/object/public/{CARDIO_VIDEO_BUCKET}/{quote(path)}"
 
 
+def _cardio_log(session: dict, planned_steps: int) -> Dict[str, Any]:
+    """A cardio session's step-by-step record (session_cardio_logs) for its
+    `cardio` block: `log`, one entry per exercise per round in order, and
+    `log_summary`. An exercise is done when its time was logged and it
+    wasn't skipped; `exercises_missing` counts the planned ones never
+    logged at all (she left before reaching them)."""
+    rows = sorted(session.get("session_cardio_logs") or [], key=lambda r: (r["round"], r["position"]))
+    log = [
+        {
+            "round": r["round"],
+            "position": r["position"],
+            "name": r["exercise_name"],
+            "planned_seconds": r["planned_seconds"],
+            "actual_seconds": r.get("actual_seconds"),
+            "paused_seconds": r.get("paused_seconds"),
+            "skipped": bool(r.get("skipped")),
+            "rest_planned_seconds": r.get("rest_planned_seconds"),
+            "rest_actual_seconds": r.get("rest_actual_seconds"),
+            "rest_paused_seconds": r.get("rest_paused_seconds"),
+            "rest_skipped": bool(r.get("rest_skipped")),
+        }
+        for r in rows
+    ]
+    logged = [entry for entry in log if entry["actual_seconds"] is not None]
+    return {
+        "log": log,
+        "log_summary": {
+            "exercises_done": sum(1 for entry in logged if not entry["skipped"]),
+            "exercises_skipped": sum(1 for entry in logged if entry["skipped"]),
+            "exercises_missing": max(0, planned_steps - len(logged)),
+            "rests_skipped": sum(1 for entry in log if entry["rest_skipped"]),
+            "active_seconds": sum(entry["actual_seconds"] or 0 for entry in log),
+            "paused_seconds": sum(
+                (entry["paused_seconds"] or 0) + (entry["rest_paused_seconds"] or 0) for entry in log
+            ),
+        },
+    }
+
+
 def is_session_missed(session: dict, today: date) -> bool:
     """A session is missed once its scheduled_date has passed without it being
     completed — including one that was started (sets logged) but never
@@ -191,6 +235,10 @@ def _rep_range(exercise: dict) -> Optional[str]:
 
 class PlanRegenerationError(Exception):
     """Why a client's current week can't be rebuilt (shown to the coach)."""
+
+
+class CardioLogError(ValueError):
+    """Why a cardio step can't be logged against a session (shown to the client)."""
 
 
 class PainLevel(Enum):
@@ -641,6 +689,7 @@ class WorkoutPlanRepository:
             "round_rest_seconds": CARDIO_ROUND_REST_SECONDS,
             "estimated_seconds": estimated_seconds((rounds, work_seconds), len(circuit)),
             "exercises": circuit,
+            **_cardio_log(session, rounds * len(circuit)),
         }
 
     def get_previous_plan_workouts(self, user_id: str, before_plan_id: int) -> List[dict]:
@@ -1453,6 +1502,70 @@ class WorkoutPlanRepository:
                 "is_period": bool(session.get("is_period")),
             })
         return summary
+
+    def log_cardio_step(
+        self, session: dict, round_number: int, position: int, part: str,
+        actual_seconds: int, paused_seconds: int, skipped: bool,
+    ) -> dict:
+        """Record how one step of a cardio session went: the exercise at
+        `position` (0-based, circuit order) of round `round_number`, or —
+        part "rest" — the rest that followed it (the round rest after a
+        round's last exercise). One session_cardio_logs row per exercise per
+        round holds both; this upserts only the given part's columns, so the
+        exercise and its rest can arrive in either order, and a re-run of
+        the circuit overwrites the earlier attempt.
+
+        The exercise name and planned seconds come from here, not the
+        client: the circuit, and the session's level (70% on a period day).
+        Raises CardioLogError when the step doesn't exist in this session.
+        """
+        if not is_cardio(session):
+            raise CardioLogError("This isn't a cardio workout.")
+        if part not in CARDIO_LOG_PARTS:
+            raise CardioLogError("'part' must be 'exercise' or 'rest'.")
+        circuit = self._cardio_circuit()
+        rounds = session["cardio_rounds"]
+        if not 1 <= round_number <= rounds:
+            raise CardioLogError(f"'round' must be between 1 and {rounds}.")
+        if not 0 <= position < len(circuit):
+            raise CardioLogError(f"'position' must be between 0 and {len(circuit) - 1}.")
+        for value in (actual_seconds, paused_seconds):
+            if not 0 <= value <= CARDIO_LOG_MAX_SECONDS:
+                raise CardioLogError(f"Seconds must be between 0 and {CARDIO_LOG_MAX_SECONDS}.")
+        last_of_round = position == len(circuit) - 1
+        if part == "rest" and last_of_round and round_number == rounds:
+            raise CardioLogError("There's no rest after the last exercise.")
+
+        work_seconds = actual_work_seconds(session)
+        exercise = circuit[position]
+        row = {
+            "session_id": session["id"],
+            "round": round_number,
+            "position": position,
+            # Always sent, so even a rest arriving first makes a valid row.
+            "cardio_exercise_id": exercise["id"],
+            "exercise_name": exercise["name"],
+            "planned_seconds": work_seconds,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if part == "exercise":
+            row.update({"actual_seconds": actual_seconds, "paused_seconds": paused_seconds, "skipped": skipped})
+        else:
+            row.update({
+                "rest_planned_seconds": (
+                    CARDIO_ROUND_REST_SECONDS if last_of_round else exercise_rest_seconds(work_seconds)
+                ),
+                "rest_actual_seconds": actual_seconds,
+                "rest_paused_seconds": paused_seconds,
+                "rest_skipped": skipped,
+            })
+        result = (
+            self.client.table("session_cardio_logs")
+            .upsert(row, on_conflict="session_id,round,position")
+            .execute()
+            .data
+        )
+        return result[0] if result else row
 
     def set_cardio_rating(self, session_id: int, rating: str) -> Optional[dict]:
         """Record how hard a cardio session felt (easy / medium / hard),

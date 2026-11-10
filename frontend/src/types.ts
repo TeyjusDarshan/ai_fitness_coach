@@ -40,6 +40,34 @@ export interface CardioExercise {
   poster_url: string | null
 }
 
+// How one exercise of one round actually went (session_cardio_logs), with
+// the rest that followed it — null rest fields after the final exercise or
+// when she left before the rest ended. Seconds are active time; pauses are
+// counted separately.
+export interface CardioLogEntry {
+  round: number
+  position: number
+  name: string
+  planned_seconds: number
+  actual_seconds: number | null
+  paused_seconds: number | null
+  skipped: boolean
+  rest_planned_seconds: number | null
+  rest_actual_seconds: number | null
+  rest_paused_seconds: number | null
+  rest_skipped: boolean
+}
+
+export interface CardioLogSummary {
+  exercises_done: number
+  exercises_skipped: number
+  // Planned but never reached (she left early).
+  exercises_missing: number
+  rests_skipped: number
+  active_seconds: number
+  paused_seconds: number
+}
+
 // What a cardio session runs: the whole circuit, `rounds` times, each
 // exercise for `work_seconds`, with rests between exercises and rounds.
 export interface CardioPlan {
@@ -55,6 +83,9 @@ export interface CardioPlan {
   // How long the whole circuit takes, rests included.
   estimated_seconds: number
   exercises: CardioExercise[]
+  // What she actually did, step by step (empty until she runs it).
+  log: CardioLogEntry[]
+  log_summary: CardioLogSummary
 }
 
 // 'strength' runs exercise by exercise with sets and reps; 'cardio' is a

@@ -726,3 +726,62 @@ def test_dashboard_shows_a_cardio_day_as_a_workout_day(app_module, sign_in, monk
     day2 = days[1]
     assert (day2["kind"], day2["status"], day2["locked"], day2["split_name"]) == ("cardio", "next", False, "Cardio")
     assert day2["cardio"] == cardio
+
+
+def _step(**overrides):
+    return {"round": 1, "position": 0, "part": "exercise", "actual_seconds": 30, "paused_seconds": 0,
+            "skipped": False, **overrides}
+
+
+def test_logging_a_cardio_step_saves_it(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, kind="cardio")
+    monkeypatch.setattr(app_module.plan_repo, "log_cardio_step", MagicMock(return_value={"id": 1}))
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-log", json=_step(skipped=True, actual_seconds=12))
+
+    assert response.status_code == 200
+    args = app_module.plan_repo.log_cardio_step.call_args.args
+    assert args[0]["id"] == 42
+    assert args[1:] == (1, 0, "exercise", 12, 0, True)
+
+
+@pytest.mark.parametrize("body", [
+    _step(round="1"), _step(actual_seconds=None), _step(skipped="no"), _step(position=True),
+])
+def test_logging_a_cardio_step_needs_whole_numbers_and_a_skip_flag(app_module, sign_in, monkeypatch, body):
+    _session_42(app_module, monkeypatch, kind="cardio")
+    monkeypatch.setattr(app_module.plan_repo, "log_cardio_step", MagicMock())
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-log", json=body)
+
+    assert response.status_code == 400
+    app_module.plan_repo.log_cardio_step.assert_not_called()
+
+
+def test_a_step_the_session_doesnt_have_is_refused(app_module, sign_in, monkeypatch):
+    from backend.repository.workout_plan_repository import CardioLogError
+
+    _session_42(app_module, monkeypatch)
+    monkeypatch.setattr(
+        app_module.plan_repo, "log_cardio_step", MagicMock(side_effect=CardioLogError("This isn't a cardio workout."))
+    )
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-log", json=_step())
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == "This isn't a cardio workout."
+
+
+@pytest.mark.parametrize("scheduled_date, owner, status", [
+    ("2026-10-14", "usr_1", 409),   # not open yet
+    ("2026-10-12", "usr_1", 409),   # missed
+    ("2026-10-13", "usr_2", 403),   # someone else's
+])
+def test_logging_a_cardio_step_follows_the_session_lock(app_module, sign_in, monkeypatch, scheduled_date, owner, status):
+    _session_42(app_module, monkeypatch, kind="cardio", scheduled_date=scheduled_date, owner=owner)
+    monkeypatch.setattr(app_module.plan_repo, "log_cardio_step", MagicMock())
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-log", json=_step())
+
+    assert response.status_code == status
+    app_module.plan_repo.log_cardio_step.assert_not_called()

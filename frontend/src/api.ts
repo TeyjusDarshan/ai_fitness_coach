@@ -104,6 +104,21 @@ export function logRpe(
   })
 }
 
+// How one step of the cardio circuit went — an exercise, or the rest after
+// it (the round rest after a round's last exercise) — sent as each ends.
+export interface CardioStepLog {
+  round: number
+  position: number
+  part: 'exercise' | 'rest'
+  actual_seconds: number
+  paused_seconds: number
+  skipped: boolean
+}
+
+export function logCardioStep(sessionId: number, step: CardioStepLog): Promise<unknown> {
+  return request(`/sessions/${sessionId}/cardio-log`, { method: 'PUT', body: JSON.stringify(step) })
+}
+
 // How a cardio session felt, sent before it's completed.
 export function rateCardio(sessionId: number, rating: CardioRating): Promise<{ rating: CardioRating }> {
   return request(`/sessions/${sessionId}/cardio-rating`, {

@@ -69,6 +69,12 @@ export function appTodayIso(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 }
 
+// "0:30" / "1:05" — the compact form of formatClock's "00:30".
+export function formatShortClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds))
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
 export function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60)
   const seconds = totalSeconds % 60

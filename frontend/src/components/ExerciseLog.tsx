@@ -1,7 +1,7 @@
 import { Icon } from './Icon'
 import { LEVELS, levelForCardioRating, levelIndexForRpe } from './effortLevels'
-import { formatMinutes, repUnit, targetRepsForSet } from '../utils'
-import type { CardioPlan, ExerciseEntry } from '../types'
+import { formatMinutes, formatShortClock, repUnit, targetRepsForSet } from '../utils'
+import type { CardioLogEntry, CardioPlan, ExerciseEntry } from '../types'
 
 // What was prescribed for one exercise, and what was logged against it set
 // by set (seconds for a timed exercise). Shared by the client's workout
@@ -88,22 +88,108 @@ export function CardioDetails({ cardio, completed }: { cardio: CardioPlan; compl
           </div>
         )}
       </div>
-      <div className="workout-detail__list">
-        {cardio.exercises.map((exercise, i) => (
-          <div key={exercise.id} className="card workout-detail__exercise">
-            <div className="workout-detail__row">
-              <div className="workout-detail__thumb">
-                <img src={exercise.poster_url ?? '/exercise-placeholder.jpg'} alt="" loading="lazy" />
-                <span className="workout-detail__number workout-detail__number--primary">{i + 1}</span>
-              </div>
-              <div className="workout-detail__info">
-                <div className="workout-detail__name">{exercise.name}</div>
-                <div className="workout-detail__muted">{cardio.work_seconds} seconds</div>
+      {completed || cardio.log.length > 0 ? (
+        <div className="card">
+          <CardioLog cardio={cardio} />
+        </div>
+      ) : (
+        <div className="workout-detail__list">
+          {cardio.exercises.map((exercise, i) => (
+            <div key={exercise.id} className="card workout-detail__exercise">
+              <div className="workout-detail__row">
+                <div className="workout-detail__thumb">
+                  <img src={exercise.poster_url ?? '/exercise-placeholder.jpg'} alt="" loading="lazy" />
+                  <span className="workout-detail__number workout-detail__number--primary">{i + 1}</span>
+                </div>
+                <div className="workout-detail__info">
+                  <div className="workout-detail__name">{exercise.name}</div>
+                  <div className="workout-detail__muted">{cardio.work_seconds} seconds</div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </>
+  )
+}
+
+// What she actually did in a cardio session, from its step log: a summary
+// line, then each round's exercises with seconds done against planned,
+// skips and pauses, and the rest that followed each one. Exercises she
+// never reached (left early) show as "—". Shared by the client's View
+// screen and the coach's monitor.
+export function CardioLog({ cardio }: { cardio: CardioPlan }) {
+  const byStep = new Map(cardio.log.map((entry) => [`${entry.round}:${entry.position}`, entry]))
+  const summary = cardio.log_summary
+  // Normally the circuit's length; wider if the circuit has shrunk since.
+  const positions = Math.max(cardio.exercises.length, ...cardio.log.map((entry) => entry.position + 1))
+  const planned = cardio.rounds * cardio.exercises.length
+
+  return (
+    <div className="cardio-log">
+      <p className="cardio-log__summary">
+        {summary.exercises_done} of {planned} done
+        {summary.exercises_skipped > 0 && (
+          <span className="cardio-log__flag"> · {summary.exercises_skipped} skipped</span>
+        )}
+        {summary.rests_skipped > 0 && (
+          <span className="cardio-log__flag">
+            {' '}
+            · {summary.rests_skipped} rest{summary.rests_skipped === 1 ? '' : 's'} skipped
+          </span>
+        )}
+        {summary.paused_seconds > 0 && ` · paused ${formatShortClock(summary.paused_seconds)}`}
+        {summary.exercises_missing > 0 && <span className="cardio-log__flag"> · left early</span>}
+      </p>
+      {Array.from({ length: cardio.rounds }, (_, i) => i + 1).map((round) => (
+        <div key={round} className="cardio-log__round">
+          {cardio.rounds > 1 && <div className="cardio-log__round-title">Round {round}</div>}
+          <ol className="cardio-log__list">
+            {Array.from({ length: positions }, (_, position) => (
+              <CardioLogStep
+                key={position}
+                entry={byStep.get(`${round}:${position}`)}
+                name={cardio.exercises[position]?.name ?? '—'}
+                plannedSeconds={cardio.work_seconds}
+              />
+            ))}
+          </ol>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function CardioLogStep({
+  entry,
+  name,
+  plannedSeconds,
+}: {
+  entry: CardioLogEntry | undefined
+  name: string
+  plannedSeconds: number
+}) {
+  const reached = entry !== undefined && entry.actual_seconds !== null
+  return (
+    <li
+      className={`cardio-log__step${entry?.skipped ? ' cardio-log__step--skipped' : ''}${reached ? '' : ' cardio-log__step--missing'}`}
+    >
+      <div className="cardio-log__line">
+        <span className="cardio-log__name">{entry?.name ?? name}</span>
+        <span className="cardio-log__time">
+          {reached ? `${entry.actual_seconds} / ${entry.planned_seconds} s` : `— / ${entry?.planned_seconds ?? plannedSeconds} s`}
+          {entry?.skipped && ' · skipped'}
+          {entry?.paused_seconds ? ` · paused ${formatShortClock(entry.paused_seconds)}` : ''}
+        </span>
+      </div>
+      {entry && entry.rest_actual_seconds !== null && (
+        <div className={`cardio-log__rest${entry.rest_skipped ? ' cardio-log__rest--skipped' : ''}`}>
+          Rest {entry.rest_actual_seconds} / {entry.rest_planned_seconds} s
+          {entry.rest_skipped && ' · skipped'}
+          {entry.rest_paused_seconds ? ` · paused ${formatShortClock(entry.rest_paused_seconds)}` : ''}
+        </div>
+      )}
+    </li>
   )
 }

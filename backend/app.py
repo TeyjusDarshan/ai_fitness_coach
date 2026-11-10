@@ -32,6 +32,7 @@ from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
+    CardioLogError,
     PainLevel,
     WorkoutPlanRepository,
     app_today,
@@ -599,6 +600,41 @@ def rate_cardio_session(session_id):
     if session is None:
         return jsonify({"error": "This isn't a cardio workout."}), 400
     return jsonify({"session_id": session_id, "rating": session["cardio_rating"]}), 200
+
+
+@app.put("/api/sessions/<int:session_id>/cardio-log")
+@require_auth
+def log_cardio_step(session_id):
+    """How one step of a cardio session went — an exercise, or the rest after
+    it — sent by the PWA as each one ends:
+    {"round": 1, "position": 0, "part": "exercise" | "rest",
+     "actual_seconds": 30, "paused_seconds": 0, "skipped": false}."""
+    if denied := _deny_unless_session_open(session_id):
+        return denied
+
+    body = request.get_json(silent=True) or {}
+    numbers = {key: body.get(key) for key in ("round", "position", "actual_seconds", "paused_seconds")}
+    if any(not isinstance(v, int) or isinstance(v, bool) for v in numbers.values()):
+        return jsonify({"error": "'round', 'position', 'actual_seconds' and 'paused_seconds' must be whole numbers."}), 400
+    if not isinstance(body.get("skipped"), bool):
+        return jsonify({"error": "'skipped' must be true or false."}), 400
+
+    try:
+        row = plan_repo.log_cardio_step(
+            plan_repo.get_session(session_id),
+            numbers["round"],
+            numbers["position"],
+            body.get("part"),
+            numbers["actual_seconds"],
+            numbers["paused_seconds"],
+            body["skipped"],
+        )
+    except CardioLogError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception:
+        app.logger.exception("Failed to log a cardio step for session_id=%s", session_id)
+        return jsonify({"error": "Failed to save this step."}), 500
+    return jsonify(row), 200
 
 
 @app.post("/api/sessions/<int:session_id>/complete")

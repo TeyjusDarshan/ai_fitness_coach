@@ -176,7 +176,15 @@ export function SummaryScreen() {
             <Icon name={cardio ? 'heart' : 'dumbbell'} size={22} />
             {cardio ? 'Today\'s Cardio' : 'Today\'s Workout'}
           </h2>
-          <button className="today-card__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
+          <button
+            className="today-card__details"
+            onClick={() => {
+              // Pick up what this workout just logged (e.g. the cardio step log).
+              void refreshDashboard()
+                .catch(() => {})
+                .finally(() => navigate(`/workout/${summary.session_id}`))
+            }}
+          >
             View Details
             <Icon name="chevronRight" size={16} />
           </button>

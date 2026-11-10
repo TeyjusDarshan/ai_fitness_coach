@@ -15,7 +15,7 @@ import {
   type MonitorWorkout,
   type SwappedExercise,
 } from '../../adminApi'
-import { LoggedSets, Prescription } from '../../components/ExerciseLog'
+import { CardioLog, LoggedSets, Prescription } from '../../components/ExerciseLog'
 import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, WORKOUT_STATUS_LABELS } from '../../utils'
 import type { CardioPlan, ExerciseEntry } from '../../types'
 import { levelForCardioRating } from '../../components/effortLevels'
@@ -441,6 +441,11 @@ function WorkoutCard({
         <span className="monitor__workout-name">
           {workout.name ?? `Day ${workout.day_number}`}
           {workout.is_period && <span className="monitor__chip monitor__chip--period">Period</span>}
+          {workout.cardio && workout.cardio.log_summary.exercises_skipped + workout.cardio.log_summary.rests_skipped > 0 && (
+            <span className="monitor__chip monitor__chip--skipped">
+              Skipped {workout.cardio.log_summary.exercises_skipped + workout.cardio.log_summary.rests_skipped}
+            </span>
+          )}
           {workout.analysis && <span className="monitor__chip">AI summary</span>}
           {(workout.has_feedback || workout.exercises.some((ex) => ex.has_feedback)) && (
             <span className="monitor__chip">Voice note</span>
@@ -532,6 +537,7 @@ function CardioMonitorLine({ cardio, done }: { cardio: CardioPlan; done: boolean
         {cardio.is_period && ` (period: 70% of the planned ${cardio.planned_work_seconds} s)`}
       </div>
       {done && <div className="workout-detail__effort">Felt: {felt ? felt.label : 'Not rated'}</div>}
+      {cardio.log.length > 0 && <CardioLog cardio={cardio} />}
     </div>
   )
 }
