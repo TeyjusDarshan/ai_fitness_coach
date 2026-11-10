@@ -2863,6 +2863,7 @@
 /* ---------- Cardio circuit (CardioScreen, CardioDetails) ---------- */
 
 .cardio__video {
+  position: relative;
   border-radius: var(--radius-lg);
   overflow: hidden;
   box-shadow: var(--shadow-card);
@@ -2876,10 +2877,58 @@
   object-fit: cover;
   display: block;
 }
+.cardio__work {
+  gap: 12px;
+  padding-top: 0;
+}
+/* The exercise's name on a soft card, as on the mockup. */
 .cardio__now {
-  display: flex;
+  width: 100%;
   flex-direction: column;
+  gap: 0;
+  padding: 10px 16px 12px;
+  text-align: center;
+}
+.cardio__now .timed__name {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+.cardio__work .countdown-ring circle:first-of-type {
+  stroke: #e5dfd2;
+}
+.cardio__progress {
+  display: flex;
   align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 4px 4px 0;
+}
+.cardio__progress-count {
+  flex: none;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+.cardio__progress-dots {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  max-width: 280px;
+}
+.cardio__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #d9d6cc;
+}
+.cardio__dot--done {
+  background: #9cc49f;
+}
+.cardio__dot--current {
+  background: var(--accent);
+  transform: scale(1.15);
 }
 .cardio__plan {
   font-size: 13px;
@@ -2899,4 +2948,101 @@
 .cardio-detail__level svg {
   flex: none;
   color: var(--accent);
+}
+
+/* A pill over the clip's top-left corner: how long the next exercise runs. */
+.cardio__video-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.85);
+  color: var(--heading);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  backdrop-filter: blur(4px);
+}
+.cardio__info-button {
+  justify-self: end;
+  color: var(--accent);
+}
+.cardio__info {
+  font-size: 15px;
+  color: var(--heading);
+}
+.cardio__rest {
+  gap: 10px;
+  padding-top: 0;
+}
+.cardio__rest .timed__badge--lg {
+  width: 56px;
+  height: 56px;
+}
+.cardio__rest .timed__heading {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.1;
+}
+/* The ring's empty track in the soft accent, as on the mockup. */
+.cardio__rest .countdown-ring circle:first-of-type {
+  stroke: #dcebe0;
+}
+.cardio__next {
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1.5px solid var(--accent-soft);
+}
+.cardio__next-thumb {
+  flex: none;
+  width: 88px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  object-fit: cover;
+}
+.cardio__next-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.cardio__next-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cardio__next-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--heading);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.cardio__tip {
+  width: 100%;
+  text-align: left;
+  align-items: center;
+  padding: 12px 16px;
+}
+.cardio__tip > svg {
+  margin-top: 0;
+}
+.cardio__tip-title {
+  color: var(--heading);
+}
+/* Keeps "Skip Exercise" on one line on a 375-390px wide phone. */
+.cardio .timed__controls button {
+  white-space: nowrap;
+  padding-left: 12px;
+  padding-right: 12px;
 }

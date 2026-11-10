@@ -14,7 +14,6 @@ from supabase import create_client, Client
 from agents.prompts_v1 import DAY_TEMPLATES
 from backend.cardio import (
     CARDIO_DAYS,
-    CARDIO_EXERCISE_REST_SECONDS,
     CARDIO_GET_READY_SECONDS,
     CARDIO_RATINGS,
     CARDIO_ROUND_REST_SECONDS,
@@ -26,6 +25,7 @@ from backend.cardio import (
     actual_work_seconds,
     cardio_day,
     estimated_seconds,
+    exercise_rest_seconds,
     is_cardio,
     next_level,
     session_level,
@@ -635,7 +635,9 @@ class WorkoutPlanRepository:
             "is_period": bool(session.get("is_period")),
             "rating": session.get("cardio_rating"),
             "get_ready_seconds": CARDIO_GET_READY_SECONDS,
-            "exercise_rest_seconds": CARDIO_EXERCISE_REST_SECONDS,
+            # A third of the exercise time she actually does (so a period
+            # day's shorter exercises get shorter rests too).
+            "exercise_rest_seconds": exercise_rest_seconds(work_seconds),
             "round_rest_seconds": CARDIO_ROUND_REST_SECONDS,
             "estimated_seconds": estimated_seconds((rounds, work_seconds), len(circuit)),
             "exercises": circuit,

@@ -39,7 +39,9 @@ CARDIO_NEW_ROUND_SECONDS = 30
 CARDIO_PERIOD_FACTOR = 0.7
 
 CARDIO_GET_READY_SECONDS = 10
-CARDIO_EXERCISE_REST_SECONDS = 20
+# The rest between exercises is this fraction of the exercise time (see
+# exercise_rest_seconds); the rest between rounds is fixed.
+CARDIO_EXERCISE_REST_FRACTION = 1 / 3
 CARDIO_ROUND_REST_SECONDS = 30
 
 EASY, MEDIUM, HARD = "easy", "medium", "hard"
@@ -120,17 +122,23 @@ def next_level(
     return tuple(current)
 
 
+def exercise_rest_seconds(work_seconds: int) -> int:
+    """The rest after each exercise: a third of its time, to the nearest
+    second (30 s -> 10 s, 50 s -> 17 s, 60 s -> 20 s)."""
+    return round(work_seconds * CARDIO_EXERCISE_REST_FRACTION)
+
+
 def estimated_seconds(level: Level, n_exercises: int) -> int:
     """How long the whole circuit takes: the get-ready countdown, every
-    exercise of every round, a 20 s rest between exercises and a 30 s rest
-    between rounds (in place of the 20 s one)."""
+    exercise of every round, a rest of a third of the exercise time between
+    exercises, and a 30 s rest between rounds (in place of that one)."""
     rounds, seconds = level
     if n_exercises <= 0 or rounds <= 0:
         return 0
     return (
         CARDIO_GET_READY_SECONDS
         + rounds * n_exercises * seconds
-        + rounds * (n_exercises - 1) * CARDIO_EXERCISE_REST_SECONDS
+        + rounds * (n_exercises - 1) * exercise_rest_seconds(seconds)
         + (rounds - 1) * CARDIO_ROUND_REST_SECONDS
     )
 

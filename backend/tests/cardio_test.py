@@ -7,6 +7,7 @@ from backend.cardio import (
     actual_work_seconds,
     cardio_day,
     estimated_seconds,
+    exercise_rest_seconds,
     next_level,
     period_seconds,
     step_down,
@@ -82,11 +83,16 @@ def test_medium_holds_unless_last_week_was_medium_at_this_level(previous_week):
     assert next_level((1, 40), "medium", previous_week) == (1, 40)
 
 
+@pytest.mark.parametrize("work, rest", [(30, 10), (40, 13), (50, 17), (60, 20), (15, 5), (21, 7)])
+def test_the_rest_between_exercises_is_a_third_of_the_exercise(work, rest):
+    assert exercise_rest_seconds(work) == rest
+
+
 def test_estimated_seconds_counts_work_rests_and_round_rests():
-    # 10 get-ready + 10 x 30 work + 9 x 20 rest.
-    assert estimated_seconds(CARDIO_START, 10) == 10 + 300 + 180
-    # Two rounds: twice the work and rests, plus one 30 s round rest.
-    assert estimated_seconds((2, 60), 10) == 10 + 2 * 600 + 2 * 180 + 30
+    # 10 get-ready + 10 x 30 work + 9 x 10 rest.
+    assert estimated_seconds(CARDIO_START, 10) == 10 + 300 + 90
+    # Two rounds at 60 s: twice the work and 20 s rests, plus one 30 s round rest.
+    assert estimated_seconds((2, 60), 10) == 10 + 2 * 600 + 2 * 9 * 20 + 30
     assert estimated_seconds((1, 30), 0) == 0
 
 

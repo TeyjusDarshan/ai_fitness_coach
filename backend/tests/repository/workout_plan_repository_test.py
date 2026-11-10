@@ -1680,7 +1680,8 @@ def test_unfinished_plan_shows_cardio_days_with_their_circuit(monkeypatch):
     assert (workout["name"], workout["kind"]) == ("Cardio", "cardio")
     cardio = workout["cardio"]
     assert (cardio["rounds"], cardio["work_seconds"], cardio["rating"]) == (1, 40, None)
-    assert cardio["estimated_seconds"] == 10 + 2 * 40 + 20
+    assert cardio["exercise_rest_seconds"] == 13   # a third of 40 s
+    assert cardio["estimated_seconds"] == 10 + 2 * 40 + 13
     assert [e["name"] for e in cardio["exercises"]] == ["Marching rows", "Side step"]
     assert cardio["exercises"][0]["video_url"] == (
         "https://proj.supabase.co/storage/v1/object/public/cardio-videos/marching-rows.mp4"
@@ -1772,7 +1773,8 @@ def test_a_period_cardio_session_runs_at_70_percent_of_its_planned_seconds():
 
     cardio = workout["cardio"]
     assert (cardio["work_seconds"], cardio["planned_work_seconds"], cardio["is_period"]) == (21, 30, True)
-    assert cardio["estimated_seconds"] == 10 + 2 * 21 + 20
+    assert cardio["exercise_rest_seconds"] == 7   # a third of the 21 s she does
+    assert cardio["estimated_seconds"] == 10 + 2 * 21 + 7
     # The stored level is never touched.
     assert client.tables["sessions"][0]["cardio_work_seconds"] == 30
 

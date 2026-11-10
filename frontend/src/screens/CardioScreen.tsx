@@ -40,8 +40,8 @@ function buildSteps(plan: CardioPlan): Step[] {
 
 // A cardio day (sessions.kind = 'cardio'): one continuous, follow-along
 // circuit. A 10 s get-ready, then each exercise's clip plays (muted, looped)
-// under a seconds-left ring; a 20 s rest shows the next one, and a 30 s
-// rest separates rounds. At the end she rates how it felt
+// under a seconds-left ring; a rest a third as long shows the next one, and
+// a 30 s rest separates rounds. At the end she rates how it felt
 // (CardioRatingScreen), which sets next week's level. Nothing is logged on
 // the way, so leaving and coming back starts the circuit over.
 export function CardioScreen() {
@@ -55,6 +55,7 @@ export function CardioScreen() {
   const steps = useMemo(() => (plan ? buildSteps(plan) : []), [plan])
   const [stepIdx, setStepIdx] = useState(0)
   const [paused, setPaused] = useState(false)
+  const [showInfo, setShowInfo] = useState(false)
   const step = steps[stepIdx] as Step | undefined
   const running = step !== undefined && !paused
 
@@ -95,7 +96,6 @@ export function CardioScreen() {
   if (!step) return null
   const exercise = plan.exercises[step.exercise]
   const count = plan.exercises.length
-  const upNext = step.kind === 'work' ? nextExerciseName(steps, stepIdx, plan.exercises) : null
 
   return (
     <div className="screen timed cardio">
@@ -104,12 +104,38 @@ export function CardioScreen() {
           <Icon name="chevronLeft" size={22} />
         </button>
         <span className="timed__bar-title">Cardio</span>
-        <span className="timed__bar-set">
-          {step.kind !== 'ready' && plan.rounds > 1 ? `Round ${'round' in step ? step.round : 1}/${plan.rounds}` : ''}
-        </span>
+        <button
+          className="timed__back cardio__info-button"
+          onClick={() => setShowInfo((open) => !open)}
+          aria-label="About this workout"
+          aria-expanded={showInfo}
+        >
+          <Icon name="info" size={26} />
+        </button>
       </header>
 
-      <CardioVideo exercise={exercise} playing={step.kind === 'work' && !paused} />
+      {showInfo && (
+        <div className="timed__card cardio__info">
+          <div>
+            <strong>Today&apos;s circuit</strong>
+            <div className="timed__muted">
+              {count} exercises · {plan.work_seconds} s each · {plan.exercise_rest_seconds} s rest between them
+            </div>
+            <div className="timed__muted">
+              {plan.rounds} round{plan.rounds === 1 ? '' : 's'}
+              {plan.rounds > 1 ? ` · ${plan.round_rest_seconds} s rest between rounds` : ''}
+              {plan.is_period ? ' · lighter today' : ''}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <CardioVideo
+        exercise={exercise}
+        playing={step.kind === 'work' && !paused}
+        // During an exercise, the time left; before one, how long it will run.
+        badge={shortClock(step.kind === 'work' ? secondsLeft : plan.work_seconds)}
+      />
 
       {step.kind === 'ready' && (
         <div className="timed__center">
@@ -126,47 +152,21 @@ export function CardioScreen() {
       )}
 
       {step.kind === 'work' && (
-        <div className="timed__center">
-          <div className="cardio__now">
+        <div className="timed__center cardio__work">
+          <div className="timed__card cardio__now">
             <span className="timed__muted">
               Exercise {step.exercise + 1} of {count}
             </span>
             <h1 className="timed__name">{exercise.name}</h1>
           </div>
-          <CircularCountdown secondsLeft={secondsLeft} totalSeconds={step.seconds} size={180} stroke={12}>
-            <span className="timed__clock">{formatClock(secondsLeft)}</span>
+          <CircularCountdown secondsLeft={secondsLeft} totalSeconds={step.seconds} size={190} stroke={13}>
+            <span className="timed__clock timed__clock--lg">{formatClock(secondsLeft)}</span>
             <span className="timed__muted">{paused ? 'Paused' : 'Remaining'}</span>
           </CircularCountdown>
-          <div className="timed__controls">
-            <button className="btn-secondary" onClick={togglePause}>
-              <Icon name={paused ? 'play' : 'pause'} size={18} />
-              {paused ? 'Resume' : 'Pause'}
-            </button>
-          </div>
-          {upNext && <p className="timed__muted">Up next: {upNext}</p>}
-        </div>
-      )}
-
-      {(step.kind === 'rest' || step.kind === 'round-rest') && (
-        <div className="timed__center">
-          <span className="timed__badge timed__badge--lg">
-            <Icon name={step.kind === 'round-rest' ? 'repeat' : 'hourglass'} size={30} />
-          </span>
-          <h2 className="timed__heading">
-            {step.kind === 'round-rest' ? `Round ${step.round - 1} complete!` : 'Rest'}
-          </h2>
-          <span className="timed__clock timed__clock--lg">{formatClock(secondsLeft)}</span>
-          <span className="timed__muted">{paused ? 'Paused' : 'Remaining'}</span>
-          <div className="timed__progress" aria-hidden>
-            <span style={{ width: `${(1 - msLeft / (step.seconds * 1000)) * 100}%` }} />
-          </div>
-          <div className="timed__card timed__tip">
-            <Icon name="wind" size={22} />
+          <div className="timed__card timed__tip cardio__tip">
+            <Icon name="heart" size={26} />
             <div className="timed__muted">
-              Catch your breath.
-              <br />
-              {step.kind === 'round-rest' ? `Round ${step.round} starts with ` : 'Next: '}
-              <strong>{exercise.name}</strong>
+              <strong className="cardio__tip-title">Tip:</strong> {WORK_TIPS[step.exercise % WORK_TIPS.length]}
             </div>
           </div>
           <div className="timed__controls">
@@ -175,6 +175,64 @@ export function CardioScreen() {
               {paused ? 'Resume' : 'Pause'}
             </button>
             <button className="btn-primary" onClick={skip}>
+              <Icon name="skipForward" size={20} />
+              Skip Exercise
+            </button>
+          </div>
+          <CircuitProgress current={step.exercise} count={count} />
+        </div>
+      )}
+
+      {(step.kind === 'rest' || step.kind === 'round-rest') && (
+        <div className="timed__center cardio__rest">
+          <span className="timed__badge timed__badge--lg">
+            <Icon name={step.kind === 'round-rest' ? 'repeat' : 'hourglass'} size={30} />
+          </span>
+          <h2 className="timed__heading">
+            {step.kind === 'round-rest' ? `Round ${step.round - 1} complete!` : 'Rest'}
+          </h2>
+          {step.kind === 'rest' && plan.rounds > 1 && (
+            <span className="timed__muted">
+              Round {step.round} of {plan.rounds}
+            </span>
+          )}
+          <CircularCountdown secondsLeft={secondsLeft} totalSeconds={step.seconds} size={190} stroke={13}>
+            <span className="timed__clock timed__clock--lg">{formatClock(secondsLeft)}</span>
+            <span className="timed__muted">{paused ? 'Paused' : 'Remaining'}</span>
+          </CircularCountdown>
+
+          <div className="timed__card cardio__next">
+            <img
+              className="cardio__next-thumb"
+              src={exercise.poster_url ?? '/exercise-placeholder.jpg'}
+              alt=""
+            />
+            <div className="cardio__next-text">
+              <span className="cardio__next-label">
+                {step.kind === 'round-rest' ? `Up next · Round ${step.round}` : 'Up next'}
+              </span>
+              <span className="cardio__next-name">{exercise.name}</span>
+              <span className="timed__muted">
+                {plan.work_seconds} seconds · {step.exercise + 1} of {count}
+              </span>
+            </div>
+          </div>
+
+          <div className="timed__card timed__tip cardio__tip">
+            <Icon name="lightbulb" size={26} />
+            <div className="timed__muted">
+              <strong className="cardio__tip-title">Tip:</strong>{' '}
+              {step.kind === 'round-rest' ? ROUND_REST_TIP : REST_TIPS[stepIdx % REST_TIPS.length]}
+            </div>
+          </div>
+
+          <div className="timed__controls">
+            <button className="btn-secondary" onClick={togglePause}>
+              <Icon name={paused ? 'play' : 'pause'} size={18} />
+              {paused ? 'Resume' : 'Pause'}
+            </button>
+            <button className="btn-primary" onClick={skip}>
+              <Icon name="skipForward" size={20} />
               Skip Rest
             </button>
           </div>
@@ -184,9 +242,45 @@ export function CardioScreen() {
   )
 }
 
-function nextExerciseName(steps: Step[], stepIdx: number, exercises: CardioExercise[]): string | null {
-  const next = steps.slice(stepIdx + 1).find((s) => s.kind === 'work')
-  return next ? exercises[next.exercise].name : null
+// "0:30" — the clip badge's compact form of formatClock's "00:30".
+function shortClock(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+// One per exercise, in turn.
+const WORK_TIPS = [
+  'Keep a comfortable pace. You should be able to talk.',
+  'Breathe steadily — never hold your breath.',
+  'Move at your own speed. Smaller movements are fine.',
+  'Keep your core gently tight and your back tall.',
+]
+
+// One per rest, in turn.
+const REST_TIPS = [
+  "Take slow, deep breaths. You're doing great!",
+  'Shake out your arms and legs while you wait.',
+  'Stand tall and relax your shoulders.',
+  'Sip some water if you need it.',
+]
+const ROUND_REST_TIP = 'Great round! Breathe deeply and get ready to go again.'
+
+// Where she is in the round: done exercises, this one, and those to come.
+function CircuitProgress({ current, count }: { current: number; count: number }) {
+  return (
+    <div className="cardio__progress" aria-label={`Exercise ${current + 1} of ${count}`}>
+      <span className="cardio__progress-count">
+        {current + 1} / {count}
+      </span>
+      <span className="cardio__progress-dots" aria-hidden>
+        {Array.from({ length: count }, (_, i) => (
+          <span
+            key={i}
+            className={`cardio__dot${i < current ? ' cardio__dot--done' : i === current ? ' cardio__dot--current' : ''}`}
+          />
+        ))}
+      </span>
+    </div>
+  )
 }
 
 // The current (or, during a rest, the next) exercise's clip. It loads as
@@ -194,7 +288,16 @@ function nextExerciseName(steps: Step[], stepIdx: number, exercises: CardioExerc
 // muted, so the browser allows it without a tap, and looped, since the
 // countdown, not the clip, decides when the exercise ends — only while
 // that exercise is on. Keyed by exercise, so each clip starts from the top.
-function CardioVideo({ exercise, playing }: { exercise: CardioExercise; playing: boolean }) {
+function CardioVideo({
+  exercise,
+  playing,
+  badge,
+}: {
+  exercise: CardioExercise
+  playing: boolean
+  // e.g. "00:30" — shown over the clip while it waits to start.
+  badge: string | null
+}) {
   const ref = useRef<HTMLVideoElement>(null)
 
   useEffect(() => {
@@ -212,6 +315,12 @@ function CardioVideo({ exercise, playing }: { exercise: CardioExercise; playing:
 
   return (
     <div className="cardio__video">
+      {badge && (
+        <span className="cardio__video-badge">
+          <Icon name="play" size={16} />
+          {badge}
+        </span>
+      )}
       {exercise.video_url ? (
         <video
           key={exercise.id}
