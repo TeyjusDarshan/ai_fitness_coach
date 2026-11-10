@@ -205,7 +205,11 @@ def test_plan_builder_returns_templates_and_exercises(admin):
     response = client.get("/api/admin/plan-builder", headers=ADMIN_HEADERS)
 
     assert response.status_code == 200
-    assert response.get_json() == {"templates": DAY_TEMPLATES, "exercises": EXERCISES}
+    assert response.get_json() == {
+        "templates": DAY_TEMPLATES,
+        "exercises": EXERCISES,
+        "cardio_days": {"3_day": [2, 4, 6], "4_day": [3, 6]},
+    }
 
 
 # --- POST /api/admin/users/<user_id>/initial-plan ----------------------------

@@ -1,4 +1,4 @@
-import type { Dashboard, DayCompleteSummary, PastWorkoutsPage, SetLog } from './types'
+import type { CardioRating, Dashboard, DayCompleteSummary, PastWorkoutsPage, SetLog } from './types'
 
 class ApiError extends Error {
   status: number
@@ -101,6 +101,14 @@ export function logRpe(
   return request(`/sessions/${sessionId}/exercises/${sessionExerciseId}/rpe`, {
     method: 'PATCH',
     body: JSON.stringify({ rpe }),
+  })
+}
+
+// How a cardio session felt, sent before it's completed.
+export function rateCardio(sessionId: number, rating: CardioRating): Promise<{ rating: CardioRating }> {
+  return request(`/sessions/${sessionId}/cardio-rating`, {
+    method: 'PUT',
+    body: JSON.stringify({ rating }),
   })
 }
 

@@ -19,6 +19,7 @@ from flask import Flask, g, jsonify, request
 from agents.preprocessor_agent import generate_user_profile
 from agents.workout_agent import generate_workout_plan_v1
 from backend.auth import require_admin, require_auth
+from backend.cardio import CARDIO_RATINGS
 from backend.feedback_storage import (
     MAX_FEEDBACK_BYTES,
     SIGNED_URL_TTL_SECONDS,
@@ -416,7 +417,8 @@ def start_session(session_id):
     if denied := _deny_unless_session_open(session_id):
         return denied
 
-    # Only women are asked, and the answer is only honoured for them.
+    # Only women are asked, and the answer is only honoured for them. On a
+    # cardio day it shortens each exercise to 70% (applied when read).
     body = request.get_json(silent=True) or {}
     is_period = body.get("is_period") is True and plan_repo.get_gender(g.user_id) == "female"
 
@@ -573,6 +575,30 @@ def log_rpe(session_id, session_exercise_id):
     if log is None:
         return jsonify({"error": "Exercise not found in this session."}), 404
     return jsonify(log), 200
+
+
+@app.put("/api/sessions/<int:session_id>/cardio-rating")
+@require_auth
+def rate_cardio_session(session_id):
+    """How a cardio session felt — easy / medium / hard. The week's ratings
+    decide next week's cardio level (see backend/cardio.py)."""
+    if denied := _deny_unless_session_open(session_id):
+        return denied
+
+    body = request.get_json(silent=True) or {}
+    rating = body.get("rating")
+    if rating not in CARDIO_RATINGS:
+        return jsonify({"error": f"'rating' must be one of: {', '.join(CARDIO_RATINGS)}."}), 400
+
+    try:
+        session = plan_repo.set_cardio_rating(session_id, rating)
+    except Exception:
+        app.logger.exception("Failed to rate cardio session_id=%s", session_id)
+        return jsonify({"error": "Failed to save your rating."}), 500
+
+    if session is None:
+        return jsonify({"error": "This isn't a cardio workout."}), 400
+    return jsonify({"session_id": session_id, "rating": session["cardio_rating"]}), 200
 
 
 @app.post("/api/sessions/<int:session_id>/complete")

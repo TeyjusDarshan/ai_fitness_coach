@@ -4,3 +4,6 @@ __pycache__/
 .venv/
 pytest.ini
 .vscode/
+
+# Re-encoded cardio clips (utilities/cardio_videos/prepare.sh) — they live in Storage
+utilities/cardio_videos/out/

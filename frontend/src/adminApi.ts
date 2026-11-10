@@ -1,5 +1,5 @@
 import { ApiError } from './api'
-import type { ExerciseEntry } from './types'
+import type { CardioPlan, ExerciseEntry, WorkoutKind } from './types'
 
 // Coach-only endpoints, authorized by the X-Admin-Key header rather than the
 // passkey session cookie. Deliberately separate from api.ts's request(): a
@@ -47,6 +47,8 @@ export interface LibraryExercise {
 
 export interface PlanBuilderOptions {
   templates: Record<string, PlanTemplate>
+  // Per plan type, the rest days that become cardio days.
+  cardio_days?: Record<string, number[]>
   exercises: LibraryExercise[]
 }
 
@@ -188,6 +190,9 @@ export interface MonitorWorkout {
   duration_seconds: number | null
   analysis: string | null
   analysis_audio_url: string | null
+  kind?: WorkoutKind
+  // Set on a cardio workout: its level, rating and circuit.
+  cardio?: CardioPlan
   exercises: ExerciseEntry[]
 }
 

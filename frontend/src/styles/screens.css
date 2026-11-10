@@ -2859,3 +2859,44 @@
 .load-more {
   align-self: center;
 }
+
+/* ---------- Cardio circuit (CardioScreen, CardioDetails) ---------- */
+
+.cardio__video {
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+.cardio__video video,
+.cardio__video img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cardio__now {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cardio__plan {
+  font-size: 13px;
+}
+.cardio-detail__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cardio-detail__level {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.cardio-detail__level svg {
+  flex: none;
+  color: var(--accent);
+}

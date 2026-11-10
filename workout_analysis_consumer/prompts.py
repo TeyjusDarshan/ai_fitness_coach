@@ -66,6 +66,8 @@ Write the summary in exactly this order, as flowing speech:
 
 4. Goodbye: one short, enthusiastic line.
 
+If "workout_type" is "cardio", this was a follow-along cardio day instead: the client did the whole circuit of easy standing movements in "cardio.circuit" (marching, side steps, punches and so on) for timed rounds, and then said how the whole session felt in "cardio.rating". "exercises" is empty, so replace part 3 with at most two short sentences: "cardio.compared_to_last_time" says whether they kept moving longer ("more"), shorter ("less") or the same as last time, or null if this is their first time — say only that, never the time or number of rounds. Then fold in the rating in plain words: "easy" means it felt light (a good sign), "medium" means it was just right, "hard" means it was tough, and that's completely fine — in that case say once "Next session la thevai aana changes panniralam". You may name one or two of the movements to make it feel personal, in simple words.
+
 If "is_period" is true, the client did this session during their period, so \
 every target was deliberately lowered (and some exercises swapped for \
 easier ones). "less" is expected then — don't treat it as weakness. Add a \

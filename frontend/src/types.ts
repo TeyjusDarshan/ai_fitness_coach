@@ -29,6 +29,38 @@ export interface ExerciseEntry {
   has_feedback?: boolean
 }
 
+// A cardio day's ratings: they decide next week's cardio level.
+export type CardioRating = 'easy' | 'medium' | 'hard'
+
+export interface CardioExercise {
+  id: number
+  name: string
+  // Public mp4 clip (720p, no audio) and its poster frame.
+  video_url: string | null
+  poster_url: string | null
+}
+
+// What a cardio session runs: the whole circuit, `rounds` times, each
+// exercise for `work_seconds`, with rests between exercises and rounds.
+export interface CardioPlan {
+  rounds: number
+  // What she actually does: 70% of planned_work_seconds on a period day.
+  work_seconds: number
+  planned_work_seconds: number
+  is_period: boolean
+  rating: CardioRating | null
+  get_ready_seconds: number
+  exercise_rest_seconds: number
+  round_rest_seconds: number
+  // How long the whole circuit takes, rests included.
+  estimated_seconds: number
+  exercises: CardioExercise[]
+}
+
+// 'strength' runs exercise by exercise with sets and reps; 'cardio' is a
+// follow-along circuit (CardioScreen). Null on a rest day.
+export type WorkoutKind = 'strength' | 'cardio'
+
 // 'missed': a training day whose date passed without it being completed —
 // it can't be started any more, and its exercises repeat next week.
 export type DayStatus = 'rest' | 'completed' | 'missed' | 'next' | 'upcoming'
@@ -38,6 +70,9 @@ export interface DashboardDay {
   day_label: string
   split_name: string
   is_rest_day: boolean
+  kind: WorkoutKind | null
+  // Set on a cardio day.
+  cardio?: CardioPlan
   status: DayStatus
   // The sessions row for this training day (null on rest days).
   session_id: number | null
@@ -63,6 +98,9 @@ export interface DashboardWorkout {
   plan_id: number
   day_number: number
   name: string
+  kind: WorkoutKind
+  // Set on a cardio workout.
+  cardio?: CardioPlan
   status: WorkoutStatus
   // YYYY-MM-DD in the app's timezone: the completion date for a completed
   // workout, otherwise its scheduled date.
@@ -110,6 +148,13 @@ export interface PastWorkoutsPage {
 export interface DayCompleteSummary {
   session_id: number
   day_number: number
+  kind?: WorkoutKind
+  // A cardio session's level and rating (for a cardio session,
+  // exercises_completed / total_exercises count the circuit).
+  rounds?: number
+  work_seconds?: number
+  rating?: CardioRating | null
+  is_period?: boolean
   total_time_seconds: number
   exercises_completed: number
   total_exercises: number

@@ -1,3 +1,5 @@
+import type { CardioRating } from '../types'
+
 // Simplified 3-point front end for the 1-10 RPE scale the backend stores —
 // each answer on the post-exercise feedback screen maps to a representative
 // value rather than exposing all 10. `label` is the short form shown in
@@ -20,4 +22,15 @@ export function levelIndexForRpe(rpe: number | null): number {
     if (Math.abs(LEVELS[i].rpe - rpe) < Math.abs(LEVELS[closest].rpe - rpe)) closest = i
   }
   return closest
+}
+
+// A cardio session is rated with the same three answers, stored by name.
+export const CARDIO_RATING_BY_TONE: Record<EffortTone, CardioRating> = {
+  easy: 'easy',
+  about: 'medium',
+  hard: 'hard',
+}
+
+export function levelForCardioRating(rating: CardioRating | null | undefined) {
+  return LEVELS.find((level) => CARDIO_RATING_BY_TONE[level.tone] === rating) ?? null
 }

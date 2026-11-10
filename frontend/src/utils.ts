@@ -1,4 +1,4 @@
-import { LEVELS, levelIndexForRpe } from './components/effortLevels'
+import { LEVELS, levelForCardioRating, levelIndexForRpe } from './components/effortLevels'
 import { COACH_WHATSAPP_NUMBER, REST_BETWEEN_EXERCISES_SECONDS } from './constants'
 import type {
   Dashboard,
@@ -152,6 +152,21 @@ export function buildCoachShareMessage(
   const lines: string[] = [`*Workout Summary — ${day.day_label} (${day.split_name})*`]
   if (clientName) lines.push(`Client: ${capitalize(clientName)}`)
   lines.push(`Session ID: ${summary.session_id}`, `Day: ${day.day_number}`)
+
+  if (summary.kind === 'cardio' || day.kind === 'cardio') {
+    const rounds = summary.rounds ?? day.cardio?.rounds ?? 1
+    const seconds = summary.work_seconds ?? day.cardio?.work_seconds
+    const rating = summary.rating ?? day.cardio?.rating
+    lines.push(
+      '',
+      `Total Time: ${formatDuration(summary.total_time_seconds)}`,
+      `Cardio: ${rounds} round${rounds === 1 ? '' : 's'} × ${seconds ?? '?'} sec per exercise`,
+      `Exercises: ${summary.total_exercises}`,
+      `Felt: ${levelForCardioRating(rating)?.label ?? 'Not rated'}`,
+    )
+    if (summary.is_period ?? day.cardio?.is_period) lines.push('Period: yes (lighter session)')
+    return lines.join('\n')
+  }
   lines.push(
     '',
     `Total Time: ${formatDuration(summary.total_time_seconds)}`,

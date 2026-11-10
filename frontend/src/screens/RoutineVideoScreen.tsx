@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import { firstIncompleteIndex } from '../utils'
+import { unlockTickSound } from '../state/tickSound'
 import { COOLDOWN_VIDEO_ID, WARMUP_VIDEO_ID } from '../constants'
 
 const ROUTINES = {
@@ -43,9 +44,18 @@ export function RoutineVideoScreen({ kind }: { kind: 'warmup' | 'cooldown' }) {
   if (!day || day.is_rest_day || day.locked) return <Navigate to="/" replace />
 
   function handleDone() {
-    const next =
-      kind === 'warmup' ? `/day/${dayNum}/exercise/${firstIncompleteIndex(day!)}` : `/day/${dayNum}/grow`
-    navigate(next, { replace: true })
+    if (kind === 'cooldown') {
+      navigate(`/day/${dayNum}/grow`, { replace: true })
+      return
+    }
+    if (day!.kind === 'cardio') {
+      // The circuit counts down on its own from here, so this is the last
+      // tap that can unlock its tick sound.
+      unlockTickSound()
+      navigate(`/day/${dayNum}/cardio`, { replace: true })
+      return
+    }
+    navigate(`/day/${dayNum}/exercise/${firstIncompleteIndex(day!)}`, { replace: true })
   }
 
   return (

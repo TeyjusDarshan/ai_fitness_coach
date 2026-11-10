@@ -32,11 +32,13 @@ def _summary(plan_completed=False):
     }
 
 
-def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-13", completed_at=None):
+def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-13", completed_at=None,
+                kind="strength"):
     monkeypatch.setattr(app_module.plan_repo, "get_session", MagicMock(return_value={
         "id": 42,
         "plan_id": 7,
         "day_number": 2,
+        "kind": kind,
         "scheduled_date": scheduled_date,
         "completed_at": completed_at,
         "plans": {"user_id": owner, "plan_type": "3_day", "completed": False},
@@ -625,3 +627,102 @@ def test_coach_gets_a_link_to_an_exercise_voice_note(app_module, monkeypatch, st
 
     assert ok.status_code == 200
     storage.create_signed_url.assert_called_once_with("session_42_exercise_51.webm", 3600)
+
+
+# --- cardio --------------------------------------------------------------------
+
+def test_a_cardio_day_takes_the_period_answer_too(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, kind="cardio")
+    monkeypatch.setattr(app_module.plan_repo, "get_gender", MagicMock(return_value="female"))
+    monkeypatch.setattr(app_module.plan_repo, "start_session", MagicMock(return_value={"id": 42}))
+
+    response = sign_in("usr_1").post("/api/sessions/42/start", json={"is_period": True})
+
+    assert response.status_code == 200
+    app_module.plan_repo.start_session.assert_called_once_with(42, True)
+
+
+def test_rating_a_cardio_session_saves_it(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, kind="cardio")
+    monkeypatch.setattr(
+        app_module.plan_repo, "set_cardio_rating", MagicMock(return_value={"id": 42, "cardio_rating": "easy"})
+    )
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-rating", json={"rating": "easy"})
+
+    assert response.status_code == 200
+    assert response.get_json() == {"session_id": 42, "rating": "easy"}
+    app_module.plan_repo.set_cardio_rating.assert_called_once_with(42, "easy")
+
+
+@pytest.mark.parametrize("body", [{}, {"rating": "brutal"}, {"rating": 8}])
+def test_rating_needs_easy_medium_or_hard(app_module, sign_in, monkeypatch, body):
+    _session_42(app_module, monkeypatch, kind="cardio")
+    monkeypatch.setattr(app_module.plan_repo, "set_cardio_rating", MagicMock())
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-rating", json=body)
+
+    assert response.status_code == 400
+    app_module.plan_repo.set_cardio_rating.assert_not_called()
+
+
+def test_rating_a_strength_session_is_refused(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch)
+    monkeypatch.setattr(app_module.plan_repo, "set_cardio_rating", MagicMock(return_value=None))
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-rating", json={"rating": "hard"})
+
+    assert response.status_code == 400
+
+
+@pytest.mark.parametrize("scheduled_date", ["2026-10-14", "2026-10-12"])   # future, missed
+def test_rating_a_future_or_missed_cardio_session_is_refused(app_module, sign_in, monkeypatch, scheduled_date):
+    _session_42(app_module, monkeypatch, kind="cardio", scheduled_date=scheduled_date)
+    monkeypatch.setattr(app_module.plan_repo, "set_cardio_rating", MagicMock())
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-rating", json={"rating": "hard"})
+
+    assert response.status_code == 409
+    app_module.plan_repo.set_cardio_rating.assert_not_called()
+
+
+def test_rating_someone_elses_session_is_forbidden(app_module, sign_in, monkeypatch):
+    _session_42(app_module, monkeypatch, owner="usr_2", kind="cardio")
+    monkeypatch.setattr(app_module.plan_repo, "set_cardio_rating", MagicMock())
+
+    response = sign_in("usr_1").put("/api/sessions/42/cardio-rating", json={"rating": "hard"})
+
+    assert response.status_code == 403
+
+
+def test_dashboard_shows_a_cardio_day_as_a_workout_day(app_module, sign_in, monkeypatch):
+    cardio = {"rounds": 1, "work_seconds": 30, "exercises": []}
+    sessions = {
+        1: {"id": 11, "kind": "strength", "scheduled_date": "2026-10-12", "started_at": "x", "completed_at": "y"},
+        2: {"id": 12, "kind": "cardio", "scheduled_date": "2026-10-13", "started_at": None, "completed_at": None},
+    }
+    plan = {
+        "plan_type": "3_day",
+        "plan_selection_reason": None,
+        "medical_clearance_warning": None,
+        "coach_notes": None,
+        "safety_summary": None,
+        "schedule": [
+            {**_schedule_day(1, False, 11, "2026-10-12"), "kind": "strength"},
+            {**_schedule_day(2, False, 12, "2026-10-13"), "split_name": "Cardio", "kind": "cardio",
+             "cardio": cardio},
+        ],
+    }
+    monkeypatch.setattr(
+        app_module.plan_repo,
+        "get_unfinished_plan",
+        MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
+    )
+    monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
+    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
+
+    days = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()["days"]
+
+    day2 = days[1]
+    assert (day2["kind"], day2["status"], day2["locked"], day2["split_name"]) == ("cardio", "next", False, "Cardio")
+    assert day2["cardio"] == cardio

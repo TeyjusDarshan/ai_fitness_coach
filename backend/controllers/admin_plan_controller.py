@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.prompts_v1 import DAY_TEMPLATES
+from backend.cardio import CARDIO_DAYS
 from backend.auth import auth_repo, require_admin
 from backend.controllers.auth_controller import mint_enrollment_link
 from backend.repository.workout_plan_repository import WorkoutPlanRepository, app_today
@@ -123,7 +124,10 @@ def plan_builder_options():
     except Exception:
         logger.exception("Failed to load the exercise library")
         return jsonify({"error": "Failed to load the exercise library."}), 500
-    return jsonify({"templates": DAY_TEMPLATES, "exercises": exercises}), 200
+    # The rest days create_plan turns into cardio days, so the planner can
+    # show them as such.
+    cardio_days = {plan_type: list(days) for plan_type, days in CARDIO_DAYS.items()}
+    return jsonify({"templates": DAY_TEMPLATES, "exercises": exercises, "cardio_days": cardio_days}), 200
 
 
 def _build_plan(body, exercises_by_id, profile):

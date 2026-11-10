@@ -63,6 +63,10 @@ const PATHS = {
     </>
   ),
   stop: <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" />,
+  heart: (
+    <path d="M12 20.5s-8-4.9-8-11A4.5 4.5 0 0 1 12 6.8 4.5 4.5 0 0 1 20 9.5c0 6.1-8 11-8 11Z" />
+  ),
+  repeat: <path d="M17 2.5 20.5 6 17 9.5M3.5 11V9.5A3.5 3.5 0 0 1 7 6h13.5M7 21.5 3.5 18 7 14.5M20.5 13v1.5A3.5 3.5 0 0 1 17 18H3.5" />,
   leaf: (
     <>
       <path d="M5 19c0-8 5-14 15-15-1 10-7 15-15 15Z" fill="currentColor" fillOpacity="0.25" />

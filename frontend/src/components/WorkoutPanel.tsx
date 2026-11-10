@@ -21,7 +21,7 @@ export function WorkoutPanel({ workout, timerLabel, onStart }: Props) {
   return (
     <div className={`card workout-panel workout-panel--${status}${isNext ? ' workout-panel--next' : ''}`}>
       <span className={`workout-panel__icon workout-panel__icon--${status}`}>
-        <Icon name={STATUS_ICONS[status]} size={24} />
+        <Icon name={workout.kind === 'cardio' && status !== 'missed' ? 'heart' : STATUS_ICONS[status]} size={24} />
       </span>
       <div className="workout-panel__body">
         <div className="workout-panel__header">
@@ -33,7 +33,11 @@ export function WorkoutPanel({ workout, timerLabel, onStart }: Props) {
         </div>
         <div className="workout-panel__meta">
           <span>{workoutDateLabel(workout)}</span>
-          {status === 'scheduled' && timerLabel && <span>Timer: {timerLabel}</span>}
+          {status === 'scheduled' && workout.cardio ? (
+            <span>Timer: ~{formatMinutes(workout.cardio.estimated_seconds)}</span>
+          ) : (
+            status === 'scheduled' && timerLabel && <span>Timer: {timerLabel}</span>
+          )}
           {status === 'completed' && workout.duration_seconds != null && (
             <span>{formatMinutes(workout.duration_seconds)}</span>
           )}

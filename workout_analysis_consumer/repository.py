@@ -15,6 +15,11 @@ SESSION_EXERCISE_JOIN = (
     "session_exercise_rpe(rpe)"
 )
 
+# A cardio session's level and rating (sessions.kind = 'cardio'; see
+# backend/cardio.py). It has no session_exercises: the client follows the
+# whole cardio_exercises circuit for `cardio_rounds` rounds.
+CARDIO_SESSION_FIELDS = "kind, cardio_rounds, cardio_work_seconds, cardio_rating"
+
 # How many plans back _fetch_previous_session_context looks for a completed
 # same-day session when the most recent ones were missed.
 MAX_PREVIOUS_PLAN_HOPS = 4
@@ -56,6 +61,31 @@ def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         }
         for row in rows
     ]
+
+
+# Mirrors backend/cardio.py: on her period each exercise runs 70% of its
+# planned seconds (at least 15) — the stored cardio_work_seconds is the plan.
+CARDIO_PERIOD_FACTOR = 0.7
+CARDIO_MIN_SECONDS = 15
+
+
+def _cardio_work_seconds(session: Dict[str, Any]) -> int:
+    """Seconds per exercise she actually did in a cardio session."""
+    seconds = session.get("cardio_work_seconds") or 0
+    if session.get("is_period") and seconds:
+        return max(CARDIO_MIN_SECONDS, round(seconds * CARDIO_PERIOD_FACTOR))
+    return seconds
+
+
+def _cardio_volume(session: Dict[str, Any]) -> int:
+    """Seconds of work per exercise across all rounds of a cardio session."""
+    return (session.get("cardio_rounds") or 0) * _cardio_work_seconds(session)
+
+
+def _compare(total: int, previous_total: Optional[int]) -> Optional[str]:
+    if previous_total is None:
+        return None
+    return "more" if total > previous_total else "less" if total < previous_total else "same"
 
 
 def _total_done(exercise: Dict[str, Any]) -> int:
@@ -110,7 +140,7 @@ class AnalysisRepository:
         sessions = (
             self.client.table("sessions")
             .select(
-                "id, day_number, plan_id, is_period, feedback_audio_path, "
+                f"id, day_number, plan_id, is_period, feedback_audio_path, {CARDIO_SESSION_FIELDS}, "
                 "plans(user_id, plan_type, parent_plan_id)"
             )
             .eq("id", session_id)
@@ -177,7 +207,34 @@ class AnalysisRepository:
             context["exercises"], previous_session["exercises"] if previous_session else []
         )
 
+        if session.get("kind") == "cardio":
+            context["workout_type"] = "cardio"
+            context["cardio"] = {
+                "circuit": self._fetch_cardio_circuit(),
+                "rounds": session.get("cardio_rounds"),
+                "seconds_per_exercise": _cardio_work_seconds(session),
+                "rating": session.get("cardio_rating"),
+                # Total time on each exercise against the last cardio session
+                # on this day of the week, worked out here rather than by the LLM.
+                "compared_to_last_time": _compare(
+                    _cardio_volume(session),
+                    previous_session.get("cardio_volume") if previous_session else None,
+                ),
+            }
+
         return context
+
+    def _fetch_cardio_circuit(self) -> List[str]:
+        """The names of the active cardio_exercises, in circuit order."""
+        rows = (
+            self.client.table("cardio_exercises")
+            .select("name, position")
+            .eq("active", True)
+            .order("position")
+            .execute()
+            .data
+        )
+        return [row["name"] for row in sorted(rows, key=lambda row: row["position"])]
 
     def _fetch_previous_session_context(self, parent_plan_id: int, day_number: int) -> Optional[Dict[str, Any]]:
         """The most recent earlier session for the same day_number as the
@@ -194,7 +251,7 @@ class AnalysisRepository:
             sessions = (
                 self.client.table("sessions")
                 .select(
-                    f"id, started_at, completed_at, is_period, plans(parent_plan_id), "
+                    f"id, started_at, completed_at, is_period, {CARDIO_SESSION_FIELDS}, plans(parent_plan_id), "
                     f"session_exercises({SESSION_EXERCISE_JOIN})"
                 )
                 .eq("plan_id", plan_id)
@@ -218,6 +275,10 @@ class AnalysisRepository:
             "completed_at": session.get("completed_at"),
             "exercises": _shape_exercise_rows(
                 sorted(session.get("session_exercises") or [], key=lambda row: row["id"])
+            ),
+            **(
+                {"cardio_volume": _cardio_volume(session), "cardio_rating": session.get("cardio_rating")}
+                if session.get("kind") == "cardio" else {}
             ),
         }
 

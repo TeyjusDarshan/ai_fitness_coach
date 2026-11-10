@@ -85,7 +85,7 @@ export function ReviewStep({
       {template.schedule.map((day) =>
         day.is_rest_day ? (
           <div key={day.day_number} className="admin__rest-day">
-            {day.day_label} · {formatDayDate(dayDateIso(startDate, day.day_number))} · Rest
+            {day.day_label} · {formatDayDate(dayDateIso(startDate, day.day_number))} · {options.cardio_days?.[planType]?.includes(day.day_number) ? 'Cardio (1 round × 30 s)' : 'Rest'}
           </div>
         ) : (
           <section key={day.day_number} className="card admin__section">

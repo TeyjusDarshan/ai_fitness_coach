@@ -77,6 +77,8 @@ export function SummaryScreen() {
   // as a popup (iOS Safari especially) — so if window.open is refused, this
   // tab navigates there instead. No `noopener`: it would make window.open
   // return null even on success.
+  const cardio = summary?.kind === 'cardio'
+
   async function runShare(withVoice: boolean) {
     if (!day || !summary) return
     const recording = withVoice ? recordingRef.current : null
@@ -171,8 +173,8 @@ export function SummaryScreen() {
       <section className="panel today-card">
         <div className="today-card__head">
           <h2 className="today-card__title">
-            <Icon name="dumbbell" size={22} />
-            Today&apos;s Workout
+            <Icon name={cardio ? 'heart' : 'dumbbell'} size={22} />
+            {cardio ? 'Today\'s Cardio' : 'Today\'s Workout'}
           </h2>
           <button className="today-card__details" onClick={() => navigate(`/workout/${summary.session_id}`)}>
             View Details
@@ -194,13 +196,23 @@ export function SummaryScreen() {
             <dd>{summary.exercises_completed}</dd>
             <dt>Exercises</dt>
           </div>
-          <div className="stats__item">
-            <span className="stats__badge">
-              <Icon name="layers" size={22} />
-            </span>
-            <dd>{summary.sets_completed}</dd>
-            <dt>Sets</dt>
-          </div>
+          {cardio ? (
+            <div className="stats__item">
+              <span className="stats__badge">
+                <Icon name="repeat" size={22} />
+              </span>
+              <dd>{summary.rounds ?? 1}</dd>
+              <dt>{summary.rounds === 1 ? 'Round' : 'Rounds'}</dt>
+            </div>
+          ) : (
+            <div className="stats__item">
+              <span className="stats__badge">
+                <Icon name="layers" size={22} />
+              </span>
+              <dd>{summary.sets_completed}</dd>
+              <dt>Sets</dt>
+            </div>
+          )}
         </dl>
       </section>
 

@@ -1,5 +1,5 @@
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
-import { LoggedSets, Prescription } from '../components/ExerciseLog'
+import { CardioDetails, LoggedSets, Prescription } from '../components/ExerciseLog'
 import { Icon } from '../components/Icon'
 import { Illustration } from '../components/Illustration'
 import { PeriodPrompt } from '../components/PeriodPrompt'
@@ -41,25 +41,29 @@ export function WorkoutDetailScreen() {
       </div>
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="workout-detail__list">
-        {workout.exercises.map((exercise, i) => (
-          <div key={exercise.id} className="card workout-detail__exercise">
-            <div className="workout-detail__row">
-              <div className="workout-detail__thumb">
-                <img src={youtubeThumbnailUrl(exercise.video_url) ?? '/exercise-placeholder.jpg'} alt="" />
-                <span className={`workout-detail__number workout-detail__number--${exercise.category}`}>
-                  {i + 1}
-                </span>
+      {workout.cardio ? (
+        <CardioDetails cardio={workout.cardio} completed={completed} />
+      ) : (
+        <div className="workout-detail__list">
+          {workout.exercises.map((exercise, i) => (
+            <div key={exercise.id} className="card workout-detail__exercise">
+              <div className="workout-detail__row">
+                <div className="workout-detail__thumb">
+                  <img src={youtubeThumbnailUrl(exercise.video_url) ?? '/exercise-placeholder.jpg'} alt="" />
+                  <span className={`workout-detail__number workout-detail__number--${exercise.category}`}>
+                    {i + 1}
+                  </span>
+                </div>
+                <div className="workout-detail__info">
+                  <div className="workout-detail__name">{exercise.name}</div>
+                  <Prescription exercise={exercise} />
+                </div>
               </div>
-              <div className="workout-detail__info">
-                <div className="workout-detail__name">{exercise.name}</div>
-                <Prescription exercise={exercise} />
-              </div>
+              {completed && <LoggedSets exercise={exercise} />}
             </div>
-            {completed && <LoggedSets exercise={exercise} />}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {workout.can_start && (
         <button className="btn-primary" onClick={() => void start(workout)}>

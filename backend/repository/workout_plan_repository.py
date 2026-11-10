@@ -1,15 +1,36 @@
 import logging
 import os
+import time
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
 from agents.prompts_v1 import DAY_TEMPLATES
+from backend.cardio import (
+    CARDIO_DAYS,
+    CARDIO_EXERCISE_REST_SECONDS,
+    CARDIO_GET_READY_SECONDS,
+    CARDIO_RATINGS,
+    CARDIO_ROUND_REST_SECONDS,
+    CARDIO_SPLIT_NAME,
+    CARDIO_START,
+    KIND_CARDIO,
+    KIND_STRENGTH,
+    MEDIUM,
+    actual_work_seconds,
+    cardio_day,
+    estimated_seconds,
+    is_cardio,
+    next_level,
+    session_level,
+    week_outcome,
+)
 from backend.repository.workout_repository import WorkoutRepository
 
 load_dotenv()
@@ -33,8 +54,19 @@ PROGRESSION_EXERCISE_SELECT = (
 )
 PROGRESSION_SESSIONS_SELECT = (
     f"id, day_number, scheduled_date, completed_at, is_period, "
+    f"kind, cardio_rounds, cardio_work_seconds, cardio_rating, "
     f"session_exercises({PROGRESSION_EXERCISE_SELECT})"
 )
+
+# Just what cardio progression reads from an earlier plan's sessions.
+CARDIO_HISTORY_SELECT = (
+    "day_number, completed_at, is_period, kind, cardio_rounds, cardio_work_seconds, cardio_rating"
+)
+
+# Public Storage bucket holding the cardio circuit's clips and poster frames.
+CARDIO_VIDEO_BUCKET = "cardio-videos"
+# How long the cardio circuit (cardio_exercises) is cached per repository.
+CARDIO_CIRCUIT_TTL_SECONDS = 300
 
 # Each auto-progressed plan's sessions land one week after the same day of
 # the plan it was progressed from (or start today, if that's already past —
@@ -91,6 +123,15 @@ def app_date(timestamp: str) -> date:
 def scheduled_date_for(start_date: date, day_number: int) -> date:
     """Day N of a plan falls N-1 days after the plan's start date."""
     return start_date + timedelta(days=day_number - 1)
+
+
+def _cardio_media_url(path: Optional[str]) -> Optional[str]:
+    """Public URL of an object in the cardio-videos bucket (built locally,
+    the same way storage.get_public_url does)."""
+    if not path:
+        return None
+    base = (os.environ.get("SUPABASE_URL") or "").rstrip("/")
+    return f"{base}/storage/v1/object/public/{CARDIO_VIDEO_BUCKET}/{quote(path)}"
 
 
 def is_session_missed(session: dict, today: date) -> bool:
@@ -343,6 +384,8 @@ class WorkoutPlanRepository:
             url = os.environ.get("SUPABASE_URL")
             key = os.environ.get("SUPABASE_KEY")
             self.client = create_client(url, key)
+        # (fetched at, circuit) — see _cardio_circuit.
+        self._circuit_cache: Optional[Tuple[float, List[dict]]] = None
 
     def upsert_user_profile(
         self,
@@ -501,6 +544,7 @@ class WorkoutPlanRepository:
             "sessions": {
                 s["day_number"]: {
                     "id": s["id"],
+                    "kind": s.get("kind") or KIND_STRENGTH,
                     "scheduled_date": s["scheduled_date"],
                     "started_at": s.get("started_at"),
                     "completed_at": s.get("completed_at"),
@@ -519,17 +563,83 @@ class WorkoutPlanRepository:
             .data
         )
 
-    def _insert_sessions(self, plan_id: int, dates_by_day: Dict[int, date]) -> Dict[int, int]:
+    def _insert_sessions(
+        self, plan_id: int, dates_by_day: Dict[int, date],
+        cardio_days: Tuple[int, ...] = (), cardio_level: Tuple[int, int] = CARDIO_START,
+    ) -> Dict[int, int]:
         """Insert one sessions row per (day_number, scheduled_date) and
-        return {day_number: session id}."""
+        return {day_number: session id}. Days in cardio_days become cardio
+        sessions at cardio_level (rounds, seconds per exercise); the rest
+        are strength sessions."""
         if not dates_by_day:
             return {}
-        rows = [
-            {"plan_id": plan_id, "day_number": day_number, "scheduled_date": scheduled.isoformat()}
-            for day_number, scheduled in sorted(dates_by_day.items())
-        ]
+        rows = []
+        for day_number, scheduled in sorted(dates_by_day.items()):
+            row = {"plan_id": plan_id, "day_number": day_number, "scheduled_date": scheduled.isoformat()}
+            if day_number in cardio_days:
+                row.update({
+                    "kind": KIND_CARDIO,
+                    "cardio_rounds": cardio_level[0],
+                    "cardio_work_seconds": cardio_level[1],
+                })
+            else:
+                row["kind"] = KIND_STRENGTH
+            rows.append(row)
         inserted = self.client.table("sessions").insert(rows).execute().data
         return {row["day_number"]: row["id"] for row in inserted}
+
+    @staticmethod
+    def _cardio_days_for(plan_type: Optional[str], strength_days) -> Tuple[int, ...]:
+        """The plan type's cardio days, minus any that already hold a
+        strength session (never the case for the built-in templates)."""
+        return tuple(d for d in CARDIO_DAYS.get(plan_type or "", ()) if d not in set(strength_days))
+
+    def _cardio_circuit(self) -> List[dict]:
+        """The active cardio_exercises in circuit order, each as
+        {id, name, video_url, poster_url}. Cached for a few minutes, since
+        every dashboard load needs it and it rarely changes."""
+        now = time.monotonic()
+        if self._circuit_cache and now - self._circuit_cache[0] < CARDIO_CIRCUIT_TTL_SECONDS:
+            return self._circuit_cache[1]
+        rows = (
+            self.client.table("cardio_exercises")
+            .select("id, name, video_path, poster_path, position")
+            .eq("active", True)
+            .order("position")
+            .execute()
+            .data
+        )
+        circuit = [
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "video_url": _cardio_media_url(row.get("video_path")),
+                "poster_url": _cardio_media_url(row.get("poster_path")),
+            }
+            for row in sorted(rows, key=lambda r: r["position"])
+        ]
+        self._circuit_cache = (now, circuit)
+        return circuit
+
+    def _cardio_block(self, session: dict) -> Dict[str, Any]:
+        """What the PWA needs to run (or show) a cardio session.
+        `work_seconds` is what she actually does: 70% of the planned
+        `planned_work_seconds` on a period day (is_period)."""
+        rounds, planned = session_level(session)
+        work_seconds = actual_work_seconds(session)
+        circuit = self._cardio_circuit()
+        return {
+            "rounds": rounds,
+            "work_seconds": work_seconds,
+            "planned_work_seconds": planned,
+            "is_period": bool(session.get("is_period")),
+            "rating": session.get("cardio_rating"),
+            "get_ready_seconds": CARDIO_GET_READY_SECONDS,
+            "exercise_rest_seconds": CARDIO_EXERCISE_REST_SECONDS,
+            "round_rest_seconds": CARDIO_ROUND_REST_SECONDS,
+            "estimated_seconds": estimated_seconds((rounds, work_seconds), len(circuit)),
+            "exercises": circuit,
+        }
 
     def get_previous_plan_workouts(self, user_id: str, before_plan_id: int) -> List[dict]:
         """The workouts (see _workout_entries) of the user's most recently
@@ -798,6 +908,49 @@ class WorkoutPlanRepository:
         }
         return sources, previous_rows
 
+    def _cardio_next_level(self, source_plan: dict, source_sessions: List[dict]) -> Tuple[int, int]:
+        """Next week's cardio level (rounds, seconds per exercise) from the
+        source plan's cardio sessions (backend.cardio.next_level). A plan
+        with none (from before cardio existed) starts at CARDIO_START.
+        Period sessions don't vote (week_outcome), and the level read is the
+        stored, planned one, so a period week never lowers it.
+
+        A medium week only steps up when the previous counted week — the
+        nearest ancestor plan with a completed non-period cardio session,
+        skipping weeks whose cardio was all missed or on her period — was
+        also medium at this level.
+        """
+        cardio = sorted((s for s in source_sessions if is_cardio(s)), key=lambda s: s["day_number"])
+        if not cardio:
+            return CARDIO_START
+        current = session_level(cardio[0])
+        outcome = week_outcome(cardio)
+        previous_week = None
+        if outcome == MEDIUM:
+            previous_week = self._previous_cardio_week(source_plan.get("parent_plan_id"))
+        return next_level(current, outcome, previous_week)
+
+    def _previous_cardio_week(self, plan_id: Optional[int]) -> Optional[Tuple[str, Tuple[int, int]]]:
+        """(outcome, level) of the nearest plan, from plan_id up through
+        parent_plan_id, with a completed cardio session. None if there's
+        none within MAX_PROGRESSION_HOPS, or the chain reaches a plan from
+        before cardio existed."""
+        hops = 0
+        while plan_id and hops < MAX_PROGRESSION_HOPS:
+            cardio = sorted(
+                (s for s in self._fetch_plan_sessions(plan_id, CARDIO_HISTORY_SELECT) if is_cardio(s)),
+                key=lambda s: s["day_number"],
+            )
+            if not cardio:
+                return None
+            outcome = week_outcome(cardio)
+            if outcome is not None:
+                return outcome, session_level(cardio[0])
+            parent = self.client.table("plans").select("parent_plan_id").eq("id", plan_id).execute().data
+            plan_id = parent[0]["parent_plan_id"] if parent else None
+            hops += 1
+        return None
+
     def regenerate_current_plan(self, user_id: str) -> dict:
         """Rebuild the user's current (unfinished) week: delete it and run
         progression again from the plan it was progressed from, keeping its
@@ -899,6 +1052,9 @@ class WorkoutPlanRepository:
             "safety_summary": source_plan.get("safety_summary"),
         }
         plan = self.client.table("plans").insert(plan_row).execute().data[0]
+        # Cardio sessions progress as a week (see _cardio_next_level), not
+        # per exercise row, so the strength machinery below never sees them.
+        strength_sessions = [s for s in source_sessions if not is_cardio(s)]
         session_ids = {}
         if source_sessions:
             source_start = min(
@@ -907,11 +1063,16 @@ class WorkoutPlanRepository:
             )
             if start_date is None:
                 start_date = max(source_start + PROGRESSION_SCHEDULE_OFFSET, app_today())
+            strength_days = [s["day_number"] for s in strength_sessions]
+            # A plan from before cardio existed gets its cardio days here too.
+            cardio_days = self._cardio_days_for(source_plan.get("plan_type"), strength_days)
             session_ids = self._insert_sessions(
                 plan["id"],
-                {s["day_number"]: scheduled_date_for(start_date, s["day_number"]) for s in source_sessions},
+                {d: scheduled_date_for(start_date, d) for d in (*strength_days, *cardio_days)},
+                cardio_days=cardio_days,
+                cardio_level=self._cardio_next_level(source_plan, source_sessions),
             )
-        sources, previous_rows = self._progression_sources(source_plan, source_sessions)
+        sources, previous_rows = self._progression_sources(source_plan, strength_sessions)
         exercise_rows = _flatten_session_exercises(sources)
 
         user_joint_pain = self._fetch_user_joint_pain(user_id)
@@ -974,9 +1135,14 @@ class WorkoutPlanRepository:
         created = self.client.table("plans").insert(plan_row).execute().data[0]
 
         training_days = [day for day in plan.get("schedule", []) if not day.get("is_rest_day")]
+        cardio_days = self._cardio_days_for(plan.get("plan_type"), [d["day_number"] for d in training_days])
         session_ids = self._insert_sessions(
             created["id"],
-            {day["day_number"]: scheduled_date_for(start_date, day["day_number"]) for day in training_days},
+            {
+                day_number: scheduled_date_for(start_date, day_number)
+                for day_number in (*(d["day_number"] for d in training_days), *cardio_days)
+            },
+            cardio_days=cardio_days,
         )
 
         exercise_rows = []
@@ -1260,9 +1426,10 @@ class WorkoutPlanRepository:
             if not still_open:
                 plan_completed = self.mark_plan_completed(session["plan_id"]) is not None
 
-        return {
+        summary = {
             "session_id": session_id,
             "day_number": session["day_number"],
+            "kind": session.get("kind") or KIND_STRENGTH,
             "total_time_seconds": total_time_seconds,
             "exercises_completed": exercises_completed,
             "total_exercises": total_exercises,
@@ -1271,31 +1438,70 @@ class WorkoutPlanRepository:
             "plan_completed": plan_completed,
             "newly_completed": newly_completed,
         }
+        if is_cardio(session):
+            # A cardio session has no session_exercises: it counts as the
+            # whole circuit, every round of it.
+            n_exercises = len(self._cardio_circuit())
+            summary.update({
+                "exercises_completed": n_exercises,
+                "total_exercises": n_exercises,
+                "rounds": session.get("cardio_rounds"),
+                "work_seconds": actual_work_seconds(session),
+                "rating": session.get("cardio_rating"),
+                "is_period": bool(session.get("is_period")),
+            })
+        return summary
 
-    @staticmethod
-    def _reconstruct_plan(plan: dict, sessions: List[dict]) -> Dict[str, Any]:
+    def set_cardio_rating(self, session_id: int, rating: str) -> Optional[dict]:
+        """Record how hard a cardio session felt (easy / medium / hard),
+        which next week's cardio level is worked out from. None if the
+        session isn't a cardio one."""
+        if rating not in CARDIO_RATINGS:
+            raise ValueError(f"rating must be one of {', '.join(CARDIO_RATINGS)}")
+        result = (
+            self.client.table("sessions")
+            .update({"cardio_rating": rating})
+            .eq("id", session_id)
+            .eq("kind", KIND_CARDIO)
+            .execute()
+            .data
+        )
+        return result[0] if result else None
+
+    def _reconstruct_plan(self, plan: dict, sessions: List[dict]) -> Dict[str, Any]:
         """Rebuild the full DAY_TEMPLATES-shaped schedule from a plan row and
-        its sessions (each with nested session_exercises rows)."""
+        its sessions (each with nested session_exercises rows). A rest day
+        holding a cardio session comes back as that cardio day (kind
+        "cardio", with its `cardio` block); other days have kind "strength",
+        or None for a rest day."""
         sessions_by_day = {s["day_number"]: s for s in sessions}
 
         template = DAY_TEMPLATES[plan["plan_type"]]["schedule"]
         schedule = []
         for day in template:
-            session = None if day["is_rest_day"] else sessions_by_day.get(day["day_number"])
+            session = sessions_by_day.get(day["day_number"])
+            if is_cardio(session):
+                day = cardio_day(day)
+            elif day["is_rest_day"]:
+                session = None
             entries = {"primary": [], "secondary": []}
             if session is not None:
                 for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
                     entries[row["category"]].append(WorkoutPlanRepository._exercise_entry(row))
-            schedule.append({
+            entry = {
                 "day_number": day["day_number"],
                 "day_label": day["day_label"],
                 "split_name": day["split_name"],
                 "is_rest_day": day["is_rest_day"],
+                "kind": None if day["is_rest_day"] else day.get("kind", KIND_STRENGTH),
                 "session_id": session["id"] if session else None,
                 "scheduled_date": session["scheduled_date"] if session else None,
                 "primary": entries["primary"],
                 "secondary": entries["secondary"],
-            })
+            }
+            if is_cardio(session):
+                entry["cardio"] = self._cardio_block(session)
+            schedule.append(entry)
 
         return {
             "plan_type": plan["plan_type"],
@@ -1306,12 +1512,13 @@ class WorkoutPlanRepository:
             "schedule": schedule,
         }
 
-    @staticmethod
-    def _workout_entries(plan: dict, sessions: List[dict]) -> List[dict]:
+    def _workout_entries(self, plan: dict, sessions: List[dict]) -> List[dict]:
         """One entry per session (training day) of a plan, in date order: its
-        split name from DAY_TEMPLATES, dates, and exercises (primary first,
-        then secondary) with their set logs and RPE. Feeds the dashboard's
-        workout panels and detail screen."""
+        split name from DAY_TEMPLATES ("Cardio" for a cardio session), its
+        kind, dates, and exercises (primary first, then secondary) with
+        their set logs and RPE — or, for cardio, its `cardio` block (level,
+        rating, timings and the circuit). Feeds the dashboard's workout
+        panels and detail screen."""
         names = {day["day_number"]: day["split_name"] for day in DAY_TEMPLATES[plan["plan_type"]]["schedule"]}
         entries = []
         for session in sorted(sessions, key=lambda s: (s["scheduled_date"], s["day_number"])):
@@ -1319,17 +1526,20 @@ class WorkoutPlanRepository:
                 session.get("session_exercises") or [],
                 key=lambda r: (r["category"] != "primary", r["id"]),
             )
+            cardio = is_cardio(session)
             entries.append({
                 "session_id": session["id"],
                 "plan_id": plan["id"],
                 "day_number": session["day_number"],
-                "name": names.get(session["day_number"]),
+                "kind": KIND_CARDIO if cardio else KIND_STRENGTH,
+                "name": CARDIO_SPLIT_NAME if cardio else names.get(session["day_number"]),
                 "scheduled_date": session["scheduled_date"],
                 "started_at": session.get("started_at"),
                 "completed_at": session.get("completed_at"),
                 "is_period": bool(session.get("is_period")),
                 "has_feedback": bool(session.get("feedback_audio_path")),
                 "exercises": [WorkoutPlanRepository._exercise_entry(row) for row in rows],
+                **({"cardio": self._cardio_block(session)} if cardio else {}),
             })
         return entries
 

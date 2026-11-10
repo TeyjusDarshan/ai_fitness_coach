@@ -17,7 +17,8 @@ import {
 } from '../../adminApi'
 import { LoggedSets, Prescription } from '../../components/ExerciseLog'
 import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, WORKOUT_STATUS_LABELS } from '../../utils'
-import type { ExerciseEntry } from '../../types'
+import type { CardioPlan, ExerciseEntry } from '../../types'
+import { levelForCardioRating } from '../../components/effortLevels'
 import { humanize } from './planDraft'
 
 // Coach-only, read-only view of one client at a time: profile basics, joint
@@ -454,6 +455,7 @@ function WorkoutCard({
           {workout.duration_seconds != null && (
             <p className="admin__muted">Took {formatDuration(workout.duration_seconds)}</p>
           )}
+          {workout.cardio && <CardioMonitorLine cardio={workout.cardio} done={done} />}
           {exercises.map((exercise) => (
             <div key={exercise.id} className="monitor__exercise">
               <div className="monitor__exercise-head">
@@ -510,6 +512,26 @@ function WorkoutCard({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// A cardio workout has no exercise rows to edit: just its level (rounds ×
+// seconds per exercise, set by the weekly progression) and, once done, how
+// the client said it felt.
+function CardioMonitorLine({ cardio, done }: { cardio: CardioPlan; done: boolean }) {
+  const felt = levelForCardioRating(cardio.rating)
+  return (
+    <div className="monitor__exercise">
+      <div className="monitor__exercise-head">
+        <span className="monitor__exercise-name">Cardio circuit</span>
+      </div>
+      <div className="workout-detail__muted">
+        {cardio.rounds} round{cardio.rounds === 1 ? '' : 's'} × {cardio.work_seconds} s per exercise ·{' '}
+        {cardio.exercises.length} exercises
+        {cardio.is_period && ` (period: 70% of the planned ${cardio.planned_work_seconds} s)`}
+      </div>
+      {done && <div className="workout-detail__effort">Felt: {felt ? felt.label : 'Not rated'}</div>}
     </div>
   )
 }

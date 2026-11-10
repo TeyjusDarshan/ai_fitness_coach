@@ -4,6 +4,7 @@ import { startSession } from '../api'
 import { firstIncompleteIndex, flattenExercises } from '../utils'
 import type { DashboardWorkout } from '../types'
 import { useAppState } from './AppStateContext'
+import { unlockTickSound } from './tickSound'
 
 // How long the "personalizing" popup stays up at minimum, even if the
 // server answers faster.
@@ -46,6 +47,12 @@ export function useStartWorkout() {
     } finally {
       setAdjusting(false)
     }
+    // Cardio opens with the same warm-up; once started, coming back goes
+    // straight to the circuit (which starts over — nothing is logged in it).
+    if (day.kind === 'cardio') {
+      navigate(workout.started_at ? `/day/${day.day_number}/cardio` : `/day/${day.day_number}/warmup`)
+      return
+    }
     // A fresh session opens with the warm-up video, whose "Start workout"
     // button leads to the first exercise. Resuming one that already has
     // logged sets skips straight back to where the user left off.
@@ -58,6 +65,10 @@ export function useStartWorkout() {
   }
 
   async function start(workout: DashboardWorkout) {
+    // The cardio circuit ticks through its countdowns without another tap,
+    // so the sound has to be unlocked by this one.
+    if (workout.kind === 'cardio') unlockTickSound()
+    // On a cardio day a "yes" shortens each exercise to 70% instead.
     if (gender === 'female' && !workout.started_at) {
       setAsking(workout)
       return

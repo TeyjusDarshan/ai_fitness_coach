@@ -11,6 +11,8 @@ import { SummaryScreen } from './screens/SummaryScreen'
 import { GrowScreen } from './screens/GrowScreen'
 import { RoutineVideoScreen } from './screens/RoutineVideoScreen'
 import { WorkoutDetailScreen } from './screens/WorkoutDetailScreen'
+import { CardioScreen } from './screens/CardioScreen'
+import { CardioRatingScreen } from './screens/CardioRatingScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
 
 function Spinner() {
@@ -118,6 +120,22 @@ function App() {
         element={
           <RequireAuth>
             <RestTimerScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/cardio"
+        element={
+          <RequireAuth>
+            <CardioScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/day/:dayNumber/cardio/rate"
+        element={
+          <RequireAuth>
+            <CardioRatingScreen />
           </RequireAuth>
         }
       />

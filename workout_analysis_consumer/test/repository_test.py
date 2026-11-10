@@ -44,3 +44,87 @@ def test_unlogged_sets_count_as_nothing_done():
     _compare_to_last_time(exercises, [_exercise("Squat", 10, 10)])
 
     assert exercises[0]["compared_to_last_time"] == "less"
+
+
+# ---------- cardio sessions ----------
+
+from workout_analysis_consumer.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT  # noqa: E402
+from workout_analysis_consumer.repository import AnalysisRepository  # noqa: E402
+
+
+class _Query:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def select(self, *_):
+        return self
+
+    def order(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, key, value):
+        self.rows = [row for row in self.rows if row.get(key) == value]
+        return self
+
+    def execute(self):
+        return type("Response", (), {"data": self.rows})()
+
+
+class _Client:
+    def __init__(self, tables):
+        self.tables = tables
+
+    def table(self, name):
+        return _Query(list(self.tables.get(name, [])))
+
+
+def _cardio_client(previous_level=(1, 30), is_period=False):
+    return _Client({
+        "sessions": [
+            {"id": 22, "day_number": 2, "plan_id": 8, "is_period": is_period, "feedback_audio_path": None,
+             "kind": "cardio", "cardio_rounds": 1, "cardio_work_seconds": 40, "cardio_rating": "hard",
+             "plans": {"user_id": "usr_1", "plan_type": "3_day", "parent_plan_id": 7}},
+            {"id": 12, "day_number": 2, "plan_id": 7, "is_period": False, "started_at": "s",
+             "completed_at": "c", "kind": "cardio", "cardio_rounds": previous_level[0],
+             "cardio_work_seconds": previous_level[1], "cardio_rating": "easy",
+             "plans": {"parent_plan_id": None}, "session_exercises": []},
+        ],
+        "cardio_exercises": [
+            {"name": "Side step", "position": 2, "active": True},
+            {"name": "Marching rows", "position": 1, "active": True},
+            {"name": "Retired", "position": 3, "active": False},
+        ],
+        "user_profiles": [{"user_id": "usr_1", "profile": {}, "name": "Meena"}],
+    })
+
+
+def test_a_cardio_session_carries_its_circuit_level_rating_and_comparison():
+    context = AnalysisRepository(client=_cardio_client()).fetch_context(22)
+
+    assert context["workout_type"] == "cardio"
+    assert context["exercises"] == []
+    assert context["cardio"] == {
+        "circuit": ["Marching rows", "Side step"],
+        "rounds": 1,
+        "seconds_per_exercise": 40,
+        "rating": "hard",
+        "compared_to_last_time": "more",   # 40 s per exercise vs 30 s
+    }
+
+
+def test_a_cardio_comparison_counts_every_round():
+    context = AnalysisRepository(client=_cardio_client(previous_level=(2, 30))).fetch_context(22)
+
+    assert context["cardio"]["compared_to_last_time"] == "less"   # 1 x 40 vs 2 x 30
+
+
+def test_the_prompt_explains_cardio_days():
+    assert '"workout_type" is "cardio"' in WORKOUT_ANALYSIS_SYSTEM_PROMPT
+
+
+def test_a_period_cardio_session_is_compared_by_the_seconds_she_actually_did():
+    # Planned 1 x 40 s, done at 70% = 28 s, against 30 s last time.
+    context = AnalysisRepository(client=_cardio_client(is_period=True)).fetch_context(22)
+
+    assert context["cardio"]["seconds_per_exercise"] == 28
+    assert context["cardio"]["compared_to_last_time"] == "less"

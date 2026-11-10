@@ -684,12 +684,15 @@ def test_create_plan_schedules_one_session_per_training_day_from_start_date():
 
     assert client.inserted["plans"][0]["parent_plan_id"] is None
     sessions = client.inserted["sessions"]
-    assert [(s["plan_id"], s["day_number"], s["scheduled_date"]) for s in sessions] == [
-        (plan["id"], 1, "2026-10-13"),
-        (plan["id"], 3, "2026-10-15"),
-        (plan["id"], 5, "2026-10-17"),
+    assert [(s["plan_id"], s["day_number"], s["scheduled_date"], s["kind"]) for s in sessions] == [
+        (plan["id"], 1, "2026-10-13", "strength"),
+        (plan["id"], 2, "2026-10-14", "cardio"),
+        (plan["id"], 3, "2026-10-15", "strength"),
+        (plan["id"], 4, "2026-10-16", "cardio"),
+        (plan["id"], 5, "2026-10-17", "strength"),
+        (plan["id"], 6, "2026-10-18", "cardio"),
     ]
-    session_ids = [s["id"] for s in sessions]
+    session_ids = [s["id"] for s in sessions if s["kind"] == "strength"]
     assert [row["session_id"] for row in client.inserted["session_exercises"]] == session_ids
     assert all("day_number" not in row for row in client.inserted["session_exercises"])
 
@@ -873,7 +876,10 @@ def test_progressed_plan_starts_today_when_a_week_later_has_already_passed(monke
     _progress(repo, "usr_1", _source_plan(), [_row(id=1, day_number=1), _row(id=2, day_number=3)])
 
     sessions = {s["day_number"]: s["scheduled_date"] for s in client.inserted["sessions"]}
-    assert sessions == {1: "2026-10-30", 3: "2026-11-01"}
+    # Days 2/4/6 are the 3_day cardio days, added since the source had none.
+    assert sessions == {
+        1: "2026-10-30", 2: "2026-10-31", 3: "2026-11-01", 4: "2026-11-02", 6: "2026-11-04",
+    }
 
 
 def _seed_unfinished_plan(client, day_completed_at):
@@ -1410,7 +1416,8 @@ def test_regenerating_the_current_week_replaces_it_with_a_fresh_progression_on_t
     assert new_plan["parent_plan_id"] == 6
     assert new_plan["coach_notes"] == "keep it gentle"
     assert sorted((s["day_number"], s["scheduled_date"]) for s in client.inserted["sessions"]) == [
-        (1, "2026-10-12"), (3, "2026-10-14"), (5, "2026-10-16"),
+        (1, "2026-10-12"), (2, "2026-10-13"), (3, "2026-10-14"), (4, "2026-10-15"),
+        (5, "2026-10-16"), (6, "2026-10-17"),
     ]
     assert [row["reps"] for row in client.inserted["session_exercises"]] == ["9,9,9"] * 3
 
@@ -1488,3 +1495,299 @@ def test_completed_sessions_are_counted_across_every_plan_of_the_user():
 
 def test_a_client_with_no_plans_has_no_completed_sessions():
     assert _repo(FakeSupabaseClient()).count_completed_sessions("usr_new") == 0
+
+
+# ---------- cardio days ----------
+
+CIRCUIT = [
+    {"id": 2, "name": "Side step", "video_path": "side-step.mp4", "poster_path": "side-step.jpg",
+     "position": 2, "active": True},
+    {"id": 1, "name": "Marching rows", "video_path": "marching-rows.mp4", "poster_path": "marching-rows.jpg",
+     "position": 1, "active": True},
+    {"id": 3, "name": "Retired", "video_path": "retired.mp4", "poster_path": None,
+     "position": 3, "active": False},
+]
+
+
+def _cardio_session(day_number, rating=None, completed=True, level=(1, 30), plan_id=None, **extra):
+    session = {
+        "id": 600 + day_number + (plan_id or 0) * 10,
+        "day_number": day_number,
+        "scheduled_date": date(2026, 10, 11 + day_number).isoformat(),
+        "completed_at": "2026-10-13T10:30:00+00:00" if completed else None,
+        "is_period": False,
+        "kind": "cardio",
+        "cardio_rounds": level[0],
+        "cardio_work_seconds": level[1],
+        "cardio_rating": rating,
+        "session_exercises": [],
+        **extra,
+    }
+    if plan_id is not None:
+        session["plan_id"] = plan_id
+    return session
+
+
+def _strength_session(day_number):
+    return {
+        "id": 500 + day_number,
+        "day_number": day_number,
+        "scheduled_date": date(2026, 10, 11 + day_number).isoformat(),
+        "completed_at": "2026-10-12T10:30:00+00:00",
+        "is_period": False,
+        "kind": "strength",
+        "session_exercises": [_row(id=day_number, session_exercise_rpe={"rpe": 8},
+                                   session_exercise_set_logs=_hit("10,10,10"))],
+    }
+
+
+def _progress_cardio(client, cardio_sessions, source_plan=None):
+    """Progress a 3_day week of three strength days plus cardio_sessions;
+    returns the new plan's cardio session rows."""
+    client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 15}])
+    sessions = [_strength_session(d) for d in (1, 3, 5)] + cardio_sessions
+    _repo(client).create_progressed_plan("usr_1", source_plan or _source_plan(), sessions)
+    return [s for s in client.inserted["sessions"] if s["kind"] == "cardio"]
+
+
+def _levels(rows):
+    return {(r["day_number"], r["cardio_rounds"], r["cardio_work_seconds"]) for r in rows}
+
+
+def test_create_plan_puts_cardio_on_days_3_and_6_of_a_4_day_plan_at_the_start_level():
+    from agents.prompts_v1 import DAY_TEMPLATES
+
+    client = FakeSupabaseClient()
+    schedule = [
+        {**day, "primary": [{"exercise_id": 100, "slot": "Squat", "sets": 3, "reps": "10"}], "secondary": []}
+        if not day["is_rest_day"] else day
+        for day in DAY_TEMPLATES["4_day"]["schedule"]
+    ]
+
+    _repo(client).create_plan("usr_1", {"plan_type": "4_day", "schedule": schedule}, date(2026, 10, 12))
+
+    cardio = [s for s in client.inserted["sessions"] if s["kind"] == "cardio"]
+    assert _levels(cardio) == {(3, 1, 30), (6, 1, 30)}
+    assert [s["day_number"] for s in client.inserted["sessions"] if s["kind"] == "strength"] == [1, 2, 4, 5]
+    # Day 7 stays a full rest day.
+    assert 7 not in {s["day_number"] for s in client.inserted["sessions"]}
+
+
+@pytest.mark.parametrize("ratings, expected", [
+    (("easy", "easy", "hard"), (1, 40)),
+    (("easy", "hard", None), (1, 20)),      # the 3rd wasn't done: 1-1 tie goes harder
+    (("hard", "hard", "medium"), (1, 20)),
+])
+def test_progressed_plan_takes_the_weeks_majority_cardio_rating(ratings, expected):
+    client = FakeSupabaseClient()
+    sessions = [
+        _cardio_session(day, rating=rating, completed=rating is not None)
+        for day, rating in zip((2, 4, 6), ratings)
+    ]
+
+    cardio = _progress_cardio(client, sessions)
+
+    assert _levels(cardio) == {(day, *expected) for day in (2, 4, 6)}
+
+
+def test_a_week_with_every_cardio_session_missed_holds_the_level():
+    client = FakeSupabaseClient()
+    sessions = [_cardio_session(day, completed=False, level=(2, 40)) for day in (2, 4, 6)]
+
+    assert _levels(_progress_cardio(client, sessions)) == {(d, 2, 40) for d in (2, 4, 6)}
+
+
+def test_easy_at_60_seconds_adds_a_round_at_30():
+    client = FakeSupabaseClient()
+    sessions = [_cardio_session(day, rating="easy", level=(1, 60)) for day in (2, 4, 6)]
+
+    assert _levels(_progress_cardio(client, sessions)) == {(d, 2, 30) for d in (2, 4, 6)}
+
+
+def _seed_previous_cardio_week(client, plan_id, ratings, level, parent_plan_id=None, completed=True):
+    client.seed("plans", [{"id": plan_id, "parent_plan_id": parent_plan_id}])
+    client.seed("sessions", [
+        _cardio_session(day, rating=rating, level=level, plan_id=plan_id, completed=completed)
+        for day, rating in zip((2, 4, 6), ratings)
+    ])
+
+
+def test_a_medium_week_holds_the_first_time():
+    client = FakeSupabaseClient()
+    _seed_previous_cardio_week(client, 54, ("easy",) * 3, (1, 30))
+    sessions = [_cardio_session(day, rating="medium", level=(1, 40)) for day in (2, 4, 6)]
+
+    cardio = _progress_cardio(client, sessions, _source_plan(parent_plan_id=54))
+
+    assert _levels(cardio) == {(d, 1, 40) for d in (2, 4, 6)}
+
+
+def test_a_second_medium_week_at_the_same_level_steps_up():
+    client = FakeSupabaseClient()
+    _seed_previous_cardio_week(client, 54, ("medium",) * 3, (1, 40))
+    sessions = [_cardio_session(day, rating="medium", level=(1, 40)) for day in (2, 4, 6)]
+
+    cardio = _progress_cardio(client, sessions, _source_plan(parent_plan_id=54))
+
+    assert _levels(cardio) == {(d, 1, 50) for d in (2, 4, 6)}
+
+
+def test_the_medium_hold_skips_a_week_whose_cardio_was_all_missed():
+    client = FakeSupabaseClient()
+    _seed_previous_cardio_week(client, 53, ("medium",) * 3, (1, 40))
+    _seed_previous_cardio_week(client, 54, (None,) * 3, (1, 40), parent_plan_id=53, completed=False)
+    sessions = [_cardio_session(day, rating="medium", level=(1, 40)) for day in (2, 4, 6)]
+
+    cardio = _progress_cardio(client, sessions, _source_plan(parent_plan_id=54))
+
+    assert _levels(cardio) == {(d, 1, 50) for d in (2, 4, 6)}
+
+
+def test_a_plan_from_before_cardio_gets_cardio_days_at_the_start_level():
+    client = FakeSupabaseClient()
+
+    cardio = _progress_cardio(client, [])
+
+    assert _levels(cardio) == {(d, 1, 30) for d in (2, 4, 6)}
+    # Strength progression is untouched: one row per strength day, none on cardio days.
+    cardio_ids = {s["id"] for s in cardio}
+    assert len(client.inserted["session_exercises"]) == 3
+    assert not cardio_ids & {row["session_id"] for row in client.inserted["session_exercises"]}
+
+
+def test_unfinished_plan_shows_cardio_days_with_their_circuit(monkeypatch):
+    monkeypatch.setenv("SUPABASE_URL", "https://proj.supabase.co")
+    client = FakeSupabaseClient()
+    client.seed("plans", [{
+        "id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False, "completed_at": None,
+        "plan_selection_reason": None, "medical_clearance_warning": None,
+        "coach_notes": None, "safety_summary": None,
+    }])
+    client.seed("cardio_exercises", CIRCUIT)
+    client.seed("sessions", [
+        {**_cardio_session(2, completed=False, level=(1, 40), plan_id=7), "id": 22, "started_at": None},
+    ])
+
+    result = _repo(client).get_unfinished_plan("usr_1")
+
+    day2 = result["plan"]["schedule"][1]
+    assert (day2["split_name"], day2["is_rest_day"], day2["kind"], day2["session_id"]) == (
+        "Cardio", False, "cardio", 22,
+    )
+    assert result["plan"]["schedule"][3]["is_rest_day"] is True   # day 4: no session, still rest
+    assert result["plan"]["schedule"][3]["kind"] is None
+    [workout] = result["workouts"]
+    assert (workout["name"], workout["kind"]) == ("Cardio", "cardio")
+    cardio = workout["cardio"]
+    assert (cardio["rounds"], cardio["work_seconds"], cardio["rating"]) == (1, 40, None)
+    assert cardio["estimated_seconds"] == 10 + 2 * 40 + 20
+    assert [e["name"] for e in cardio["exercises"]] == ["Marching rows", "Side step"]
+    assert cardio["exercises"][0]["video_url"] == (
+        "https://proj.supabase.co/storage/v1/object/public/cardio-videos/marching-rows.mp4"
+    )
+    assert result["sessions"][2]["kind"] == "cardio"
+
+
+def test_set_cardio_rating_only_rates_cardio_sessions():
+    client = FakeSupabaseClient()
+    client.seed("sessions", [
+        {"id": 22, "kind": "cardio", "cardio_rating": None},
+        {"id": 21, "kind": "strength"},
+    ])
+    repo = _repo(client)
+
+    assert repo.set_cardio_rating(22, "hard")["cardio_rating"] == "hard"
+    assert repo.set_cardio_rating(21, "hard") is None
+    with pytest.raises(ValueError):
+        repo.set_cardio_rating(22, "brutal")
+
+
+def test_completing_a_cardio_session_reports_its_rounds_and_circuit():
+    client = FakeSupabaseClient()
+    plan_ref = {"user_id": "usr_1", "plan_type": "3_day", "completed": False}
+    client.seed("plans", [{"id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False}])
+    client.seed("cardio_exercises", CIRCUIT)
+    client.seed("sessions", [
+        {**_cardio_session(2, rating="easy", completed=False, level=(2, 30), plan_id=7),
+         "id": 22, "scheduled_date": "2026-10-12", "started_at": "2026-10-12T10:00:00+00:00",
+         "plans": plan_ref},
+        {"id": 23, "plan_id": 7, "day_number": 3, "scheduled_date": "2026-10-14", "completed_at": None,
+         "kind": "strength"},
+    ])
+
+    summary = _repo(client).complete_session(22)
+
+    assert summary["kind"] == "cardio"
+    assert (summary["rounds"], summary["work_seconds"], summary["rating"]) == (2, 30, "easy")
+    assert (summary["exercises_completed"], summary["total_exercises"]) == (2, 2)
+    assert summary["plan_completed"] is False   # day 3 is still to come
+
+
+def test_a_period_week_holds_the_cardio_level():
+    client = FakeSupabaseClient()
+    sessions = [_cardio_session(day, rating="easy", level=(1, 40), is_period=True) for day in (2, 4, 6)]
+
+    assert _levels(_progress_cardio(client, sessions)) == {(d, 1, 40) for d in (2, 4, 6)}
+
+
+def test_period_cardio_ratings_dont_vote():
+    client = FakeSupabaseClient()
+    sessions = [
+        _cardio_session(2, rating="easy", is_period=True),
+        _cardio_session(4, rating="easy", is_period=True),
+        _cardio_session(6, rating="hard"),
+    ]
+
+    assert _levels(_progress_cardio(client, sessions)) == {(d, 1, 20) for d in (2, 4, 6)}
+
+
+def test_the_medium_hold_skips_a_week_spent_on_her_period():
+    client = FakeSupabaseClient()
+    _seed_previous_cardio_week(client, 53, ("medium",) * 3, (1, 40))
+    _seed_previous_cardio_week(client, 54, ("easy",) * 3, (1, 40), parent_plan_id=53)
+    for session in client.tables["sessions"]:
+        if session["plan_id"] == 54:
+            session["is_period"] = True
+    sessions = [_cardio_session(day, rating="medium", level=(1, 40)) for day in (2, 4, 6)]
+
+    cardio = _progress_cardio(client, sessions, _source_plan(parent_plan_id=54))
+
+    assert _levels(cardio) == {(d, 1, 50) for d in (2, 4, 6)}
+
+
+def test_a_period_cardio_session_runs_at_70_percent_of_its_planned_seconds():
+    client = FakeSupabaseClient()
+    client.seed("plans", [{
+        "id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False, "completed_at": None,
+        "plan_selection_reason": None, "medical_clearance_warning": None,
+        "coach_notes": None, "safety_summary": None,
+    }])
+    client.seed("cardio_exercises", CIRCUIT)
+    client.seed("sessions", [{
+        **_cardio_session(2, completed=False, level=(1, 30), plan_id=7, is_period=True),
+        "id": 22, "started_at": "2026-10-13T10:00:00+00:00",
+    }])
+
+    [workout] = _repo(client).get_unfinished_plan("usr_1")["workouts"]
+
+    cardio = workout["cardio"]
+    assert (cardio["work_seconds"], cardio["planned_work_seconds"], cardio["is_period"]) == (21, 30, True)
+    assert cardio["estimated_seconds"] == 10 + 2 * 21 + 20
+    # The stored level is never touched.
+    assert client.tables["sessions"][0]["cardio_work_seconds"] == 30
+
+
+def test_completing_a_period_cardio_session_reports_the_seconds_she_did():
+    client = FakeSupabaseClient()
+    plan_ref = {"user_id": "usr_1", "plan_type": "3_day", "completed": False}
+    client.seed("plans", [{"id": 7, "user_id": "usr_1", "plan_type": "3_day", "completed": False}])
+    client.seed("cardio_exercises", CIRCUIT)
+    client.seed("sessions", [
+        {**_cardio_session(2, completed=False, level=(1, 50), plan_id=7, is_period=True),
+         "id": 22, "scheduled_date": "2026-10-12", "started_at": "2026-10-12T10:00:00+00:00",
+         "plans": plan_ref},
+    ])
+
+    summary = _repo(client).complete_session(22)
+
+    assert (summary["work_seconds"], summary["is_period"]) == (35, True)
