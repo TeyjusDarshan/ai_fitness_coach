@@ -8,6 +8,7 @@ import os
 from typing import List, Literal, Optional
 
 import anthropic
+from ai_usage import record_claude
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -63,7 +64,7 @@ def user_content(context: dict) -> str:
     return json.dumps(context, indent=2, default=str, ensure_ascii=False)
 
 
-def suggest(context: dict) -> SessionSuggestions:
+def suggest(context: dict, user_id: Optional[str] = None) -> SessionSuggestions:
     response = client.beta.messages.parse(
         model=MODEL,
         max_tokens=16000,
@@ -75,6 +76,10 @@ def suggest(context: dict) -> SessionSuggestions:
         # recommended fallback model within the same call.
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
+    )
+    # Billed even when it refuses, so recorded first.
+    record_claude(
+        response, "coach_suggestions", user_id=user_id, session_id=(context.get("session") or {}).get("session_id")
     )
     if response.stop_reason == "refusal":
         category = response.stop_details.category if response.stop_details else None

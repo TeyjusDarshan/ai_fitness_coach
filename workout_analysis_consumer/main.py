@@ -72,7 +72,7 @@ def _transcribe_voice_notes(
         logger.info("No voice feedback recorded for session_id=%s", context["session_id"])
         return []
 
-    transcripts = transcribe_many(paths)
+    transcripts = transcribe_many(paths, _usage(context, "voice_note_stt"))
     notes = []
     if "session" in transcripts:
         context["client_voice_feedback"] = transcripts["session"]
@@ -153,7 +153,9 @@ def _process_message(repo: AnalysisRepository, session_id: int, phone_number: st
     # Best-effort: a TTS/storage failure shouldn't discard the (costlier)
     # LLM-generated text analysis, so it's still saved with audio_url unset.
     try:
-        audio_url = generate_voice_note(analysis, context["plan_id"], day_number)
+        audio_url = generate_voice_note(
+            analysis, context["plan_id"], day_number, usage=_usage(context, "summary_tts")
+        )
     except Exception:
         logger.exception(
             "Failed to generate voice note for session_id=%s day_number=%s", session_id, day_number
@@ -210,6 +212,11 @@ def _send_text(phone_number: str, body: str) -> None:
         logger.exception("Failed to send WhatsApp text to %s", phone_number)
 
 
+def _usage(context: Dict[str, Any], feature: str) -> Dict[str, Any]:
+    """Who an ai_usage row (speech-to-text / text-to-speech cost) is for."""
+    return {"feature": feature, "user_id": context.get("user_id"), "session_id": context.get("session_id")}
+
+
 def _transcribe_voice_reply(
     reply: Dict[str, Any], clarification: Dict[str, Any], media_id: str
 ) -> Dict[str, Any]:
@@ -221,7 +228,8 @@ def _transcribe_voice_reply(
     path = store_reply_audio(
         audio, f"session_{clarification['session_id']}_reply_{reply['id']}.{extension}", content_type
     )
-    return {"audio_path": path, "transcript": (transcribe_audio(audio, path) or "").strip()}
+    usage = {"feature": "reply_stt", "user_id": clarification["user_id"], "session_id": clarification["session_id"]}
+    return {"audio_path": path, "transcript": (transcribe_audio(audio, path, usage) or "").strip()}
 
 
 def _process_reply(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
@@ -310,7 +318,8 @@ def _send_follow_ups(phone_number: str, context: Dict[str, Any], follow_ups: Lis
     text = " ".join([FOLLOW_UP_INTRO] + [q["text"] for q in follow_ups] + [FOLLOW_UP_CLOSING])
     try:
         audio_url = generate_voice_note(
-            text, context["plan_id"], context["day_number"], suffix="_followup"
+            text, context["plan_id"], context["day_number"], suffix="_followup",
+            usage=_usage(context, "follow_up_tts"),
         )
         whatsapp_client.send_audio(phone_number, audio_url)
     except Exception:

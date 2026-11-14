@@ -1,13 +1,14 @@
 import json
 import uuid
 from string import Template
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
+from ai_usage import record_langchain
 from agents.mock_data_v1 import SAMPLE_USER_PROFILE_V1
 from agents.prompts_preprocessor import PREPROCESSOR_SYSTEM_PROMPT_TEMPLATE
 from agents.workout_agent import extract_message_text, generate_workout_plan_v1
@@ -30,7 +31,7 @@ def _strip_code_fences(text: str) -> str:
     return text.replace("```json", "").replace("```", "").strip()
 
 
-def generate_user_profile(raw_text: str) -> Dict[str, Any]:
+def generate_user_profile(raw_text: str, user_id: Optional[str] = None) -> Dict[str, Any]:
     """Turn free-form client text into a structured profile matching SAMPLE_USER_PROFILE_V1.
 
     The prompt forbids the model from inventing `user_id`, so it always comes
@@ -39,6 +40,7 @@ def generate_user_profile(raw_text: str) -> Dict[str, Any]:
     """
     agent = create_agent(model=llm, system_prompt=SYSTEM_PROMPT)
     agent_response = agent.invoke({"messages": [HumanMessage(content=raw_text)]})
+    record_langchain(agent_response["messages"], "profile_generation", user_id=user_id)
     raw_text_response = extract_message_text(agent_response["messages"][-1].content)
 
     try:

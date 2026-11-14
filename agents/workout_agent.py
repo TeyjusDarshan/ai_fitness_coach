@@ -1,12 +1,14 @@
 import json
 import re
 from string import Template
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
+
+from ai_usage import record_langchain
 
 from agents.prompts_v1 import DAY_TEMPLATES, WORKOUT_AGENT_V1_SYSTEM_PROMPT_TEMPLATE
 from agents.tools.workout_tools import WORKOUT_TOOLS_V1
@@ -80,7 +82,7 @@ def _extract_json(text: str) -> str:
     return candidate[start:end + 1]
 
 
-def generate_workout_plan_v1(user_profile: Dict[str, Any]) -> Dict[str, Any]:
+def generate_workout_plan_v1(user_profile: Dict[str, Any], user_id: Optional[str] = None) -> Dict[str, Any]:
     """Generate a full 7-day (3-day or 4-day) plan for a single client profile.
 
     Selects the plan type from availability.days_per_week, then runs a
@@ -107,6 +109,8 @@ def generate_workout_plan_v1(user_profile: Dict[str, Any]) -> Dict[str, Any]:
         {"messages": [HumanMessage(content=json.dumps(request_payload, indent=2))]},
         config=AGENT_INVOKE_CONFIG,
     )
+    # Every model turn of the tool loop, as one ai_usage row.
+    record_langchain(agent_response["messages"], "plan_generation", user_id=user_id)
     raw_text = extract_message_text(agent_response["messages"][-1].content)
 
     try:

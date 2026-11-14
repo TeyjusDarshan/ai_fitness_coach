@@ -109,7 +109,7 @@ def create_suggestions(session_id):
         return jsonify({"error": "Nothing in this workout can be changed."}), 409
 
     try:
-        result = agent.suggest(context)
+        result = agent.suggest(context, user_id=facts["user_id"])
     except Exception:
         logger.exception("AI coach failed for session_id=%s", session_id)
         return jsonify({"error": "The AI coach couldn't finish. Try again."}), 502

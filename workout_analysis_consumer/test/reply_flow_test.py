@@ -130,7 +130,9 @@ def test_follow_ups_open_round_two_and_are_sent_as_a_voice_note(repo, mocks):
     repo.save_clarification.assert_called_once_with(48, "usr_1", PHONE, 2, [follow_up])
     text = mocks["generate_voice_note"].call_args.args[0]
     assert "Knee-la enga valikkudhu?" in text
-    assert mocks["generate_voice_note"].call_args.kwargs == {"suffix": "_followup"}
+    assert mocks["generate_voice_note"].call_args.kwargs == {
+        "suffix": "_followup", "usage": {"feature": "follow_up_tts", "user_id": "usr_1", "session_id": 48},
+    }
     mocks["whatsapp_client"].send_audio.assert_called_once_with(PHONE, "https://audio/followup.ogg")
 
 
@@ -152,7 +154,9 @@ def test_a_voice_reply_is_downloaded_stored_and_transcribed(repo, mocks):
 
     mocks["whatsapp_client"].download_media.assert_called_once_with("media-1")
     mocks["store_reply_audio"].assert_called_once_with(b"ogg-bytes", "session_48_reply_900.ogg", "audio/ogg")
-    mocks["transcribe_audio"].assert_called_once_with(b"ogg-bytes", "session_48_reply_900.ogg")
+    mocks["transcribe_audio"].assert_called_once_with(
+        b"ogg-bytes", "session_48_reply_900.ogg", {"feature": "reply_stt", "user_id": "usr_1", "session_id": 48}
+    )
     repo.update_reply.assert_any_call(
         900, {"audio_path": "session_48_reply_900.ogg", "transcript": "voice la sonnadhu"}
     )

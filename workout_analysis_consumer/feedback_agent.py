@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, Optional
 
 import anthropic
+from ai_usage import record_claude
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -113,7 +114,7 @@ class ReplyMapping(BaseModel):
 
 # --- Claude call ------------------------------------------------------------
 
-def _parse(system: str, payload: Dict[str, Any], output_format, log_label: str):
+def _parse(system: str, payload: Dict[str, Any], output_format, log_label: str, usage: Dict[str, Any]):
     user_content = json.dumps(payload, indent=2, default=str, ensure_ascii=False)
     logger.info("%s prompt\n--- user ---\n%s", log_label, user_content)
     response = client.beta.messages.parse(
@@ -127,12 +128,19 @@ def _parse(system: str, payload: Dict[str, Any], output_format, log_label: str):
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
     )
+    # Billed even when it refuses, so recorded first.
+    record_claude(response, **usage)
     if response.stop_reason == "refusal":
         category = response.stop_details.category if response.stop_details else None
         raise FeedbackRefusedError(f"Claude declined ({log_label}, category: {category})")
     if response.parsed_output is None:
         raise ValueError(f"No structured output for {log_label} (stop_reason={response.stop_reason})")
     return response.parsed_output
+
+
+def _usage(context: Dict[str, Any], feature: str) -> Dict[str, Any]:
+    """Who an ai_usage row is for."""
+    return {"feature": feature, "user_id": context.get("user_id"), "session_id": context.get("session_id")}
 
 
 @dataclass
@@ -180,6 +188,7 @@ def extract_feedback(
         },
         FeedbackExtraction,
         f"Feedback extraction for session_id={context.get('session_id')}",
+        _usage(context, "feedback_extraction"),
     )
     by_id = {note.id: note for note in voice_notes}
     exercise_ids = exercise_id_map(context)
@@ -231,6 +240,7 @@ def map_reply(
         },
         ReplyMapping,
         f"Reply mapping for session_id={context.get('session_id')}",
+        _usage(context, "reply_mapping"),
     )
     question_ids = {q["id"] for q in questions}
     questions_by_id = {q["id"]: q for q in questions}
