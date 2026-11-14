@@ -12,6 +12,7 @@ import { defaultPlanType, emptyDraft, nextMondayIso, painJoints, type PlanDraft 
 import { PlannerStep } from './PlannerStep'
 import { ProfileStep } from './ProfileStep'
 import { MonitorFlow } from './MonitorFlow'
+import { CostsTab } from './CostsTab'
 import { PlanSavedCard, ReviewStep } from './ReviewStep'
 
 // Coach-only: onboarding (client notes -> generated profile -> hand-built
@@ -26,7 +27,7 @@ export function AdminScreen() {
   const [options, setOptions] = useState<PlanBuilderOptions | null>(null)
   const [unlocking, setUnlocking] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
-  const [section, setSection] = useState<'onboard' | 'monitor'>('onboard')
+  const [section, setSection] = useState<'onboard' | 'monitor' | 'costs'>('onboard')
 
   async function unlock(key: string) {
     setUnlocking(true)
@@ -105,7 +106,7 @@ export function AdminScreen() {
 
   const onUnauthorized = () => lock('The admin key was rejected — enter it again.')
   return (
-    <div className={`screen admin${section === 'monitor' ? ' admin--wide' : ''}`}>
+    <div className={`screen admin${section !== 'onboard' ? ' admin--wide' : ''}`}>
       <div className="admin__header">
         <h1 className="screen-title">Coach admin</h1>
         <button type="button" className="btn-link" onClick={() => lock()}>
@@ -117,6 +118,7 @@ export function AdminScreen() {
           [
             ['onboard', 'Onboard client'],
             ['monitor', 'Monitor clients'],
+            ['costs', 'Costs'],
           ] as const
         ).map(([key, label]) => (
           <button
@@ -138,6 +140,11 @@ export function AdminScreen() {
       <div className="admin__panel" hidden={section !== 'monitor'}>
         <MonitorFlow adminKey={adminKey} onUnauthorized={onUnauthorized} />
       </div>
+      {section === 'costs' && (
+        <div className="admin__panel">
+          <CostsTab adminKey={adminKey} onUnauthorized={onUnauthorized} />
+        </div>
+      )}
     </div>
   )
 }

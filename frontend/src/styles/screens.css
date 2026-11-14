@@ -3268,3 +3268,136 @@
   color: var(--ink-secondary);
   font-style: italic;
 }
+
+/* ---------- AI costs (admin) ---------- */
+.admin__tabs {
+  max-width: 560px;
+}
+.costs {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.costs__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.costs__range {
+  flex: 0 1 380px;
+}
+.costs__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.costs__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.costs__stat {
+  padding: 14px 16px;
+}
+.costs__stat-value {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+.costs__stat--strong {
+  background: var(--accent-soft);
+}
+.costs__stat-label {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.costs__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+.costs__title {
+  margin: 0;
+  font-size: 17px;
+  color: var(--heading);
+}
+.costs__scroll {
+  overflow-x: auto;
+}
+.costs__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.costs__table th {
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.costs__table td {
+  padding: 10px;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+  color: var(--ink);
+}
+.costs__num {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+.costs__total {
+  font-weight: 700;
+}
+.costs__row {
+  cursor: pointer;
+}
+.costs__row:hover td,
+.costs__row--open td {
+  background: var(--surface-alt);
+}
+.costs__client {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+.costs__caret {
+  color: var(--ink-secondary);
+}
+.costs__name {
+  display: block;
+  font-weight: 700;
+  color: var(--heading);
+}
+.costs__id {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.costs__detail > td {
+  padding: 4px 10px 14px 30px;
+  background: var(--surface-alt);
+}
+.costs__table--compact td,
+.costs__table--compact th {
+  padding: 6px 10px;
+}
+.costs__note {
+  margin: 0;
+  font-size: 13px;
+}

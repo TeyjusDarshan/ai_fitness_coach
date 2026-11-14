@@ -18,6 +18,7 @@ import sys
 from types import SimpleNamespace
 from typing import Optional
 
+from ai_usage import record_tts, set_feature_prefix
 from workout_analysis_consumer import feedback_agent, main, summarizer
 from workout_analysis_consumer.feedback_agent import exercise_id_map, extract_feedback, validate_questions
 from workout_analysis_consumer.repository import AnalysisRepository
@@ -138,7 +139,10 @@ def run(session_id: int, voice_out: Optional[str] = None) -> None:
         # Same TTS as workout_analysis_consumer.voice, minus the ogg
         # transcode and the upload: an mp3 plays anywhere.
         from tts import SarvamTTSClient
-        audio = SarvamTTSClient().convert(spoken_text(summary, questions))
+        tts_client = SarvamTTSClient()
+        audio = tts_client.convert(spoken_text(summary, questions))
+        record_tts(spoken_text(summary, questions), tts_client._model, "summary_tts",
+                   user_id=context["user_id"], session_id=session_id)
         with open(voice_out, "wb") as f:
             f.write(audio)
         _section("VOICE NOTE (local only — not uploaded or sent)")
@@ -153,6 +157,8 @@ def _main() -> None:
     parser.add_argument("--voice-out", help="also run TTS and save the mp3 here (local only)")
     args = parser.parse_args()
 
+    # Its calls are recorded in ai_usage like any other, tagged as a dry run.
+    set_feature_prefix("dry_run_")
     # The prompts are printed below; keep the modules' own INFO logs quiet.
     logging.getLogger().setLevel(logging.WARNING)
 

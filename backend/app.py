@@ -28,6 +28,7 @@ from backend.feedback_storage import (
     feedback_storage,
 )
 from backend.controllers.admin_coach_agent_controller import admin_coach_agent_bp
+from backend.controllers.admin_cost_controller import admin_cost_bp
 from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
@@ -48,6 +49,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(admin_plan_bp)
 app.register_blueprint(admin_monitor_bp)
 app.register_blueprint(admin_coach_agent_bp)
+app.register_blueprint(admin_cost_bp)
 plan_repo = WorkoutPlanRepository()
 
 
@@ -177,7 +179,7 @@ def create_workout_plan():
         return jsonify(_plan_response(existing)), 200
 
     try:
-        profile = generate_user_profile(raw_user_text)
+        profile = generate_user_profile(raw_user_text, user_id=user_id)
     except ValueError as e:
         return jsonify({"error": f"Failed to extract client profile: {e}"}), 502
 
@@ -185,7 +187,7 @@ def create_workout_plan():
     # from inventing one) — the caller's id is authoritative.
     profile["user_id"] = user_id
 
-    plan = generate_workout_plan_v1(profile)
+    plan = generate_workout_plan_v1(profile, user_id=user_id)
     if "error" in plan:
         return jsonify(plan), 500
 

@@ -360,3 +360,48 @@ export function restoreSkippedExercise(
     body: JSON.stringify({ skipped: false }),
   })
 }
+
+// ---------- AI costs ----------
+
+export interface FeatureCost {
+  provider: 'anthropic' | 'sarvam'
+  feature: string
+  calls: number
+  inr: number
+}
+
+export interface ClientCost {
+  user_id: string
+  name: string | null
+  total_inr: number
+  claude_inr: number
+  sarvam_inr: number
+  calls: number
+  // Workouts with any AI spend, and the average spend on each.
+  workouts: number
+  per_workout_inr: number | null
+  last_at: string | null
+  by_feature: FeatureCost[]
+}
+
+export interface CostSummary {
+  days: number
+  since: string
+  include_dry_runs: boolean
+  usd_inr_rate: number
+  total_inr: number
+  claude_inr: number
+  sarvam_inr: number
+  calls: number
+  active_clients: number
+  per_client_inr: number | null
+  by_feature: FeatureCost[]
+  // Highest spend first.
+  clients: ClientCost[]
+}
+
+// AI spend (Claude + Sarvam, in rupees) per client over the last `days` days.
+export function fetchCosts(adminKey: string, days: number, includeDryRuns: boolean): Promise<CostSummary> {
+  const query = `days=${days}${includeDryRuns ? '&include_dry_runs=1' : ''}`
+  return adminRequest(adminKey, `/admin/costs?${query}`)
+}

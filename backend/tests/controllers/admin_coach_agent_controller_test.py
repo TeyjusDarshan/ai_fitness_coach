@@ -78,7 +78,7 @@ def test_create_runs_the_agent_validates_and_stores(ctl, monkeypatch):
     assert suggestion["current"] == {"exercise_id": 10, "name": "Squat", "sets": 3, "reps": "10",
                                      "rep_range": "6-12", "is_time_based": False}
     assert (suggestion["proposed"]["sets"], suggestion["proposed"]["reps"]) == (3, "11")
-    controller.agent.suggest.assert_called_once_with({"ctx": 1})
+    controller.agent.suggest.assert_called_once_with({"ctx": 1}, user_id="usr_1")
 
 
 @pytest.mark.parametrize("session, status", [

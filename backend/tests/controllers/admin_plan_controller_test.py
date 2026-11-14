@@ -93,7 +93,7 @@ def test_profile_generates_and_upserts_with_callers_user_id(admin):
     assert response.get_json() == {
         "user_id": "usr_new", "name": "Asha Raman", "gender": None, "profile": expected, "user_created": True,
     }
-    controller.generate_user_profile.assert_called_once_with("52yo, sore knee")
+    controller.generate_user_profile.assert_called_once_with("52yo, sore knee", user_id="usr_new")
     controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected, "Asha Raman", None)
 
 

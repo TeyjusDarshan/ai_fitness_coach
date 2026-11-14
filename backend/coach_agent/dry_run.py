@@ -10,6 +10,7 @@ import argparse
 import json
 import sys
 
+from ai_usage import set_feature_prefix
 from backend.coach_agent import agent
 from backend.coach_agent.context import build_context
 from backend.coach_agent.prompts import COACH_AGENT_SYSTEM_PROMPT
@@ -47,6 +48,8 @@ def main() -> None:
     target.add_argument("--session-id", type=int)
     args = parser.parse_args()
 
+    # Recorded in ai_usage like any call, but tagged as a dry run.
+    set_feature_prefix("dry_run_")
     repo = CoachAgentRepository(WorkoutPlanRepository().client)
     session_id = args.session_id or _next_scheduled_session(repo, args.user_id)
     if session_id is None:
@@ -62,7 +65,7 @@ def main() -> None:
     print("--- user ---")
     print(agent.user_content(context))
 
-    result = agent.suggest(context)
+    result = agent.suggest(context, user_id=facts["user_id"])
     _section("RESPONSE (raw structured output)")
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 

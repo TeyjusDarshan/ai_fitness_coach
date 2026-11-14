@@ -4,6 +4,7 @@ import os
 from typing import Any, Dict, List
 
 import anthropic
+from ai_usage import record_claude
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -66,6 +67,10 @@ def generate_workout_summary(context: Dict[str, Any]) -> WorkoutSummary:
         # recommended fallback model within the same call.
         betas=["server-side-fallback-2026-07-01"],
         fallbacks="default",
+    )
+    # Billed even when it refuses, so recorded first.
+    record_claude(
+        response, "summary_questions", user_id=context.get("user_id"), session_id=context.get("session_id")
     )
     if response.stop_reason == "refusal":
         category = response.stop_details.category if response.stop_details else None

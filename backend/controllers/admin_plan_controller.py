@@ -97,7 +97,7 @@ def create_profile():
     user_created = not plan_repo.user_exists(user_id)
 
     try:
-        profile = generate_user_profile(raw_user_text)
+        profile = generate_user_profile(raw_user_text, user_id=user_id)
     except ValueError as e:
         return jsonify({"error": f"Failed to extract client profile: {e}"}), 502
 

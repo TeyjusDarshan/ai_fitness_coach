@@ -35,7 +35,7 @@ def _summary(questions=()):
 @pytest.fixture
 def mocks(monkeypatch):
     mocks = {
-        "transcribe_many": MagicMock(side_effect=lambda paths: {
+        "transcribe_many": MagicMock(side_effect=lambda paths, usage=None: {
             key: f"transcript of {path}" for key, path in paths.items()
         }),
         "extract_feedback": MagicMock(return_value=[]),
@@ -73,7 +73,9 @@ def _summary_context(mocks):
 def test_voice_feedback_transcript_is_sent_to_claude_without_the_storage_path(mocks):
     main._process_message(_repo("session_48.webm"), 48, "919876543210")
 
-    mocks["transcribe_many"].assert_called_once_with({"session": "session_48.webm"})
+    mocks["transcribe_many"].assert_called_once_with(
+        {"session": "session_48.webm"}, {"feature": "voice_note_stt", "user_id": "usr_1", "session_id": 48}
+    )
     context = _summary_context(mocks)
     assert context["client_voice_feedback"] == "transcript of session_48.webm"
     assert "feedback_audio_path" not in context
@@ -135,7 +137,7 @@ def test_a_failed_extraction_still_generates_the_analysis(mocks):
 
 
 def test_no_transcripts_skips_extraction(mocks):
-    mocks["transcribe_many"].side_effect = lambda paths: {}
+    mocks["transcribe_many"].side_effect = lambda paths, usage=None: {}
 
     main._process_message(_repo("session_48.webm"), 48, "919876543210")
 
@@ -165,7 +167,9 @@ def test_questions_are_spoken_and_saved_before_the_voice_note_is_sent(mocks):
     main._process_message(repo, 48, "919876543210")
 
     spoken = "analysis text Oru sila kelvigal: Squat yen kashtam? Vera edhavadhu? Bye!"
-    mocks["generate_voice_note"].assert_called_once_with(spoken, 7, 1)
+    mocks["generate_voice_note"].assert_called_once_with(
+        spoken, 7, 1, usage={"feature": "summary_tts", "user_id": "usr_1", "session_id": 48}
+    )
     repo.save_analysis.assert_called_once_with(48, spoken, "https://audio/day_1.ogg")
     repo.supersede_open_clarifications.assert_called_once_with("919876543210", 48)
     session_id, user_id, phone, round_number, questions = repo.save_clarification.call_args.args
