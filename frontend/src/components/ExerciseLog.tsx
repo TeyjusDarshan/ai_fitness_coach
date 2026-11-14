@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Icon } from './Icon'
 import { LEVELS, levelForCardioRating, levelIndexForRpe } from './effortLevels'
 import { formatMinutes, formatShortClock, repUnit, targetRepsForSet } from '../utils'
@@ -56,6 +57,8 @@ export function LoggedSets({ exercise }: { exercise: ExerciseEntry }) {
 // it runs — shown in place of the exercise list for a cardio session.
 export function CardioDetails({ cardio, completed }: { cardio: CardioPlan; completed: boolean }) {
   const felt = levelForCardioRating(cardio.rating)
+  // The circuit exercise whose demo clip is open (one at a time).
+  const [demoId, setDemoId] = useState<number | null>(null)
   return (
     <>
       <div className="card cardio-detail__summary">
@@ -104,8 +107,34 @@ export function CardioDetails({ cardio, completed }: { cardio: CardioPlan; compl
                 <div className="workout-detail__info">
                   <div className="workout-detail__name">{exercise.name}</div>
                   <div className="workout-detail__muted">{cardio.work_seconds} seconds</div>
+                  {exercise.video_url && (
+                    <button
+                      type="button"
+                      className="workout-detail__demo"
+                      aria-expanded={demoId === exercise.id}
+                      onClick={() => setDemoId(demoId === exercise.id ? null : exercise.id)}
+                    >
+                      <Icon name="play" size={14} />
+                      {demoId === exercise.id ? 'Hide demo' : 'View demo'}
+                    </button>
+                  )}
                 </div>
               </div>
+              {demoId === exercise.id && exercise.video_url && (
+                <div className="workout-detail__video">
+                  {/* The circuit clips have no sound, so muted autoplay works on every phone. */}
+                  <video
+                    className="workout-detail__clip"
+                    src={exercise.video_url}
+                    poster={exercise.poster_url ?? undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    controls
+                  />
+                </div>
+              )}
             </div>
           ))}
         </div>

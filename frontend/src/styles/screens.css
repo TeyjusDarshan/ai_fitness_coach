@@ -3424,3 +3424,10 @@
 .workout-detail__video .video-placeholder {
   margin-bottom: 0;
 }
+.workout-detail__clip {
+  display: block;
+  width: 100%;
+  border-radius: var(--radius-lg);
+  background: #000;
+  aspect-ratio: 16 / 9;
+}
