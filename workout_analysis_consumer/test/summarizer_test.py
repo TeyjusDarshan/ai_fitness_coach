@@ -21,48 +21,59 @@ from workout_analysis_consumer.repository import AnalysisRepository
 from workout_analysis_consumer.summarizer import (
     MODEL,
     SummaryRefusedError,
+    WorkoutSummary,
     generate_workout_summary,
+    spoken_text,
 )
 
 # A real sessions row with prescribed exercises (see main_test.py).
 SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 
 
-def _mock_client(*texts: str, stop_reason: str = "end_turn", stop_details=None) -> MagicMock:
+def _summary(**overrides) -> WorkoutSummary:
+    fields = {
+        "summary": "Semma workout da!",
+        "questions_intro": "Oru sila kelvigal:",
+        "questions": [],
+        "closing": "Reply pannunga!",
+    }
+    fields.update(overrides)
+    return WorkoutSummary(**fields)
+
+
+def _mock_client(parsed=None, stop_reason: str = "end_turn", stop_details=None) -> MagicMock:
     mock_client = MagicMock()
-    mock_client.beta.messages.create.return_value = SimpleNamespace(
-        content=[SimpleNamespace(type="thinking", thinking="")]
-        + [SimpleNamespace(type="text", text=text) for text in texts],
+    mock_client.beta.messages.parse.return_value = SimpleNamespace(
+        parsed_output=parsed,
         stop_reason=stop_reason,
         stop_details=stop_details,
     )
     return mock_client
 
 
-def _create_kwargs(mock_client: MagicMock) -> dict:
-    mock_client.beta.messages.create.assert_called_once()
-    return mock_client.beta.messages.create.call_args.kwargs
+def _parse_kwargs(mock_client: MagicMock) -> dict:
+    mock_client.beta.messages.parse.assert_called_once()
+    return mock_client.beta.messages.parse.call_args.kwargs
 
 
-def test_generate_workout_summary_returns_stripped_text_blocks(monkeypatch):
-    mock_client = _mock_client("  Semma workout da! ", "Keep it up.  \n")
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
+def test_generate_workout_summary_returns_the_structured_output(monkeypatch):
+    summary = _summary()
+    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client(summary))
 
-    result = generate_workout_summary({"session_id": 1, "day_number": 1})
-
-    assert result == "Semma workout da! Keep it up."
+    assert generate_workout_summary({"session_id": 1, "day_number": 1}) is summary
 
 
 def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypatch):
-    mock_client = _mock_client("analysis text")
+    mock_client = _mock_client(_summary())
     monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
 
     context = {"session_id": 5, "day_number": 2, "exercises": ["squat", "row"]}
     generate_workout_summary(context)
 
-    kwargs = _create_kwargs(mock_client)
+    kwargs = _parse_kwargs(mock_client)
     assert kwargs["model"] == MODEL == "claude-sonnet-5-5"
     assert kwargs["system"] == WORKOUT_ANALYSIS_SYSTEM_PROMPT
+    assert kwargs["output_format"] is WorkoutSummary
     assert kwargs["fallbacks"] == "default"
     assert len(kwargs["messages"]) == 1
     assert kwargs["messages"][0]["role"] == "user"
@@ -70,7 +81,7 @@ def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypat
 
 
 def test_generate_workout_summary_logs_the_whole_prompt(monkeypatch, caplog):
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client("analysis text"))
+    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client(_summary()))
 
     with caplog.at_level("INFO", logger="workout_analysis_consumer.summarizer"):
         generate_workout_summary({"session_id": 5, "client_voice_feedback": "இன்னைக்கு romba kashtam"})
@@ -87,13 +98,12 @@ def test_generate_workout_summary_serializes_non_json_native_values(monkeypatch)
     datetime from a DB row) - the default=str fallback should stringify
     rather than raise.
     """
-    mock_client = _mock_client("analysis text")
+    mock_client = _mock_client(_summary())
     monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
 
-    context = {"logged_at": datetime(2026, 1, 1, 12, 30)}
-    generate_workout_summary(context)
+    generate_workout_summary({"logged_at": datetime(2026, 1, 1, 12, 30)})
 
-    assert "2026-01-01" in _create_kwargs(mock_client)["messages"][0]["content"]
+    assert "2026-01-01" in _parse_kwargs(mock_client)["messages"][0]["content"]
 
 
 def test_generate_workout_summary_raises_on_refusal(monkeypatch):
@@ -106,6 +116,19 @@ def test_generate_workout_summary_raises_on_refusal(monkeypatch):
 
     with pytest.raises(SummaryRefusedError, match="general_harms"):
         generate_workout_summary({"session_id": 1})
+
+
+def test_spoken_text_puts_the_questions_between_summary_and_goodbye():
+    summary = _summary()
+    questions = [{"text": "Knee eppadi irukku?"}, {"text": "Squat kashtama?"}]
+
+    assert spoken_text(summary, questions) == (
+        "Semma workout da! Oru sila kelvigal: Knee eppadi irukku? Squat kashtama? Reply pannunga!"
+    )
+
+
+def test_spoken_text_without_questions_leaves_out_the_intro():
+    assert spoken_text(_summary(), []) == "Semma workout da! Reply pannunga!"
 
 
 @pytest.mark.integration
@@ -122,5 +145,6 @@ def test_generate_workout_summary_against_real_claude():
 
     result = generate_workout_summary(context)
 
-    assert isinstance(result, str)
-    assert result.strip()
+    assert isinstance(result, WorkoutSummary)
+    assert result.summary.strip()
+    assert len(result.questions) <= 10

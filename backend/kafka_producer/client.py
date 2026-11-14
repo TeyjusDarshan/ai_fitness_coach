@@ -11,6 +11,10 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
+# The client's WhatsApp replies to the clarifying questions asked after the
+# workout summary (consumed by workout_analysis_consumer, which duplicates
+# the name since it's deployed separately).
+FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
 
 # backend/kafka_producer/client.py -> backend/certs/ca.pem
 _DEFAULT_CA_CERT_PATH = Path(__file__).resolve().parent.parent / "certs" / "ca.pem"
@@ -59,6 +63,21 @@ class KafkaProducerClient:
         )
         # Low volume (one event per completed day) so a synchronous flush is
         # cheap and gives the caller a delivery guarantee before returning.
+        pending = self._producer.flush(timeout=10)
+        if pending > 0:
+            logger.error(
+                "Kafka flush timed out with %d message(s) still undelivered", pending
+            )
+
+    def send_feedback_reply_event(self, payload: dict) -> None:
+        """Produce a workout-feedback-replies event — {phone_number,
+        whatsapp_message_id, type: "text" | "audio", text | media_id} — and
+        block until it's acked or fails."""
+        self._producer.produce(
+            FEEDBACK_REPLY_TOPIC,
+            value=json.dumps(payload).encode("utf-8"),
+            callback=_delivery_callback,
+        )
         pending = self._producer.flush(timeout=10)
         if pending > 0:
             logger.error(

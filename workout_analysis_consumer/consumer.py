@@ -11,6 +11,10 @@ load_dotenv()
 # duplicated rather than imported.
 WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
 
+# Must match backend/kafka_producer/client.py's FEEDBACK_REPLY_TOPIC: the
+# client's WhatsApp replies to the clarifying questions.
+FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
+
 DEFAULT_CONSUMER_GROUP_ID = "workout-analysis-consumer"
 
 _DEFAULT_CA_CERT_PATH = Path(__file__).resolve().parent / "certs" / "ca.pem"
@@ -36,4 +40,8 @@ def build_consumer() -> Consumer:
         "group.id": os.getenv("KAFKA_CONSUMER_GROUP_ID", DEFAULT_CONSUMER_GROUP_ID),
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,
+        # One workout-complete message can run several STT jobs (up to
+        # STT_JOB_TIMEOUT_SECONDS each) plus two Claude calls, which can
+        # outlast the 300 s default before the next poll.
+        "max.poll.interval.ms": int(os.getenv("KAFKA_MAX_POLL_INTERVAL_MS", "900000")),
     })

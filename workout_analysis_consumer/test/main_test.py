@@ -20,6 +20,7 @@ import pytest
 from workout_analysis_consumer.main import _process_message
 from workout_analysis_consumer.feedback import transcribe_feedback
 from workout_analysis_consumer.repository import AnalysisRepository
+from workout_analysis_consumer.summarizer import WorkoutSummary
 
 SESSION_ID = 55
 PHONE_NUMBER = "7339284889"
@@ -35,7 +36,9 @@ CONSTANT_ANALYSIS_TEXT = (
 def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     monkeypatch.setattr(
         "workout_analysis_consumer.main.generate_workout_summary",
-        MagicMock(return_value=CONSTANT_ANALYSIS_TEXT),
+        MagicMock(return_value=WorkoutSummary(
+            summary=CONSTANT_ANALYSIS_TEXT, questions_intro="", questions=[], closing="",
+        )),
     )
 
     mock_send_audio = MagicMock()

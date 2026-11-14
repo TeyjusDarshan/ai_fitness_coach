@@ -1,5 +1,6 @@
 import logging
 import os
+from typing import Tuple
 
 import requests
 
@@ -23,9 +24,8 @@ class WhatsAppClient:
     def __init__(self):
         self._access_token = os.environ["WHATSAPP_ACCESS_TOKEN"]
         phone_number_id = os.environ["WHATSAPP_PHONE_NUMBER_ID"]
-        self._messages_url = (
-            f"https://graph.facebook.com/{GRAPH_API_VERSION}/{phone_number_id}/messages"
-        )
+        self._graph_url = f"https://graph.facebook.com/{GRAPH_API_VERSION}"
+        self._messages_url = f"{self._graph_url}/{phone_number_id}/messages"
 
     def send_text(self, to: str, body: str) -> None:
         self._send({
@@ -46,6 +46,19 @@ class WhatsAppClient:
             "type": "audio",
             "audio": {"link": audio_url},
         })
+
+    def download_media(self, media_id: str) -> Tuple[bytes, str]:
+        """(bytes, mime_type) of an inbound message's media, e.g. a voice
+        note's audio.id. The Cloud API hands out a short-lived URL for the
+        id, which itself needs the bearer token to download.
+        """
+        headers = {"Authorization": f"Bearer {self._access_token}"}
+        meta = requests.get(f"{self._graph_url}/{media_id}", headers=headers, timeout=10)
+        meta.raise_for_status()
+        info = meta.json()
+        media = requests.get(info["url"], headers=headers, timeout=30)
+        media.raise_for_status()
+        return media.content, info.get("mime_type") or "audio/ogg"
 
     def _send(self, payload: dict) -> None:
         response = requests.post(

@@ -128,3 +128,49 @@ def test_a_period_cardio_session_is_compared_by_the_seconds_she_actually_did():
 
     assert context["cardio"]["seconds_per_exercise"] == 28
     assert context["cardio"]["compared_to_last_time"] == "less"
+
+
+# ---------- clarifying-question history ----------
+
+from workout_analysis_consumer.repository import _shape_question_history  # noqa: E402
+
+
+def _round(session_id, round_number, questions, answers=None, completed_at="2026-11-10T09:00:00+00:00"):
+    return {
+        "session_id": session_id, "round": round_number, "questions": questions, "answers": answers or {},
+        "sessions": {"day_number": 1, "scheduled_date": "2026-11-10", "completed_at": completed_at, "kind": None},
+    }
+
+
+def _q(qid, text, seid=None, joint=None):
+    return {"id": qid, "text": text, "intent": "i", "session_exercise_id": seid, "joint": joint}
+
+
+def test_question_history_groups_rounds_per_session_and_names_exercises():
+    rows = [  # newest first, as fetched
+        _round(30, 2, [_q("f1", "Knee enga valikkudhu?", 301, "knee")],
+               {"f1": {"summary": "Inner knee.", "reply_id": 5}}),
+        _round(30, 1, [_q("q1", "Squat eppadi?", 301), _q("q2", "Vera edhavadhu?")],
+               {"q1": {"summary": "Knee hurt.", "reply_id": 4}}),
+        _round(20, 1, [_q("q1", "Row eppadi?", 302)], completed_at=None),
+    ]
+
+    history = _shape_question_history(rows, {301: "Squat", 302: "Row"}, 8)
+
+    assert [entry["session_id"] for entry in history] == [30, 20]
+    assert history[0]["date"] == "2026-11-10"
+    assert history[0]["workout_type"] == "strength"
+    assert [(q["question"], q["exercise"], q["answer"], q["follow_up"]) for q in history[0]["questions"]] == [
+        ("Squat eppadi?", "Squat", "Knee hurt.", False),
+        ("Vera edhavadhu?", None, None, False),
+        ("Knee enga valikkudhu?", "Squat", "Inner knee.", True),
+    ]
+    assert history[1]["date"] == "2026-11-10"  # falls back to scheduled_date
+
+
+def test_question_history_keeps_only_the_newest_sessions():
+    rows = [_round(session_id, 1, [_q("q1", "?")]) for session_id in range(20, 10, -1)]
+
+    history = _shape_question_history(rows, {}, 8)
+
+    assert [entry["session_id"] for entry in history] == list(range(20, 12, -1))
