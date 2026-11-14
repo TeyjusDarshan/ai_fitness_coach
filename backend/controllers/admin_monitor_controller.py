@@ -121,6 +121,8 @@ def edit_prescription(session_exercise_id):
     comma-separated per-set list. Becomes the baseline next week's
     progression starts from."""
     body = request.get_json(silent=True) or {}
+    if body.get("skipped") is False and set(body) == {"skipped"}:
+        return _restore_skipped(session_exercise_id)
     sets, reps = body.get("sets"), body.get("reps")
     if not _is_count(sets, MAX_SETS):
         return jsonify({"error": f"'sets' must be a whole number from 1 to {MAX_SETS}."}), 400
@@ -147,6 +149,8 @@ def edit_prescription(session_exercise_id):
         return jsonify({"error": f"Only upcoming workouts can be edited (this one is {status})."}), 409
     if row.get("session_exercise_set_logs"):
         return jsonify({"error": "She has already logged sets for this exercise."}), 409
+    if row.get("skipped") is True:
+        return jsonify({"error": "This exercise is skipped for this workout. Restore it first."}), 409
 
     swap = None
     if exercise_id is not None and exercise_id != row.get("exercise_id"):
@@ -175,6 +179,25 @@ def edit_prescription(session_exercise_id):
     if swap is not None:
         result["exercise"] = _swapped_exercise(swap)
     return jsonify(result), 200
+
+
+def _restore_skipped(session_exercise_id):
+    """`{"skipped": false}`: bring back an exercise skipped for an upcoming
+    workout (an accepted AI Coach suggestion)."""
+    row = plan_repo.get_session_exercise_for_edit(session_exercise_id)
+    if row is None:
+        return jsonify({"error": f"Exercise slot {session_exercise_id} not found."}), 404
+    session = row.get("sessions") or {}
+    plan = session.get("plans") or {}
+    status, _ = workout_status(session, app_today(), plan_closed=bool(plan.get("completed")))
+    if status != "scheduled":
+        return jsonify({"error": f"Only upcoming workouts can be edited (this one is {status})."}), 409
+    try:
+        plan_repo.set_session_exercise_skipped(session_exercise_id, False)
+    except Exception:
+        logger.exception("Failed to restore session_exercise_id=%s", session_exercise_id)
+        return jsonify({"error": "Failed to restore the exercise."}), 500
+    return jsonify({"id": session_exercise_id, "skipped": False, "skip_reason": None}), 200
 
 
 def _swapped_exercise(exercise):

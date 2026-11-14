@@ -50,7 +50,7 @@ PLAN_SESSIONS_SELECT = f"*, session_exercises({SESSION_EXERCISE_JOIN}), session_
 # the nested exercises(...) join) since it's carried forward as-is into the
 # next plan's session_exercises rows, never rendered.
 PROGRESSION_EXERCISE_SELECT = (
-    "id, exercise_id, category, slot_label, sets, reps, rep_range, note, "
+    "id, exercise_id, category, slot_label, sets, reps, rep_range, note, skipped, "
     "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
 PROGRESSION_SESSIONS_SELECT = (
@@ -90,11 +90,13 @@ _RPE_BUCKETS = (RPE_TOO_EASY, RPE_CORRECT, RPE_HARD)
 PROGRESSION_UNRATED_HIT_RPE = RPE_CORRECT
 PROGRESSION_FALLBACK_RPE = RPE_HARD
 PROGRESSION_CORRECT_STEP = 1
-PROGRESSION_EASY_STEP = 2
+# Too easy (with every target met): added to EVERY set, on top of the reps
+# she actually did (not the prescribed targets).
+PROGRESSION_EASY_STEP = 1
 PROGRESSION_HARD_STEP = 1
 # The same steps for a timed exercise (exercises.is_time_based), in seconds.
 TIMED_CORRECT_STEP = 5
-TIMED_EASY_STEP = 10
+TIMED_EASY_STEP = 5
 TIMED_HARD_STEP = 5
 
 # A session started during a period runs at this fraction of its planned reps
@@ -209,16 +211,18 @@ def workout_duration_seconds(workout: dict) -> Optional[int]:
 
 def _flatten_session_exercises(sessions: List[dict]) -> List[dict]:
     """Pull each session's nested session_exercises rows out into one list,
-    tagging every row with its session's day_number and whether that session
-    was missed (never completed — by the time a plan is progressed, every
-    uncompleted session is a missed one), ordered by day then id."""
+    tagging every row with its session's day_number and whether it was
+    missed (its session never completed — by the time a plan is progressed,
+    every uncompleted session is a missed one — or the coach skipped the
+    exercise that day; either way it carries forward unchanged), ordered by
+    day then id."""
     rows = []
     for session in sorted(sessions, key=lambda s: s["day_number"]):
         for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
             rows.append({
                 **row,
                 "day_number": session["day_number"],
-                "missed": not session.get("completed_at"),
+                "missed": not session.get("completed_at") or bool(row.get("skipped")),
             })
     return rows
 
@@ -349,7 +353,10 @@ def _compute_progressed_reps(
         _performed_reps), not from what was prescribed.
       - RPE 8 (correct): the ramp advances by 1 rep, one set at a time (see
         _bump_next_set) — only the next not-yet-bumped set goes up this week.
-      - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
+      - RPE 6 (too easy): every set goes to what she actually *performed* on
+        it plus 1 rep (5 s for a timed hold) — e.g. targets 11, 10, 10, done
+        11, 11, 11 -> 12, 12, 12. (Only reached with every target met, so
+        each performed set is at least its target.)
 
     Going up on RPE 8 additionally requires the user to have hit the
     targets two weeks in a row (_held_target_two_weeks, with previous_row
@@ -405,8 +412,13 @@ def _compute_progressed_reps(
         base_reps = target_reps if missed else _performed_reps(exercise_row, target_reps)
         return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in base_reps], False
     if rpe_bucket == RPE_TOO_EASY:
-        step = easy_step
-    elif _held_target_two_weeks(exercise_row, previous_row):
+        if max_reps is not None and min(target_reps) >= max_reps:
+            return target_reps, True
+        bumped = [r + easy_step for r in _performed_reps(exercise_row, target_reps)]
+        if max_reps is not None:
+            bumped = [min(r, max_reps) for r in bumped]
+        return bumped, False
+    if _held_target_two_weeks(exercise_row, previous_row):
         step = correct_step
     else:
         return target_reps, False
@@ -1260,11 +1272,12 @@ class WorkoutPlanRepository:
         self.client.table("sessions").update({"feedback_audio_path": path}).eq("id", session_id).execute()
 
     def get_session_exercise(self, session_exercise_id: int, session_id: Optional[int] = None) -> Optional[dict]:
-        """{id, session_id, feedback_audio_path} of one session_exercises row,
-        or None if it doesn't exist (or, given session_id, isn't in that session)."""
+        """{id, session_id, feedback_audio_path, skipped} of one
+        session_exercises row, or None if it doesn't exist (or, given
+        session_id, isn't in that session)."""
         query = (
             self.client.table("session_exercises")
-            .select("id, session_id, feedback_audio_path")
+            .select("id, session_id, feedback_audio_path, skipped")
             .eq("id", session_exercise_id)
         )
         if session_id is not None:
@@ -1368,17 +1381,18 @@ class WorkoutPlanRepository:
         way a shared jsonb array could.
 
         Returns the upserted row, or None if session_exercise_id doesn't
-        belong to session_id or set_number is out of range.
+        belong to session_id, the coach skipped it for this session, or
+        set_number is out of range.
         """
         rows = (
             self.client.table("session_exercises")
-            .select("sets")
+            .select("sets, skipped")
             .eq("id", session_exercise_id)
             .eq("session_id", session_id)
             .execute()
             .data
         )
-        if not rows:
+        if not rows or rows[0].get("skipped"):
             return None
 
         total_sets = rows[0].get("sets") or 0
@@ -1399,16 +1413,18 @@ class WorkoutPlanRepository:
         return result[0] if result else None
 
     def log_rpe(self, session_id: int, session_exercise_id: int, rpe: int) -> Optional[dict]:
-        """Upsert the session_exercise_rpe row for one exercise (one RPE per exercise per session)."""
+        """Upsert the session_exercise_rpe row for one exercise (one RPE per
+        exercise per session). None if it isn't in the session or the coach
+        skipped it."""
         rows = (
             self.client.table("session_exercises")
-            .select("id")
+            .select("id, skipped")
             .eq("id", session_exercise_id)
             .eq("session_id", session_id)
             .execute()
             .data
         )
-        if not rows:
+        if not rows or rows[0].get("skipped"):
             return None
 
         row = {"session_exercise_id": session_exercise_id, "rpe": rpe}
@@ -1440,11 +1456,13 @@ class WorkoutPlanRepository:
 
         exercise_rows = (
             self.client.table("session_exercises")
-            .select("sets, session_exercise_set_logs(set_number)")
+            .select("sets, skipped, session_exercise_set_logs(set_number)")
             .eq("session_id", session_id)
             .execute()
             .data
         )
+        # Exercises the coach skipped for this session aren't part of it.
+        exercise_rows = [row for row in exercise_rows if not row.get("skipped")]
         total_exercises = len(exercise_rows)
         exercises_completed = 0
         sets_completed = 0
@@ -1602,6 +1620,10 @@ class WorkoutPlanRepository:
             entries = {"primary": [], "secondary": []}
             if session is not None:
                 for row in sorted(session.get("session_exercises") or [], key=lambda r: r["id"]):
+                    # Skipped by the coach for this session: not part of her
+                    # workout run (the day's exercise slots skip over it).
+                    if row.get("skipped"):
+                        continue
                     entries[row["category"]].append(WorkoutPlanRepository._exercise_entry(row))
             entry = {
                 "day_number": day["day_number"],
@@ -1711,7 +1733,7 @@ class WorkoutPlanRepository:
         rows = (
             self.client.table("session_exercises")
             .select(
-                "id, exercise_id, sets, reps, session_exercise_set_logs(set_number), "
+                "id, exercise_id, sets, reps, skipped, session_exercise_set_logs(set_number), "
                 "sessions(id, scheduled_date, completed_at, plans(user_id, completed))"
             )
             .eq("id", session_exercise_id)
@@ -1761,6 +1783,19 @@ class WorkoutPlanRepository:
         (
             self.client.table("session_exercises")
             .update(values)
+            .eq("id", session_exercise_id)
+            .execute()
+        )
+
+    def set_session_exercise_skipped(
+        self, session_exercise_id: int, skipped: bool, reason: Optional[str] = None
+    ) -> None:
+        """Skip an exercise slot for its session only (the coach accepting an
+        AI Coach suggestion), or restore it. Progression carries a skipped
+        exercise into next week unchanged, as it does a missed one."""
+        (
+            self.client.table("session_exercises")
+            .update({"skipped": skipped, "skip_reason": reason if skipped else None})
             .eq("id", session_exercise_id)
             .execute()
         )
@@ -1869,4 +1904,8 @@ class WorkoutPlanRepository:
             "rpe_logged": (row.get("session_exercise_rpe") or {}).get("rpe") is not None,
             # A voice note recorded on the exercise's feedback screen.
             "has_feedback": bool(row.get("feedback_audio_path")),
+            # Skipped by the coach for this session (the AI Coach's
+            # suggestions): hidden from her workout run.
+            "skipped": bool(row.get("skipped")),
+            "skip_reason": row.get("skip_reason"),
         }

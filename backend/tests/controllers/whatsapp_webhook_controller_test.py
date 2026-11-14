@@ -20,12 +20,16 @@ def controller(app_module):
     return module
 
 
-def _inbound_payload(text: str, sender: str = "919876543210"):
+def _inbound_payload(text: str, sender: str = "919876543210", message_id: str = "wamid.1"):
+    return _wrap({"from": sender, "id": message_id, "type": "text", "text": {"body": text}})
+
+
+def _wrap(message: dict):
     return {
         "entry": [{
             "changes": [{
                 "value": {
-                    "messages": [{"from": sender, "type": "text", "text": {"body": text}}],
+                    "messages": [message],
                 },
             }],
         }],
@@ -49,16 +53,59 @@ def test_receive_message_with_session_fields_acks_and_publishes(app_module, cont
     controller.kafka_producer.send_workout_complete_event.assert_called_once_with(12, "919876543210")
 
 
-def test_receive_message_without_session_fields_is_ignored(app_module, controller, monkeypatch):
+def test_receive_message_without_session_fields_is_published_as_a_reply(app_module, controller, monkeypatch):
     monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
     monkeypatch.setattr(controller.kafka_producer, "send_workout_complete_event", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
 
     client = app_module.app.test_client()
-    response = client.post("/webhooks/whatsapp", json=_inbound_payload("hey coach, question!"))
+    response = client.post("/webhooks/whatsapp", json=_inbound_payload("knee konjam valikkudhu"))
 
     assert response.status_code == 200
     controller.whatsapp_client.send_text.assert_not_called()
     controller.kafka_producer.send_workout_complete_event.assert_not_called()
+    controller.kafka_producer.send_feedback_reply_event.assert_called_once_with({
+        "phone_number": "919876543210", "whatsapp_message_id": "wamid.1",
+        "type": "text", "text": "knee konjam valikkudhu",
+    })
+
+
+def test_receive_voice_message_is_published_as_an_audio_reply(app_module, controller, monkeypatch):
+    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
+
+    client = app_module.app.test_client()
+    response = client.post("/webhooks/whatsapp", json=_wrap({
+        "from": "919876543210", "id": "wamid.2", "type": "audio",
+        "audio": {"id": "media-9", "mime_type": "audio/ogg; codecs=opus", "voice": True},
+    }))
+
+    assert response.status_code == 200
+    controller.kafka_producer.send_feedback_reply_event.assert_called_once_with({
+        "phone_number": "919876543210", "whatsapp_message_id": "wamid.2",
+        "type": "audio", "media_id": "media-9",
+    })
+
+
+def test_receive_message_without_an_id_is_not_published(app_module, controller, monkeypatch):
+    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
+
+    client = app_module.app.test_client()
+    response = client.post("/webhooks/whatsapp", json=_wrap(
+        {"from": "919876543210", "type": "text", "text": {"body": "hi"}}
+    ))
+
+    assert response.status_code == 200
+    controller.kafka_producer.send_feedback_reply_event.assert_not_called()
+
+
+def test_a_failed_reply_publish_still_acks(app_module, controller, monkeypatch):
+    monkeypatch.setattr(
+        controller.kafka_producer, "send_feedback_reply_event", MagicMock(side_effect=RuntimeError("down"))
+    )
+
+    response = app_module.app.test_client().post("/webhooks/whatsapp", json=_inbound_payload("hi"))
+
+    assert response.status_code == 200
 
 
 def test_verify_webhook_matching_token_echoes_challenge(app_module, controller, monkeypatch):

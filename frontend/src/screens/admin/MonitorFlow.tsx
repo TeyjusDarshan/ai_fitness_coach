@@ -8,7 +8,9 @@ import {
   fetchExerciseFeedbackAudioUrl,
   fetchFeedbackAudioUrl,
   regeneratePlan,
+  restoreSkippedExercise,
   saveCoachNotes,
+  type AppliedExerciseChange,
   type ClientMonitor,
   type ClientSummary,
   type LibraryExercise,
@@ -20,6 +22,7 @@ import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, W
 import type { CardioPlan, ExerciseEntry } from '../../types'
 import { levelForCardioRating } from '../../components/effortLevels'
 import { humanize } from './planDraft'
+import { CoachSuggestions } from './CoachSuggestions'
 
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
@@ -418,8 +421,36 @@ function WorkoutCard({
   // Local copy so a saved edit shows straight away.
   const [exercises, setExercises] = useState(workout.exercises)
   const [editing, setEditing] = useState<number | null>(null)
+  const [restoring, setRestoring] = useState<number | null>(null)
+  const [restoreError, setRestoreError] = useState<string | null>(null)
   const done = workout.status === 'completed'
   const editable = workout.status === 'scheduled'
+  const reviewable = editable && workout.kind !== 'cardio' && !workout.cardio
+
+  // An accepted AI Coach suggestion: update the exercise in place.
+  function applyChange(change: AppliedExerciseChange) {
+    setExercises((prev) =>
+      prev.map((ex) => {
+        if (ex.id !== change.id) return ex
+        const { id: _id, exercise: swapped, ...fields } = change
+        return { ...ex, ...swapped, ...fields }
+      }),
+    )
+  }
+
+  async function restore(exerciseId: number) {
+    setRestoring(exerciseId)
+    setRestoreError(null)
+    try {
+      const result = await restoreSkippedExercise(adminKey, exerciseId)
+      applyChange(result)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) onUnauthorized()
+      else setRestoreError(err instanceof Error ? err.message : 'Could not restore the exercise.')
+    } finally {
+      setRestoring(null)
+    }
+  }
 
   async function loadFeedback() {
     setLoadingFeedback(true)
@@ -461,16 +492,28 @@ function WorkoutCard({
             <p className="admin__muted">Took {formatDuration(workout.duration_seconds)}</p>
           )}
           {workout.cardio && <CardioMonitorLine cardio={workout.cardio} done={done} />}
+          {restoreError && <div className="admin__hint admin__hint--error">{restoreError}</div>}
           {exercises.map((exercise) => (
-            <div key={exercise.id} className="monitor__exercise">
+            <div key={exercise.id} className={`monitor__exercise${exercise.skipped ? ' monitor__exercise--skipped' : ''}`}>
               <div className="monitor__exercise-head">
-                <span className="monitor__exercise-name">{exercise.name}</span>
-                {editable && editing !== exercise.id && exercise.set_logs.length === 0 && (
+                <span className="monitor__exercise-name">
+                  {exercise.name}
+                  {exercise.skipped && <span className="monitor__chip monitor__chip--skipped">Skipped</span>}
+                </span>
+                {editable && exercise.skipped && (
+                  <button className="btn-link" disabled={restoring === exercise.id} onClick={() => void restore(exercise.id)}>
+                    {restoring === exercise.id ? 'Restoring…' : 'Restore'}
+                  </button>
+                )}
+                {editable && !exercise.skipped && editing !== exercise.id && exercise.set_logs.length === 0 && (
                   <button className="btn-link" onClick={() => setEditing(exercise.id)}>
                     Edit
                   </button>
                 )}
               </div>
+              {exercise.skipped && exercise.skip_reason && (
+                <p className="admin__muted monitor__skip-reason">{exercise.skip_reason}</p>
+              )}
               {editing === exercise.id ? (
                 <PrescriptionEditor
                   exercise={exercise}
@@ -493,6 +536,15 @@ function WorkoutCard({
               )}
             </div>
           ))}
+
+          {reviewable && (
+            <CoachSuggestions
+              sessionId={workout.session_id}
+              adminKey={adminKey}
+              onUnauthorized={onUnauthorized}
+              onApplied={applyChange}
+            />
+          )}
 
           {workout.analysis && (
             <div className="monitor__feedback">

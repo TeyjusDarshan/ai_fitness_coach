@@ -3119,3 +3119,152 @@
   color: var(--ink-secondary);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------- AI coach suggestions (admin monitor) ---------- */
+.coach-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--info-soft);
+}
+.coach-ai__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.coach-ai__run {
+  width: auto;
+  padding: 8px 16px;
+  font-size: 14px;
+  background: var(--surface);
+}
+.coach-ai__run:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.coach-ai__overview {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.coach-ai__list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.coach-ai__item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border-left: 4px solid var(--hairline);
+}
+.coach-ai__item--adjust { border-left-color: var(--info); }
+.coach-ai__item--progress { border-left-color: var(--success); }
+.coach-ai__item--regress { border-left-color: var(--warning); }
+.coach-ai__item--skip { border-left-color: var(--danger); }
+.coach-ai__item--no_change { border-left-color: var(--hairline); }
+.coach-ai__item--rejected,
+.coach-ai__item--superseded { opacity: 0.6; }
+.coach-ai__item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.coach-ai__name {
+  font-weight: 700;
+  color: var(--heading);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.coach-ai__badge {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--surface-alt);
+  color: var(--ink-secondary);
+}
+.coach-ai__badge--adjust { background: var(--info-soft); color: var(--info); }
+.coach-ai__badge--progress { background: #eef7f0; color: var(--success); }
+.coach-ai__badge--regress { background: #fdf1d8; color: #8a5a00; }
+.coach-ai__badge--skip { background: var(--danger-soft); color: var(--danger); }
+.coach-ai__item--no_change .coach-ai__badge { background: var(--surface-alt); color: var(--ink-secondary); }
+.coach-ai__change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.coach-ai__arrow { color: var(--ink-secondary); }
+.coach-ai__proposed { color: var(--ink); font-weight: 600; }
+.coach-ai__reason {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--ink);
+}
+.coach-ai__evidence {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.coach-ai__evidence li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.coach-ai__source {
+  flex-shrink: 0;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+  color: var(--ink-secondary);
+  font-weight: 600;
+  font-size: 12px;
+}
+.coach-ai__source--verified { background: var(--accent-soft); color: var(--heading); }
+.coach-ai__quote {
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.coach-ai__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+}
+.coach-ai__accept {
+  width: auto;
+  padding: 8px 22px;
+  font-size: 15px;
+}
+.coach-ai__decided {
+  align-self: flex-end;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-secondary);
+}
+.coach-ai__decided--accepted { color: var(--success); }
+.monitor__exercise--skipped .monitor__exercise-name { color: var(--ink-secondary); }
+.monitor__exercise-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.monitor__skip-reason { margin: 0; font-size: 13px; }
+.workout-detail__skipped {
+  font-size: 14px;
+  color: var(--ink-secondary);
+  font-style: italic;
+}

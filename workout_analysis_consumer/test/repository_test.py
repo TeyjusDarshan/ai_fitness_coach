@@ -109,6 +109,7 @@ def test_a_cardio_session_carries_its_circuit_level_rating_and_comparison():
         "seconds_per_exercise": 40,
         "rating": "hard",
         "compared_to_last_time": "more",   # 40 s per exercise vs 30 s
+        "what_happened": None,              # no step log recorded
     }
 
 
@@ -128,3 +129,83 @@ def test_a_period_cardio_session_is_compared_by_the_seconds_she_actually_did():
 
     assert context["cardio"]["seconds_per_exercise"] == 28
     assert context["cardio"]["compared_to_last_time"] == "less"
+
+
+# ---------- clarifying-question history ----------
+
+from workout_analysis_consumer.repository import _shape_question_history  # noqa: E402
+
+
+def _round(session_id, round_number, questions, answers=None, completed_at="2026-11-10T09:00:00+00:00"):
+    return {
+        "session_id": session_id, "round": round_number, "questions": questions, "answers": answers or {},
+        "sessions": {"day_number": 1, "scheduled_date": "2026-11-10", "completed_at": completed_at, "kind": None},
+    }
+
+
+def _q(qid, text, seid=None, joint=None):
+    return {"id": qid, "text": text, "intent": "i", "session_exercise_id": seid, "joint": joint}
+
+
+def test_question_history_groups_rounds_per_session_and_names_exercises():
+    rows = [  # newest first, as fetched
+        _round(30, 2, [_q("f1", "Knee enga valikkudhu?", 301, "knee")],
+               {"f1": {"summary": "Inner knee.", "reply_id": 5}}),
+        _round(30, 1, [_q("q1", "Squat eppadi?", 301), _q("q2", "Vera edhavadhu?")],
+               {"q1": {"summary": "Knee hurt.", "reply_id": 4}}),
+        _round(20, 1, [_q("q1", "Row eppadi?", 302)], completed_at=None),
+    ]
+
+    history = _shape_question_history(rows, {301: "Squat", 302: "Row"}, 8)
+
+    assert [entry["session_id"] for entry in history] == [30, 20]
+    assert history[0]["date"] == "2026-11-10"
+    assert history[0]["workout_type"] == "strength"
+    assert [(q["question"], q["exercise"], q["answer"], q["follow_up"]) for q in history[0]["questions"]] == [
+        ("Squat eppadi?", "Squat", "Knee hurt.", False),
+        ("Vera edhavadhu?", None, None, False),
+        ("Knee enga valikkudhu?", "Squat", "Inner knee.", True),
+    ]
+    assert history[1]["date"] == "2026-11-10"  # falls back to scheduled_date
+
+
+def test_question_history_keeps_only_the_newest_sessions():
+    rows = [_round(session_id, 1, [_q("q1", "?")]) for session_id in range(20, 10, -1)]
+
+    history = _shape_question_history(rows, {}, 8)
+
+    assert [entry["session_id"] for entry in history] == list(range(20, 12, -1))
+
+
+# ---------- what actually happened in a cardio session ----------
+
+from workout_analysis_consumer.repository import _summarize_cardio_log  # noqa: E402
+
+
+def _step(round_number, position, name, actual=30, planned=30, skipped=False, paused=0, rest_skipped=False):
+    return {"round": round_number, "position": position, "exercise_name": name, "planned_seconds": planned,
+            "actual_seconds": actual, "paused_seconds": paused, "skipped": skipped,
+            "rest_paused_seconds": 0, "rest_skipped": rest_skipped}
+
+
+def test_cardio_log_summary_names_what_she_skipped_cut_short_paused_and_never_reached():
+    circuit = ["March", "Side step", "Punches"]
+    logs = [
+        _step(1, 0, "March"),
+        _step(1, 1, "Side step", actual=4, skipped=True),
+        _step(1, 2, "Punches", actual=15, paused=25, rest_skipped=True),
+        _step(2, 0, "March"),
+    ]
+
+    summary = _summarize_cardio_log(logs, circuit, rounds=2)
+
+    assert summary["skipped"] == [{"exercise": "Side step", "round": 1, "after_seconds": 4, "planned_seconds": 30}]
+    assert summary["stopped_early"] == [{"exercise": "Punches", "round": 1, "did_seconds": 15, "planned_seconds": 30}]
+    assert summary["long_pauses"] == [{"exercise": "Punches", "round": 1, "paused_seconds": 25}]
+    assert summary["not_reached"] == [{"exercise": "Side step", "round": 2}, {"exercise": "Punches", "round": 2}]
+    assert (summary["exercises_planned"], summary["exercises_done"]) == (6, 3)
+    assert (summary["rests_skipped"], summary["total_paused_seconds"]) == (1, 25)
+
+
+def test_no_cardio_log_means_nothing_to_go_on():
+    assert _summarize_cardio_log([], ["March"], rounds=1) is None

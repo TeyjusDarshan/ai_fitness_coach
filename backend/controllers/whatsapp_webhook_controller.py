@@ -8,7 +8,10 @@ carrying a session id (a sessions row — one training day of a plan) is
 treated as a workout-complete trigger: we ack it
 immediately, then publish a workout-complete event so
 workout_analysis_consumer can generate the analysis/voice note and push it
-back to the sender once it's ready.
+back to the sender once it's ready. That voice note ends with a few
+clarifying questions, so any other text or voice message is published as a
+workout-feedback-replies event for the consumer to match against the
+sender's open questions (it ignores messages from anyone with none open).
 """
 import logging
 import os
@@ -61,13 +64,18 @@ def receive_message():
 
 def _handle_message(message: dict) -> None:
     sender = message.get("from")
+    if not sender:
+        return
+    if message.get("type") == "audio":
+        _publish_reply(sender, message, {"type": "audio", "media_id": (message.get("audio") or {}).get("id")})
+        return
     text = (message.get("text") or {}).get("body", "")
-    if not sender or not text:
+    if not text:
         return
 
     match = _SESSION_ID_RE.search(text)
     if not match:
-        logger.info("No session_id found in WhatsApp message from %s", sender)
+        _publish_reply(sender, message, {"type": "text", "text": text})
         return
     session_id = int(match.group(1))
 
@@ -82,3 +90,17 @@ def _handle_message(message: dict) -> None:
         # The ack already went out; a failure to publish this notification
         # shouldn't fail the whole webhook request.
         logger.exception("Failed to publish workout-complete event for session_id=%s", session_id)
+
+
+def _publish_reply(sender: str, message: dict, content: dict) -> None:
+    """Forward a possible answer to the clarifying questions to the consumer."""
+    message_id = message.get("id")
+    if not message_id or (content["type"] == "audio" and not content.get("media_id")):
+        logger.info("Ignoring WhatsApp message from %s with no id/media", sender)
+        return
+    try:
+        kafka_producer.send_feedback_reply_event(
+            {"phone_number": sender, "whatsapp_message_id": message_id, **content}
+        )
+    except Exception:
+        logger.exception("Failed to publish feedback-reply event for message %s", message_id)

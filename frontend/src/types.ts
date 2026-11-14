@@ -27,6 +27,10 @@ export interface ExerciseEntry {
   rpe_logged?: boolean
   // Whether she left a voice note on its feedback screen.
   has_feedback?: boolean
+  // Skipped by the coach for this workout only (an accepted AI Coach
+  // suggestion): not part of her workout run.
+  skipped?: boolean
+  skip_reason?: string | null
 }
 
 // A cardio day's ratings: they decide next week's cardio level.
