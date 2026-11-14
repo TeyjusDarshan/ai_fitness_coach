@@ -3,10 +3,13 @@ import { Icon } from './Icon'
 
 interface Props {
   videoUrl: string | null
+  // Start playing straight away (after a tap that asked for the video).
+  autoplay?: boolean
 }
 
-export function VideoPlayer({ videoUrl }: Props) {
-  const embedUrl = videoUrl ? youtubeEmbedUrl(videoUrl) : null
+export function VideoPlayer({ videoUrl, autoplay = false }: Props) {
+  const baseUrl = videoUrl ? youtubeEmbedUrl(videoUrl) : null
+  const embedUrl = baseUrl && autoplay ? `${baseUrl}?autoplay=1&playsinline=1&rel=0` : baseUrl
 
   if (!embedUrl) {
     return (

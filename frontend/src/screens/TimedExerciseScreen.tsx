@@ -12,16 +12,17 @@ import { playTick, unlockTickSound } from '../state/tickSound'
 import { formatClock, targetRepsForSet, withSetLogged, withSetLogRemoved } from '../utils'
 import type { DashboardDay, ExerciseEntry } from '../types'
 
-// The 3-2-1 before each hold.
-const GET_READY_SECONDS = 3
+// The get-ready countdown before each hold, so she has time to get into
+// position after tapping Start.
+const GET_READY_SECONDS = 10
 
 const DEFAULT_TIP = 'Keep your body in a straight line and breathe normally.'
 
 type Phase = 'intro' | 'countdown' | 'active' | 'rest' | 'next-set' | 'done'
 
 // A hold measured in seconds (exercises.is_time_based), run as a guided
-// flow: intro → 3-2-1 → timer (pause / end early) → rest → "set complete"
-// (waits for Start) → 3-2-1 → … → "Great job" → the feedback screen shared
+// flow: intro → get-ready countdown → timer (pause / end early) → rest → "set complete"
+// (waits for Start) → get-ready countdown → … → "Great job" → the feedback screen shared
 // with rep exercises (ExerciseFeedbackScreen: how it felt, optional voice
 // note) → next exercise.
 // Starts at the first set with no log, so reopening it resumes; each set's
@@ -73,7 +74,7 @@ export function TimedExerciseScreen({
     else if (phase === 'rest') setPhase('next-set')
   }
 
-  // The next set only begins when she's ready: Start leads into the 3-2-1.
+  // The next set only begins when she's ready: Start leads into the get-ready countdown.
   function startNextSet() {
     unlockTickSound()
     setSetIdx((i) => i + 1)

@@ -1,12 +1,14 @@
+import { useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { CardioDetails, LoggedSets, Prescription } from '../components/ExerciseLog'
 import { Icon } from '../components/Icon'
 import { Illustration } from '../components/Illustration'
 import { PeriodPrompt } from '../components/PeriodPrompt'
+import { VideoPlayer } from '../components/VideoPlayer'
 import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
 import { WORKOUT_STATUS_LABELS, workoutDateLabel } from '../utils'
-import { youtubeThumbnailUrl } from '../youtube'
+import { youtubeEmbedUrl, youtubeThumbnailUrl } from '../youtube'
 
 // Read-only view of one workout panel: what's prescribed for a scheduled or
 // missed workout, and what was logged set by set for a completed one.
@@ -15,6 +17,8 @@ export function WorkoutDetailScreen() {
   const navigate = useNavigate()
   const { sessionId } = useParams()
   const { start, error, periodPrompt } = useStartWorkout()
+  // The exercise whose demo video is open (one at a time).
+  const [demoId, setDemoId] = useState<number | null>(null)
 
   if (!dashboard) return null
   // Older past workouts are only in the dashboard's "Load more" list.
@@ -61,8 +65,24 @@ export function WorkoutDetailScreen() {
                   ) : (
                     <Prescription exercise={exercise} />
                   )}
+                  {!exercise.skipped && exercise.video_url && youtubeEmbedUrl(exercise.video_url) && (
+                    <button
+                      type="button"
+                      className="workout-detail__demo"
+                      aria-expanded={demoId === exercise.id}
+                      onClick={() => setDemoId(demoId === exercise.id ? null : exercise.id)}
+                    >
+                      <Icon name="play" size={14} />
+                      {demoId === exercise.id ? 'Hide demo' : 'View demo'}
+                    </button>
+                  )}
                 </div>
               </div>
+              {demoId === exercise.id && (
+                <div className="workout-detail__video">
+                  <VideoPlayer videoUrl={exercise.video_url} autoplay />
+                </div>
+              )}
               {completed && !exercise.skipped && <LoggedSets exercise={exercise} />}
             </div>
           ))}
