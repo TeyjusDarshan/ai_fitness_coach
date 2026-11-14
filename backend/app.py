@@ -27,6 +27,7 @@ from backend.feedback_storage import (
     feedback_path,
     feedback_storage,
 )
+from backend.controllers.admin_coach_agent_controller import admin_coach_agent_bp
 from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
@@ -46,6 +47,7 @@ app.register_blueprint(whatsapp_webhook_bp)
 app.register_blueprint(auth_bp)
 app.register_blueprint(admin_plan_bp)
 app.register_blueprint(admin_monitor_bp)
+app.register_blueprint(admin_coach_agent_bp)
 plan_repo = WorkoutPlanRepository()
 
 
@@ -492,6 +494,8 @@ def upload_exercise_feedback_audio(session_id, session_exercise_id):
     exercise = plan_repo.get_session_exercise(session_exercise_id, session_id)
     if exercise is None:
         return jsonify({"error": f"Exercise {session_exercise_id} is not in session {session_id}."}), 404
+    if exercise.get("skipped") is True:
+        return jsonify({"error": "Your coach skipped this exercise for today."}), 409
     return _store_feedback_upload(
         lambda content_type: exercise_feedback_path(session_id, session_exercise_id, content_type),
         exercise.get("feedback_audio_path"),
@@ -552,7 +556,7 @@ def log_set(session_id, session_exercise_id, set_number):
         return jsonify({"error": "Failed to log this set."}), 500
 
     if log is None:
-        return jsonify({"error": "Exercise not found in this session, or set_number out of range."}), 404
+        return jsonify({"error": "Exercise not found in this session (or skipped by the coach), or set_number out of range."}), 404
     return jsonify(log), 200
 
 
@@ -574,7 +578,7 @@ def log_rpe(session_id, session_exercise_id):
         return jsonify({"error": "Failed to log RPE."}), 500
 
     if log is None:
-        return jsonify({"error": "Exercise not found in this session."}), 404
+        return jsonify({"error": "Exercise not found in this session (or skipped by the coach)."}), 404
     return jsonify(log), 200
 
 

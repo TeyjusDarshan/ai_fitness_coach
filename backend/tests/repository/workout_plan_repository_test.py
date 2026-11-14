@@ -1911,3 +1911,48 @@ def test_the_cardio_block_carries_the_log_and_its_summary(monkeypatch):
         "active_seconds": 72,
         "paused_seconds": 40,
     }
+
+
+# ---------- exercises skipped by the coach (AI Coach suggestions) ----------
+
+from unittest.mock import MagicMock  # noqa: E402
+
+from backend.repository.workout_plan_repository import (  # noqa: E402
+    WorkoutPlanRepository,
+    _flatten_session_exercises,
+)
+
+
+def _skip_row(row_id, skipped):
+    return {
+        "id": row_id, "category": "primary", "slot_label": "Squat", "sets": 3, "reps": "10",
+        "skipped": skipped, "skip_reason": "Knee pain" if skipped else None,
+        "exercises": {"id": row_id, "name": f"Ex {row_id}", "movement_types": {"name": "squat"}},
+        "session_exercise_set_logs": [], "session_exercise_rpe": None,
+    }
+
+
+def test_a_skipped_exercise_carries_forward_like_a_missed_one():
+    sessions = [{"day_number": 1, "completed_at": "2026-11-09T00:00:00+00:00",
+                 "session_exercises": [_skip_row(1, False), _skip_row(2, True)]}]
+
+    rows = _flatten_session_exercises(sessions)
+
+    assert [(row["id"], row["missed"]) for row in rows] == [(1, False), (2, True)]
+
+
+def test_a_skipped_exercise_is_left_out_of_her_workout_run_but_shown_in_entries():
+    plan = {"id": 1, "plan_type": "3_day", "plan_selection_reason": None, "medical_clearance_warning": None,
+            "coach_notes": None, "safety_summary": None}
+    session = {"id": 88, "day_number": 1, "scheduled_date": "2026-11-16", "kind": "strength",
+               "session_exercises": [_skip_row(1, False), _skip_row(2, True)]}
+    repo = MagicMock()
+
+    schedule = WorkoutPlanRepository._reconstruct_plan(repo, plan, [session])["schedule"]
+    entries = WorkoutPlanRepository._workout_entries(repo, plan, [session])
+
+    day_one = next(day for day in schedule if day["day_number"] == 1)
+    assert [ex["id"] for ex in day_one["primary"]] == [1]
+    assert [(ex["id"], ex["skipped"], ex["skip_reason"]) for ex in entries[0]["exercises"]] == [
+        (1, False, None), (2, True, "Knee pain"),
+    ]

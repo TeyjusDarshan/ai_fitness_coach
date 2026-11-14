@@ -279,3 +279,84 @@ export function editPrescription(
 export function fetchExerciseFeedbackAudioUrl(adminKey: string, sessionExerciseId: number): Promise<{ url: string }> {
   return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}/feedback-audio`)
 }
+
+// ---------- AI Coach suggestions ----------
+
+export type SuggestionAction = 'keep' | 'adjust' | 'progress' | 'regress' | 'skip'
+export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'no_change' | 'superseded'
+
+export interface SuggestionEvidence {
+  source: string
+  quote: string
+  session_id: number | null
+  // A quote checked against her own answers/comments (data evidence isn't).
+  verified: boolean
+}
+
+export interface SuggestionPrescription {
+  exercise_id: number
+  name: string
+  sets: number | null
+  reps: string | null
+  rep_range: string | null
+  is_time_based: boolean
+}
+
+export interface ExerciseSuggestion {
+  id: number
+  session_exercise_id: number
+  action: SuggestionAction
+  status: SuggestionStatus
+  reason: string
+  evidence: SuggestionEvidence[]
+  current: SuggestionPrescription
+  // Null for keep and skip.
+  proposed: SuggestionPrescription | null
+}
+
+export interface SuggestionRun {
+  run: { id: number; overview: string | null; model: string | null; created_at: string | null } | null
+  suggestions: ExerciseSuggestion[]
+}
+
+// What changed on the exercise when a suggestion was accepted.
+export interface AppliedExerciseChange {
+  id: number
+  sets?: number
+  reps?: string
+  skipped?: boolean
+  skip_reason?: string | null
+  exercise?: SwappedExercise
+}
+
+// The latest AI Coach suggestions for a workout (run is null if never asked).
+export function fetchSuggestions(adminKey: string, sessionId: number): Promise<SuggestionRun> {
+  return adminRequest(adminKey, `/admin/sessions/${sessionId}/suggestions`)
+}
+
+// Ask the AI Coach to review an upcoming workout (takes up to a minute).
+export function requestSuggestions(adminKey: string, sessionId: number): Promise<SuggestionRun> {
+  return adminRequest(adminKey, `/admin/sessions/${sessionId}/suggestions`, { method: 'POST' })
+}
+
+export function acceptSuggestion(
+  adminKey: string,
+  suggestionId: number,
+): Promise<{ id: number; status: 'accepted'; exercise: AppliedExerciseChange }> {
+  return adminRequest(adminKey, `/admin/exercise-suggestions/${suggestionId}/accept`, { method: 'POST' })
+}
+
+export function rejectSuggestion(adminKey: string, suggestionId: number): Promise<{ id: number; status: 'rejected' }> {
+  return adminRequest(adminKey, `/admin/exercise-suggestions/${suggestionId}/reject`, { method: 'POST' })
+}
+
+// Bring back an exercise skipped for an upcoming workout.
+export function restoreSkippedExercise(
+  adminKey: string,
+  sessionExerciseId: number,
+): Promise<{ id: number; skipped: false; skip_reason: null }> {
+  return adminRequest(adminKey, `/admin/session-exercises/${sessionExerciseId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ skipped: false }),
+  })
+}

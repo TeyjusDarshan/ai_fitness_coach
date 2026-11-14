@@ -12,6 +12,7 @@ _APP_MODULES = (
     "backend.controllers.auth_controller",
     "backend.controllers.admin_plan_controller",
     "backend.controllers.admin_monitor_controller",
+    "backend.controllers.admin_coach_agent_controller",
 )
 
 TEST_SESSION_TOKEN = "test-session-token"

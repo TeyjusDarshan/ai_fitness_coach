@@ -56,10 +56,14 @@ export function WorkoutDetailScreen() {
                 </div>
                 <div className="workout-detail__info">
                   <div className="workout-detail__name">{exercise.name}</div>
-                  <Prescription exercise={exercise} />
+                  {exercise.skipped ? (
+                    <div className="workout-detail__skipped">Skipped by your coach for this workout</div>
+                  ) : (
+                    <Prescription exercise={exercise} />
+                  )}
                 </div>
               </div>
-              {completed && <LoggedSets exercise={exercise} />}
+              {completed && !exercise.skipped && <LoggedSets exercise={exercise} />}
             </div>
           ))}
         </div>

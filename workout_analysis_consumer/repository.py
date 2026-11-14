@@ -10,7 +10,7 @@ load_dotenv()
 # session_exercises for one session (training day), joined with the
 # exercise's name/movement type, its per-set completion logs, and its RPE.
 SESSION_EXERCISE_JOIN = (
-    "id, exercise_id, category, slot_label, sets, reps, rep_range, note, feedback_audio_path, "
+    "id, exercise_id, category, slot_label, sets, reps, rep_range, note, feedback_audio_path, skipped, "
     "exercises(name, is_time_based, movement_types(name)), "
     "session_exercise_set_logs(set_number, completed_reps), "
     "session_exercise_rpe(rpe)"
@@ -206,14 +206,18 @@ class AnalysisRepository:
         user_id = plan["user_id"]
         day_number = session["day_number"]
 
-        exercise_rows = (
-            self.client.table("session_exercises")
-            .select(SESSION_EXERCISE_JOIN)
-            .eq("session_id", session_id)
-            .order("id")
-            .execute()
-            .data
-        )
+        exercise_rows = [
+            row for row in (
+                self.client.table("session_exercises")
+                .select(SESSION_EXERCISE_JOIN)
+                .eq("session_id", session_id)
+                .order("id")
+                .execute()
+                .data
+            )
+            # Skipped by the coach for this session: she never did it.
+            if not row.get("skipped")
+        ]
 
         profile_rows = (
             self.client.table("user_profiles")
@@ -337,9 +341,10 @@ class AnalysisRepository:
             "plan_id": plan_id,
             "started_at": session.get("started_at"),
             "completed_at": session.get("completed_at"),
-            "exercises": _shape_exercise_rows(
-                sorted(session.get("session_exercises") or [], key=lambda row: row["id"])
-            ),
+            "exercises": _shape_exercise_rows(sorted(
+                (row for row in session.get("session_exercises") or [] if not row.get("skipped")),
+                key=lambda row: row["id"],
+            )),
             **(
                 {"cardio_volume": _cardio_volume(session), "cardio_rating": session.get("cardio_rating")}
                 if session.get("kind") == "cardio" else {}
