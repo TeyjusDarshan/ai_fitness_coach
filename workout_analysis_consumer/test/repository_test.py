@@ -109,6 +109,7 @@ def test_a_cardio_session_carries_its_circuit_level_rating_and_comparison():
         "seconds_per_exercise": 40,
         "rating": "hard",
         "compared_to_last_time": "more",   # 40 s per exercise vs 30 s
+        "what_happened": None,              # no step log recorded
     }
 
 
@@ -174,3 +175,37 @@ def test_question_history_keeps_only_the_newest_sessions():
     history = _shape_question_history(rows, {}, 8)
 
     assert [entry["session_id"] for entry in history] == list(range(20, 12, -1))
+
+
+# ---------- what actually happened in a cardio session ----------
+
+from workout_analysis_consumer.repository import _summarize_cardio_log  # noqa: E402
+
+
+def _step(round_number, position, name, actual=30, planned=30, skipped=False, paused=0, rest_skipped=False):
+    return {"round": round_number, "position": position, "exercise_name": name, "planned_seconds": planned,
+            "actual_seconds": actual, "paused_seconds": paused, "skipped": skipped,
+            "rest_paused_seconds": 0, "rest_skipped": rest_skipped}
+
+
+def test_cardio_log_summary_names_what_she_skipped_cut_short_paused_and_never_reached():
+    circuit = ["March", "Side step", "Punches"]
+    logs = [
+        _step(1, 0, "March"),
+        _step(1, 1, "Side step", actual=4, skipped=True),
+        _step(1, 2, "Punches", actual=15, paused=25, rest_skipped=True),
+        _step(2, 0, "March"),
+    ]
+
+    summary = _summarize_cardio_log(logs, circuit, rounds=2)
+
+    assert summary["skipped"] == [{"exercise": "Side step", "round": 1, "after_seconds": 4, "planned_seconds": 30}]
+    assert summary["stopped_early"] == [{"exercise": "Punches", "round": 1, "did_seconds": 15, "planned_seconds": 30}]
+    assert summary["long_pauses"] == [{"exercise": "Punches", "round": 1, "paused_seconds": 25}]
+    assert summary["not_reached"] == [{"exercise": "Side step", "round": 2}, {"exercise": "Punches", "round": 2}]
+    assert (summary["exercises_planned"], summary["exercises_done"]) == (6, 3)
+    assert (summary["rests_skipped"], summary["total_paused_seconds"]) == (1, 25)
+
+
+def test_no_cardio_log_means_nothing_to_go_on():
+    assert _summarize_cardio_log([], ["March"], rounds=1) is None

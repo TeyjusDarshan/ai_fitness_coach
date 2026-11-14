@@ -352,7 +352,7 @@ def test_easy_rpe_bumps_without_a_two_week_streak():
     _progress(repo, "usr_1", _source_plan(), this_week)
 
     [new_row] = client.inserted["session_exercises"]
-    assert new_row["reps"] == "10,11,9"
+    assert new_row["reps"] == "11,10,10"
 
 
 def test_correct_rpe_without_a_streak_is_copied_forward():
@@ -381,7 +381,7 @@ def test_easy_rpe_bumps_even_when_last_week_fell_short():
     _progress(repo, "usr_1", source, this_week)
 
     [new_row] = client.inserted["session_exercises"]
-    assert new_row["reps"] == "10,11,9"
+    assert new_row["reps"] == "11,10,10"
 
 
 @pytest.mark.parametrize("previous_reps, previous_logs, this_logs, previous_missed", [
@@ -476,7 +476,7 @@ def test_swapped_in_exercise_has_no_streak_to_progress_from():
     assert new_row["reps"] == "10,10,10"
 
 
-def test_too_easy_rpe_bumps_only_the_next_uncaught_up_set_by_two():
+def test_too_easy_rpe_adds_one_rep_to_every_set():
     client = FakeSupabaseClient()
     client.seed("exercises", [{"id": 100, "min_reps": 6, "max_reps": 25}])
     repo = _repo(client)
@@ -489,7 +489,7 @@ def test_too_easy_rpe_bumps_only_the_next_uncaught_up_set_by_two():
     _progress(repo, "usr_1", source, exercise_rows)
 
     [new_row] = client.inserted["session_exercises"]
-    assert new_row["reps"] == "12,10,10"
+    assert new_row["reps"] == "11,11,11"
 
 
 def test_reported_joint_pain_forces_hard_regardless_of_rpe_and_triggers_regression_swap():
@@ -554,7 +554,7 @@ def _progression_edge_client():
 
 
 def _progress_easy(client, user_id, exercise_id, reps):
-    """Two weeks hitting `reps` on exercise_id, rated easy (+2 on the next set)."""
+    """Two weeks hitting `reps` on exercise_id, rated easy (+1 on every set)."""
     previous = [_row(id=1, exercise_id=exercise_id, reps=reps, session_exercise_set_logs=_hit(reps))]
     source = _after_streak(client, _source_plan(), previous)
     exercise_rows = [_row(
@@ -580,7 +580,7 @@ def _progress_rated(client, user_id, exercise_id, reps, rpe=6):
 
 
 @pytest.mark.parametrize("reps, expected", [
-    ("20,19,19", "20,20,19"),   # 19 + 2 would be 21: capped at the max of 20
+    ("20,19,19", "20,20,20"),   # 20 + 1 would be 21: capped at the max of 20
     ("20,20,19", "20,20,20"),   # last set reaches the max: still the same exercise
 ])
 def test_going_up_caps_each_set_at_max_reps(reps, expected):
@@ -617,7 +617,7 @@ def test_every_set_at_max_without_a_streak_holds_on_correct_rpe():
 
 
 @pytest.mark.parametrize("reps, expected", [
-    ("20,19,19", "20,20,19"),   # the bumped set is capped; the others aren't lifted
+    ("20,19,19", "20,20,20"),   # every set +1, the first capped at the max
     ("20,20,20", "20,20,20"),   # every set at max: nothing to progress to, stays there
 ])
 def test_without_progression_edge_each_set_is_capped_at_its_max_reps(reps, expected):
@@ -1253,7 +1253,7 @@ def _timed_plank(client):
 
 @pytest.mark.parametrize("rpe, expected", [
     (8, "35,30,30"),   # correct: +5 s on the next set
-    (6, "40,30,30"),   # too easy: +10 s
+    (6, "35,35,35"),   # too easy: +5 s on every set, from what she held
 ])
 def test_timed_exercise_progresses_in_seconds_after_two_weeks_at_target(rpe, expected):
     client = FakeSupabaseClient()
@@ -1285,7 +1285,7 @@ def test_timed_exercise_hard_drops_five_seconds_every_set():
 
 
 @pytest.mark.parametrize("rpe, expected", [
-    (6, "40,30,30"),   # easy: +10 s straight away, no streak needed
+    (6, "35,35,35"),   # easy: +5 s on every set straight away, no streak needed
     (8, "30,30,30"),   # correct: held until two weeks at target
 ])
 def test_timed_exercise_without_a_two_week_streak(rpe, expected):
@@ -1956,3 +1956,42 @@ def test_a_skipped_exercise_is_left_out_of_her_workout_run_but_shown_in_entries(
     assert [(ex["id"], ex["skipped"], ex["skip_reason"]) for ex in entries[0]["exercises"]] == [
         (1, False, None), (2, True, "Knee pain"),
     ]
+
+
+# --- too easy, every target met: what she did + 1 rep (5 s) on every set -------
+
+def _easy_week(exercise_id, reps, logged, max_reps=20, timed=False):
+    client = FakeSupabaseClient()
+    client.seed("exercises", [{"id": exercise_id, "min_reps": 6, "max_reps": max_reps, "is_time_based": timed}])
+    rows = [_row(exercise_id=exercise_id, reps=reps, session_exercise_rpe={"rpe": 6},
+                 session_exercise_set_logs=_hit(logged))]
+    _progress(_repo(client), "usr_1", _source_plan(), rows)
+    [new_row] = client.inserted["session_exercises"]
+    return new_row
+
+
+@pytest.mark.parametrize("reps, logged, expected", [
+    ("11,10,10", "11,11,11", "12,12,12"),   # extra reps she did count
+    ("10,10,10", "12,11,10", "13,12,11"),   # each set from what she did on it
+    ("11,11,11", "12,12,11", "12,12,12"),   # capped at the max of 12
+])
+def test_easy_week_builds_on_what_she_actually_did(reps, logged, expected):
+    assert _easy_week(100, reps, logged, max_reps=12 if reps == "11,11,11" else 20)["reps"] == expected
+
+
+def test_easy_week_on_a_timed_hold_adds_five_seconds_to_each_set_held():
+    assert _easy_week(300, "25,25,25", "25,25,30", max_reps=120, timed=True)["reps"] == "30,30,35"
+
+
+def test_easy_week_with_every_target_at_max_moves_to_the_progression():
+    client = _progression_edge_client()  # 400 (8-20) -> progression 401 (10-18)
+    rows = [_row(exercise_id=400, reps="20,20,20", session_exercise_rpe={"rpe": 6},
+                 session_exercise_set_logs=_hit("21,22,20"))]
+    _progress(_repo(client), "usr_1", _source_plan(), rows)
+    [new_row] = client.inserted["session_exercises"]
+    assert (new_row["exercise_id"], new_row["reps"]) == (401, "10,10,10")
+
+
+def test_easy_but_a_set_short_of_its_target_still_drops():
+    # Rated easy, but set 3 fell short: the hard path, -1 from what she did.
+    assert _easy_week(100, "10,10,10", "10,10,8")["reps"] == "9,9,7"

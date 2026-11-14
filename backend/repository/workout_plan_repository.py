@@ -90,11 +90,13 @@ _RPE_BUCKETS = (RPE_TOO_EASY, RPE_CORRECT, RPE_HARD)
 PROGRESSION_UNRATED_HIT_RPE = RPE_CORRECT
 PROGRESSION_FALLBACK_RPE = RPE_HARD
 PROGRESSION_CORRECT_STEP = 1
-PROGRESSION_EASY_STEP = 2
+# Too easy (with every target met): added to EVERY set, on top of the reps
+# she actually did (not the prescribed targets).
+PROGRESSION_EASY_STEP = 1
 PROGRESSION_HARD_STEP = 1
 # The same steps for a timed exercise (exercises.is_time_based), in seconds.
 TIMED_CORRECT_STEP = 5
-TIMED_EASY_STEP = 10
+TIMED_EASY_STEP = 5
 TIMED_HARD_STEP = 5
 
 # A session started during a period runs at this fraction of its planned reps
@@ -351,7 +353,10 @@ def _compute_progressed_reps(
         _performed_reps), not from what was prescribed.
       - RPE 8 (correct): the ramp advances by 1 rep, one set at a time (see
         _bump_next_set) — only the next not-yet-bumped set goes up this week.
-      - RPE 6 (too easy): same one-set-at-a-time ramp, but by 2 reps.
+      - RPE 6 (too easy): every set goes to what she actually *performed* on
+        it plus 1 rep (5 s for a timed hold) — e.g. targets 11, 10, 10, done
+        11, 11, 11 -> 12, 12, 12. (Only reached with every target met, so
+        each performed set is at least its target.)
 
     Going up on RPE 8 additionally requires the user to have hit the
     targets two weeks in a row (_held_target_two_weeks, with previous_row
@@ -407,8 +412,13 @@ def _compute_progressed_reps(
         base_reps = target_reps if missed else _performed_reps(exercise_row, target_reps)
         return [max(PROGRESSION_MIN_REPS, r - hard_step) for r in base_reps], False
     if rpe_bucket == RPE_TOO_EASY:
-        step = easy_step
-    elif _held_target_two_weeks(exercise_row, previous_row):
+        if max_reps is not None and min(target_reps) >= max_reps:
+            return target_reps, True
+        bumped = [r + easy_step for r in _performed_reps(exercise_row, target_reps)]
+        if max_reps is not None:
+            bumped = [min(r, max_reps) for r in bumped]
+        return bumped, False
+    if _held_target_two_weeks(exercise_row, previous_row):
         step = correct_step
     else:
         return target_reps, False

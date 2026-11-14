@@ -121,6 +121,54 @@ CARDIO_PERIOD_FACTOR = 0.7
 CARDIO_MIN_SECONDS = 15
 
 
+# What counts as worth asking about in a cardio session's step log.
+CARDIO_LONG_PAUSE_SECONDS = 20
+CARDIO_CUT_SHORT_FRACTION = 0.8
+
+
+def _summarize_cardio_log(
+    logs: List[Dict[str, Any]], circuit: List[str], rounds: int
+) -> Optional[Dict[str, Any]]:
+    """What actually happened in a cardio session, from its
+    session_cardio_logs rows (one per exercise per round, rest included):
+    which exercises she skipped, stopped early on or never reached, where she
+    paused for long, and how many rests she skipped — each named and with
+    its round. None when nothing was logged (an older session, or logging
+    failed), so the questions don't guess."""
+    if not logs:
+        return None
+    by_step = {(row["round"], row["position"]): row for row in logs}
+    skipped, cut_short, long_pauses, not_reached = [], [], [], []
+    for round_number in range(1, (rounds or 0) + 1):
+        for position, name in enumerate(circuit):
+            row = by_step.get((round_number, position))
+            if row is None:
+                not_reached.append({"exercise": name, "round": round_number})
+                continue
+            step = {"exercise": row.get("exercise_name") or name, "round": round_number}
+            planned, actual = row.get("planned_seconds") or 0, row.get("actual_seconds")
+            if row.get("skipped"):
+                skipped.append({**step, "after_seconds": actual or 0, "planned_seconds": planned})
+            elif actual is not None and planned and actual < planned * CARDIO_CUT_SHORT_FRACTION:
+                cut_short.append({**step, "did_seconds": actual, "planned_seconds": planned})
+            paused = (row.get("paused_seconds") or 0) + (row.get("rest_paused_seconds") or 0)
+            if paused >= CARDIO_LONG_PAUSE_SECONDS:
+                long_pauses.append({**step, "paused_seconds": paused})
+    planned_steps = (rounds or 0) * len(circuit)
+    return {
+        "exercises_planned": planned_steps,
+        "exercises_done": planned_steps - len(skipped) - len(not_reached),
+        "skipped": skipped,
+        "stopped_early": cut_short,
+        "not_reached": not_reached,
+        "long_pauses": long_pauses,
+        "rests_skipped": sum(1 for row in logs if row.get("rest_skipped")),
+        "total_paused_seconds": sum(
+            (row.get("paused_seconds") or 0) + (row.get("rest_paused_seconds") or 0) for row in logs
+        ),
+    }
+
+
 def _cardio_work_seconds(session: Dict[str, Any]) -> int:
     """Seconds per exercise she actually did in a cardio session."""
     seconds = session.get("cardio_work_seconds") or 0
@@ -277,8 +325,9 @@ class AnalysisRepository:
 
         if session.get("kind") == "cardio":
             context["workout_type"] = "cardio"
+            circuit = self._fetch_cardio_circuit()
             context["cardio"] = {
-                "circuit": self._fetch_cardio_circuit(),
+                "circuit": circuit,
                 "rounds": session.get("cardio_rounds"),
                 "seconds_per_exercise": _cardio_work_seconds(session),
                 "rating": session.get("cardio_rating"),
@@ -288,9 +337,25 @@ class AnalysisRepository:
                     _cardio_volume(session),
                     previous_session.get("cardio_volume") if previous_session else None,
                 ),
+                # Step by step, what she actually did (None = not recorded).
+                "what_happened": _summarize_cardio_log(
+                    self._fetch_cardio_logs(session_id), circuit, session.get("cardio_rounds") or 0
+                ),
             }
 
         return context
+
+    def _fetch_cardio_logs(self, session_id: int) -> List[Dict[str, Any]]:
+        return (
+            self.client.table("session_cardio_logs")
+            .select(
+                "round, position, exercise_name, planned_seconds, actual_seconds, paused_seconds, skipped, "
+                "rest_planned_seconds, rest_actual_seconds, rest_paused_seconds, rest_skipped"
+            )
+            .eq("session_id", session_id)
+            .execute()
+            .data
+        )
 
     def _fetch_cardio_circuit(self) -> List[str]:
         """The names of the active cardio_exercises, in circuit order."""

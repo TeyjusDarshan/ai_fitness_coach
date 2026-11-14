@@ -28,11 +28,15 @@ workouts and the summary of each answer (null = never answered).
 with her exact words in "quote".
 
 How the plan normally progresses (an algorithm already set these targets): \
-the target effort is RPE 8. About right -> up 1 rep (or 5 s), one set at a \
-time, but only after she has held the targets two weeks running. Too easy -> \
-up 2 reps (or 10 s) straight away. Too hard, or a set short of its target -> \
-down 1 rep (or 5 s) from what she actually did. Past the exercise's max it \
-moves to its progression; below its min, to its regression. Pain on a joint \
+the target effort is RPE 8. About right -> up 1 rep (or 5 s) on ONE set \
+(the first set not yet raised), but only after she has held the same \
+targets two weeks running; otherwise unchanged. Too easy with every target \
+met -> next week every set is what she actually did on it plus 1 rep (or \
+5 s), straight away (e.g. targets 11, 10, 10, done 11, 11, 11 -> 12, 12, \
+12). Too hard, or a set short of its target -> every set down 1 rep (or \
+5 s) from what she actually did. Each set is capped at the exercise's max. Past the exercise's max it \
+moves to its progression (once every target is at max and she earns \
+another increase); below its min, to its regression. Pain on a joint \
 cuts the reps of exercises that load it. A missed workout carries forward \
 unchanged. Any change the coach accepts becomes next week's starting point \
 and restarts the two-week hold. Your job is to catch what the algorithm \

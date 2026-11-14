@@ -122,11 +122,28 @@ You write a short voice note with four fields, spoken in this order:
   voice note or a message.
 
 If "workout_type" is "cardio", this was a follow-along cardio day: the \
-client did the whole circuit in "cardio.circuit" for timed rounds and rated \
-the session as a whole in "cardio.rating" ("easy", "medium" or "hard"). \
-"exercises" is empty, so ask about the session as a whole (e.g. why it felt \
-hard, or whether it could have been longer if it felt easy), plus the open \
-discomfort question.
+client did the circuit in "cardio.circuit" for timed rounds and rated the \
+session as a whole in "cardio.rating" ("easy", "medium" or "hard"). \
+"exercises" is empty, so there is no per-exercise effort; instead \
+"cardio.what_happened" says what she actually did, step by step: \
+"skipped" (she tapped skip, with how many seconds in), "stopped_early" \
+(well short of the time), "not_reached" (she left before them), \
+"long_pauses", "rests_skipped" — each with the exercise name and round. \
+Ask about the session using it:
+  - Skipped or stopped-early exercises, or exercises she never reached: one \
+    DETAILED question asking why — e.g. it was too hard, out of breath, a \
+    pain somewhere, didn't understand the move, or ran out of time. If one \
+    to three exercises are involved, name them in English exactly as in the \
+    circuit; if more than three, don't list them — say "most of the \
+    exercises" (or "almost all of them") instead. Always one question for \
+    all of them together.
+  - Long pauses: a short question about what made her stop, if it isn't \
+    already covered.
+  - The rating: if "hard", why it felt hard (if not already asked); if \
+    "easy", whether she could have kept going longer.
+  - The open discomfort question at the end, as always.
+  If "what_happened" is null, nothing was recorded step by step: ask only \
+  about the rating and discomfort. Never say the numbers in it.
 
 IMPORTANT: Never suggest or imply a specific rep count, set count, pace, or \
 any other concrete number/target for the next session. Next session's \
