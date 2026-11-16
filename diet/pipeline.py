@@ -36,13 +36,17 @@ def parse_transcript(repo: DietRepository, transcript: str, user_id: Optional[st
 
 def add_unknown_dishes(
     repo: DietRepository, items: List[Dict[str, Any]], user_id: Optional[str], meal_log_id: Optional[int]
-) -> None:
+) -> Dict[str, Any]:
     """Fill in `food_id` on the items naming a dish that isn't in the table
     yet, adding the dish (recipe, unit weights) and any new ingredients
     from Claude's estimate. Also adds a unit weight a known dish lacks
     (she said "plate", the dish only has "piece"). An item whose dish
     couldn't be added keeps food_id None. Best-effort: if the estimate
-    fails, the known dishes still get logged."""
+    fails, the known dishes still get logged.
+
+    Returns what this call added to the shared tables: {"food_ids": the
+    dishes it created, "ingredients": how many ingredients it created}."""
+    added_stats: Dict[str, Any] = {"food_ids": set(), "ingredients": 0}
     unknown = {name_key(item["food_name"]): item["food_name"] for item in items if item["food_id"] is None}
     # Named differently enough that the parse didn't match it, but the same key.
     already = repo.find_food_ids(unknown)
@@ -59,7 +63,7 @@ def add_unknown_dishes(
         and item["unit"] not in foods[item["food_id"]]["portions"]
     }
     if not unknown and not missing:
-        return
+        return added_stats
 
     try:
         ingredients = repo.ingredient_catalogue()
@@ -72,7 +76,7 @@ def add_unknown_dishes(
         )
     except Exception:
         logger.exception("Recipe estimation failed for dishes=%s", sorted(unknown.values()))
-        return
+        return added_stats
 
     ingredient_ids = {ingredient["name_key"]: ingredient["id"] for ingredient in ingredients}
     for proposed in estimation.new_ingredients:
@@ -80,7 +84,8 @@ def add_unknown_dishes(
         if row is None:
             logger.warning("Dropped unusable ingredient estimate: %s", proposed.name)
         elif row["name_key"] not in ingredient_ids:
-            ingredient_ids[row["name_key"]] = repo.insert_ingredient(row, agent.ESTIMATE_MODEL)
+            ingredient_ids[row["name_key"]], created = repo.insert_ingredient(row, agent.ESTIMATE_MODEL)
+            added_stats["ingredients"] += created
 
     added: Dict[str, int] = {}
     for proposed in estimation.dishes:
@@ -92,7 +97,9 @@ def add_unknown_dishes(
             logger.warning("Dropped unusable dish estimate: %s", proposed.name)
             continue
         try:
-            added[key] = repo.insert_food(dish, agent.ESTIMATE_MODEL, meal_log_id)
+            added[key], created = repo.insert_food(dish, agent.ESTIMATE_MODEL, meal_log_id)
+            if created:
+                added_stats["food_ids"].add(added[key])
         except Exception:
             logger.exception("Failed to save dish %s", proposed.name)
     for item in items:
@@ -102,6 +109,7 @@ def add_unknown_dishes(
     for portion in estimation.portions_for_known_dishes:
         if (portion.food_id, portion.unit) in missing and MIN_PORTION_GRAMS <= portion.grams <= MAX_PORTION_GRAMS:
             repo.upsert_portion(portion.food_id, portion.unit, round(portion.grams, 1))
+    return added_stats
 
 
 def build_item_rows(repo: DietRepository, items: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
@@ -146,14 +154,18 @@ def process_meal_log(repo: DietRepository, meal_log_id: int, transcribe: Callabl
     """Turn a `processing` meal log into items and mark it `ready`, or
     `failed` with a reason. `transcribe(log)` returns the recording's
     transcript. A log that isn't `processing` any more (redelivered event,
-    or she deleted it) is left alone."""
+    or she discarded it) is left alone.
+
+    A processed log also records what it did to the shared tables: dishes
+    and ingredients it added, and dishes it found already there (counted
+    per item) — for the admin Costs tab."""
     log = repo.get_meal_log(meal_log_id)
     if log is None or log["status"] != "processing":
         logger.info("Skipping meal_log_id=%s (missing or already processed)", meal_log_id)
         return
 
     def fail(error: str) -> None:
-        repo.update_meal_log(meal_log_id, {"status": "failed", "error": error, "processed_at": _now()})
+        repo.finish_meal_log(meal_log_id, {"status": "failed", "error": error, "processed_at": _now()})
 
     try:
         transcript = (transcribe(log) or "").strip()
@@ -164,9 +176,17 @@ def process_meal_log(repo: DietRepository, meal_log_id: int, transcribe: Callabl
         items = parse_transcript(repo, transcript, log["user_id"])
         if not items:
             return fail(NO_FOOD)
-        add_unknown_dishes(repo, items, log["user_id"], meal_log_id)
-        repo.replace_items(meal_log_id, build_item_rows(repo, items, log["user_id"]))
-        repo.update_meal_log(meal_log_id, {"status": "ready", "error": None, "processed_at": _now()})
+        added = add_unknown_dishes(repo, items, log["user_id"], meal_log_id)
+        rows = build_item_rows(repo, items, log["user_id"])
+        repo.replace_items(meal_log_id, rows)
+        repo.finish_meal_log(meal_log_id, {
+            "status": "ready", "error": None, "processed_at": _now(),
+            "new_food_count": len(added["food_ids"]),
+            "new_ingredient_count": added["ingredients"],
+            "reused_food_count": sum(
+                1 for row in rows if row["food_id"] is not None and row["food_id"] not in added["food_ids"]
+            ),
+        })
         logger.info("Processed meal_log_id=%s: %d items", meal_log_id, len(items))
     except Exception:
         logger.exception("Failed to process meal_log_id=%s", meal_log_id)

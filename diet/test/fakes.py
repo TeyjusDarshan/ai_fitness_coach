@@ -53,6 +53,15 @@ class FakeRepo:
     def update_meal_log(self, meal_log_id, fields):
         self.logs[meal_log_id].update(fields)
 
+    def finish_meal_log(self, meal_log_id, fields):
+        if self.logs[meal_log_id]["status"] != "processing":
+            return False
+        self.logs[meal_log_id].update(fields)
+        return True
+
+    def discard_meal_log(self, meal_log_id):
+        self.logs[meal_log_id].update(status="discarded", audio_path=None)
+
     def food_catalogue(self):
         return [{"id": f["id"], "name": f["name"], "aliases": f["aliases"]} for f in self.foods.values()]
 
@@ -66,10 +75,10 @@ class FakeRepo:
     def insert_food(self, dish, model, meal_log_id):
         existing = self.find_food_ids([dish["name_key"]])
         if existing:
-            return existing[dish["name_key"]]
+            return existing[dish["name_key"]], False
         food_id = len(self.foods) + 1
         self.foods[food_id] = {**dish, "id": food_id}
-        return food_id
+        return food_id, True
 
     def upsert_portion(self, food_id, unit, grams, source="ai_estimate"):
         self.foods[food_id]["portions"][unit] = grams
@@ -80,7 +89,7 @@ class FakeRepo:
     def insert_ingredient(self, row, model):
         ingredient_id = len(self.ingredients) + 1
         self.ingredients[ingredient_id] = {**row, "id": ingredient_id}
-        return ingredient_id
+        return ingredient_id, True
 
     def get_user_recipes(self, user_id, food_ids):
         return {i: self.user_recipes[(user_id, i)] for i in set(food_ids) if (user_id, i) in self.user_recipes}

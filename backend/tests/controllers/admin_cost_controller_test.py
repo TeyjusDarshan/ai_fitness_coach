@@ -51,12 +51,58 @@ def test_summarize_costs_with_no_usage():
     assert (result["total_inr"], result["clients"], result["per_client_inr"]) == (0, [], None)
 
 
+def _food_row(user_id, feature, model, inr, provider="anthropic", calls=1):
+    return {"user_id": user_id, "session_id": None, "provider": provider, "feature": feature, "model": model,
+            "calls": calls, "cost_inr_total": inr, "created_at": "2026-11-15T10:00:00+00:00"}
+
+
+def _meal_log(user_id, processed=True, error=None, new_foods=0, new_ingredients=0, reused=0):
+    return {"user_id": user_id, "processed_at": "2026-11-15T10:00:00+00:00" if processed else None,
+            "error": error, "new_food_count": new_foods, "new_ingredient_count": new_ingredients,
+            "reused_food_count": reused}
+
+
+def test_summarize_food_by_model_and_per_client():
+    from backend.controllers.admin_cost_controller import summarize_food
+
+    rows = ROWS + [
+        _food_row("usr_1", "meal_stt", "saaras:v4", 0.5, provider="sarvam"),
+        _food_row("usr_1", "meal_parsing", "claude-sonnet-5-5", 0.6),
+        _food_row("usr_1", "meal_parsing", "claude-sonnet-5-5", 0.4),
+        _food_row("usr_1", "recipe_estimation", "claude-opus-5-5", 12.0),
+        _food_row("usr_2", "meal_parsing", "claude-sonnet-5-5", 0.5),
+        _food_row("usr_2", "dry_run_meal_parsing", "claude-sonnet-5-5", 9.0),   # counted only if fetched
+    ]
+    logs = [
+        _meal_log("usr_1", new_foods=2, new_ingredients=11),
+        _meal_log("usr_1", reused=2),
+        _meal_log("usr_2", error="no_food"),
+        _meal_log("usr_2", processed=False),                                     # discarded before processing
+    ]
+
+    food = summarize_food(rows, logs, {"usr_1": "Sasikala", "usr_2": "Asha"})
+
+    assert (food["total_inr"], food["claude_inr"], food["sarvam_inr"]) == (23.0, 22.5, 0.5)
+    assert food["by_model"] == [
+        {"provider": "anthropic", "model": "claude-opus-5-5", "calls": 1, "inr": 12.0},
+        {"provider": "anthropic", "model": "claude-sonnet-5-5", "calls": 4, "inr": 10.5},
+        {"provider": "sarvam", "model": "saaras:v4", "calls": 1, "inr": 0.5},
+    ]
+    assert (food["voice_notes"], food["failed"], food["new_foods"], food["new_ingredients"], food["reused_foods"]) \
+        == (3, 1, 2, 11, 2)
+    first, second = food["clients"]
+    assert (first["name"], first["total_inr"], first["voice_notes"], first["per_voice_note_inr"]) == ("Sasikala", 13.5, 2, 6.75)
+    assert (first["new_foods"], first["new_ingredients"], first["reused_foods"]) == (2, 11, 2)
+    assert (second["name"], second["voice_notes"], second["failed"], second["total_inr"]) == ("Asha", 1, 1, 9.5)
+
+
 @pytest.fixture
 def ctl(app_module, monkeypatch):
     import backend.controllers.admin_cost_controller as controller
 
     monkeypatch.setenv("ADMIN_API_KEY", "test-admin-key")
     monkeypatch.setattr(controller, "_fetch_usage", MagicMock(return_value=ROWS))
+    monkeypatch.setattr(controller, "_fetch_meal_logs", MagicMock(return_value=[]))
     monkeypatch.setattr(controller.plan_repo, "list_user_profiles", MagicMock(return_value=[
         {"user_id": "usr_1", "name": "Sasikala"},
     ]))
@@ -76,6 +122,7 @@ def test_costs_endpoint_defaults_to_30_days_without_dry_runs(ctl):
     assert body["days"] == 30 and body["include_dry_runs"] is False
     assert body["clients"][0]["name"] == "Sasikala"
     assert controller._fetch_usage.call_args.args[1] is False
+    assert body["food"]["total_inr"] == 0 and body["food"]["voice_notes"] == 0
 
 
 @pytest.mark.parametrize("query", ["days=0", "days=400", "days=abc"])

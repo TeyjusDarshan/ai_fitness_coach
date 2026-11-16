@@ -33,12 +33,12 @@ class DryRunRepository(DietRepository):
     def insert_ingredient(self, row, model):
         ingredient_id = -(len(self.new_ingredients) + 1)
         self.new_ingredients[ingredient_id] = {**row, "id": ingredient_id}
-        return ingredient_id
+        return ingredient_id, True
 
     def insert_food(self, dish, model, meal_log_id):
         food_id = -(len(self.new_foods) + 1)
         self.new_foods[food_id] = {**dish, "id": food_id}
-        return food_id
+        return food_id, True
 
     def upsert_portion(self, food_id, unit, grams, source="ai_estimate"):
         self.new_portions.append({"food_id": food_id, "unit": unit, "grams": grams})

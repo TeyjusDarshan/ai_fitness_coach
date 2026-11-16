@@ -128,3 +128,39 @@ def test_a_crash_fails_the_log_and_a_processed_log_is_left_alone(repo, claude):
     done = repo.add_log(status="confirmed")
     pipeline.process_meal_log(repo, done, lambda log: pytest.fail("should not transcribe"))
     assert repo.logs[done]["status"] == "confirmed"
+
+
+def test_a_log_records_what_it_added_and_what_it_reused(repo, claude):
+    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35})
+    claude.parse_meal.return_value = parsed(
+        ("moonu idli", None, "Idli", 3, "piece"),
+        ("oru karandi sadam", rice, "Cooked Rice", 1, "karandi"),
+        ("oru plate sadam", rice, "Cooked Rice", 1, "karandi"),
+    )
+    claude.estimate.return_value = estimation(
+        dishes=[new_dish("Idli", {"piece": 40}, [(1, "Raw Rice", 30), (None, "Urad Dal", 10)])],
+        ingredients=[new_ingredient("Urad Dal", protein=24, carbs=60, fat=1.5),
+                     new_ingredient("Raw Rice")],          # already there: not new
+    )
+
+    log, _ = _run(repo, repo.add_log())
+
+    assert (log["new_food_count"], log["new_ingredient_count"], log["reused_food_count"]) == (1, 1, 2)
+
+    claude.parse_meal.return_value = parsed(("moonu idli", None, "Idli", 3, "piece"))
+    again, _ = _run(repo, repo.add_log())
+    assert (again["new_food_count"], again["new_ingredient_count"], again["reused_food_count"]) == (0, 0, 1)
+
+
+def test_a_log_discarded_while_processing_stays_discarded(repo, claude):
+    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35})
+    log_id = repo.add_log()
+
+    def parse(*args):
+        repo.discard_meal_log(log_id)          # she taps Record again meanwhile
+        return parsed(("oru karandi sadam", rice, "Cooked Rice", 1, "karandi"))
+
+    claude.parse_meal.side_effect = parse
+    log, _ = _run(repo, log_id)
+
+    assert log["status"] == "discarded"

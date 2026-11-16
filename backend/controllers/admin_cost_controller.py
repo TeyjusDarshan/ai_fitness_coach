@@ -1,6 +1,8 @@
 """AI spend per client for the PWA's /admin "Costs" tab: totals from the
 ai_usage table (every Claude and Sarvam call, already priced in rupees) over
-the last N days, per client and per feature. Read-only.
+the last N days, per client and per feature — plus diet tracking on its
+own: its cost per model, and per client the food recordings processed and
+what they added to (or reused from) the shared food tables. Read-only.
 """
 import logging
 from collections import defaultdict
@@ -22,6 +24,9 @@ MAX_DAYS = 365
 PAGE_SIZE = 1000  # Supabase returns at most 1000 rows per request.
 DRY_RUN_PREFIX = "dry_run_"
 UNATTRIBUTED = "(unattributed)"
+# ai_usage features recorded by diet tracking (see diet/).
+FOOD_FEATURES = ("meal_stt", "meal_parsing", "recipe_estimation")
+MEAL_LOG_STATS = "user_id, processed_at, error, new_food_count, new_ingredient_count, reused_food_count"
 
 
 def _fetch_usage(since: datetime, include_dry_runs: bool) -> List[Dict[str, Any]]:
@@ -30,12 +35,28 @@ def _fetch_usage(since: datetime, include_dry_runs: bool) -> List[Dict[str, Any]
     while True:
         query = (
             plan_repo.client.table("ai_usage")
-            .select("user_id, session_id, provider, feature, calls, cost_inr_total, created_at")
+            .select("user_id, session_id, provider, feature, model, calls, cost_inr_total, created_at")
             .gte("created_at", since.isoformat())
         )
         if not include_dry_runs:
             query = query.not_.like("feature", f"{DRY_RUN_PREFIX}%")
         page = query.order("id").range(start, start + PAGE_SIZE - 1).execute().data
+        rows.extend(page)
+        if len(page) < PAGE_SIZE:
+            return rows
+        start += PAGE_SIZE
+
+
+def _fetch_meal_logs(since: datetime) -> List[Dict[str, Any]]:
+    """Every food recording since `since` (discarded ones included: what
+    they cost and added still counts), page by page."""
+    rows, start = [], 0
+    while True:
+        page = (
+            plan_repo.client.table("meal_logs").select(MEAL_LOG_STATS)
+            .gte("created_at", since.isoformat())
+            .order("id").range(start, start + PAGE_SIZE - 1).execute().data
+        )
         rows.extend(page)
         if len(page) < PAGE_SIZE:
             return rows
@@ -126,12 +147,82 @@ def summarize_costs(
     }
 
 
+def _is_food(feature: str) -> bool:
+    return (feature[len(DRY_RUN_PREFIX):] if feature.startswith(DRY_RUN_PREFIX) else feature) in FOOD_FEATURES
+
+
+def _models(totals: Dict[tuple, Dict[str, float]]) -> List[Dict[str, Any]]:
+    return sorted(
+        (
+            {"provider": provider, "model": model, "calls": int(t["calls"]), "inr": _money(t["inr"])}
+            for (provider, model), t in totals.items()
+        ),
+        key=lambda item: -item["inr"],
+    )
+
+
+def summarize_food(
+    rows: List[Dict[str, Any]], logs: List[Dict[str, Any]], names: Dict[str, Optional[str]]
+) -> Dict[str, Any]:
+    """Diet tracking on its own: ai_usage rows (any feature; the food ones
+    are picked out) and meal_logs rows -> its cost by model, and the same
+    per client with the food recordings processed (and how many failed),
+    and the dishes and ingredients they added to the shared tables or
+    found already there."""
+    zero = lambda: {"inr": 0.0, "calls": 0}  # noqa: E731
+    counts = ("voice_notes", "failed", "new_foods", "new_ingredients", "reused_foods")
+
+    def blank():
+        return {"inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "models": defaultdict(zero), **{c: 0 for c in counts}}
+
+    overall = blank()
+    users: Dict[str, Dict[str, Any]] = {}
+
+    for row in rows:
+        if not _is_food(row["feature"]):
+            continue
+        inr = float(row.get("cost_inr_total") or 0)
+        calls = int(row.get("calls") or 1)
+        key = (row["provider"], row.get("model") or "unknown")
+        for target in (overall, users.setdefault(row.get("user_id") or UNATTRIBUTED, blank())):
+            target["inr"] += inr
+            target[row["provider"]] = target.get(row["provider"], 0.0) + inr
+            target["models"][key]["inr"] += inr
+            target["models"][key]["calls"] += calls
+
+    for log in logs:
+        user = users.setdefault(log["user_id"], blank())
+        for target in (overall, user):
+            if log.get("processed_at"):
+                target["voice_notes"] += 1
+            if log.get("error"):
+                target["failed"] += 1
+            target["new_foods"] += log.get("new_food_count") or 0
+            target["new_ingredients"] += log.get("new_ingredient_count") or 0
+            target["reused_foods"] += log.get("reused_food_count") or 0
+
+    def shape(totals: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "total_inr": _money(totals["inr"]),
+            "claude_inr": _money(totals.get("anthropic", 0.0)),
+            "sarvam_inr": _money(totals.get("sarvam", 0.0)),
+            "per_voice_note_inr": _money(totals["inr"] / totals["voice_notes"]) if totals["voice_notes"] else None,
+            "by_model": _models(totals["models"]),
+            **{c: totals[c] for c in counts},
+        }
+
+    clients = [{"user_id": user_id, "name": names.get(user_id), **shape(user)} for user_id, user in users.items()]
+    clients.sort(key=lambda client: (-client["total_inr"], -client["voice_notes"]))
+    return {**shape(overall), "clients": clients}
+
+
 @admin_cost_bp.get("/api/admin/costs")
 @require_admin
 def ai_costs():
     """`?days=30` (1-365) — AI spend per client over the last N days, in
     rupees (Claude converted at USD_INR_RATE). Dry runs are left out unless
-    `?include_dry_runs=1`."""
+    `?include_dry_runs=1`. `food` is diet tracking on its own (see
+    summarize_food)."""
     try:
         days = int(request.args.get("days", DEFAULT_DAYS))
     except ValueError:
@@ -143,11 +234,13 @@ def ai_costs():
     since = datetime.now(timezone.utc) - timedelta(days=days)
     try:
         rows = _fetch_usage(since, include_dry_runs)
+        meal_logs = _fetch_meal_logs(since)
         names = {row["user_id"]: row.get("name") for row in plan_repo.list_user_profiles()}
     except Exception:
         logger.exception("Failed to load AI costs")
         return jsonify({"error": "Failed to load AI costs."}), 500
     result = summarize_costs(rows, names, days)
+    result["food"] = summarize_food(rows, meal_logs, names)
     result["since"] = since.isoformat()
     result["include_dry_runs"] = include_dry_runs
     return jsonify(result), 200

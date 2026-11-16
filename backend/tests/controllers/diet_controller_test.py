@@ -31,10 +31,10 @@ def ctl(app_module, monkeypatch):
         {**repo.logs[log_id], "meal_log_items": repo.log_items(log_id)} if log_id in repo.logs else None
     )
     repo.list_meal_logs = lambda user_id, start, end: [
-        repo.get_meal_log_detail(i) for i, row in repo.logs.items() if row["user_id"] == user_id
+        repo.get_meal_log_detail(i) for i, row in repo.logs.items()
+        if row["user_id"] == user_id and row["status"] != "discarded"
     ]
     repo.create_meal_log = lambda user_id, logged_for: repo.logs[repo.add_log(user_id, logged_for=logged_for.isoformat())]
-    repo.delete_meal_log = lambda log_id: repo.logs.pop(log_id)
     repo.delete_item = lambda item_id: repo.items.pop(item_id)
     repo.get_targets = lambda user_id: None
     repo.set_targets = MagicMock(return_value=True)
@@ -129,8 +129,11 @@ def test_confirm_and_delete(ctl, sign_in):
     assert client.post("/api/meal-logs/1/confirm").get_json()["status"] == "confirmed"
     assert ctl.repo.logs[1]["status"] == "confirmed"
     assert client.delete("/api/meal-logs/1").status_code == 200
-    assert 1 not in ctl.repo.logs
+    # Kept as discarded (it still counts in the Costs tab), gone for her.
+    assert (ctl.repo.logs[1]["status"], ctl.repo.logs[1]["audio_path"]) == ("discarded", None)
     ctl.feedback_storage().remove.assert_called_once_with("meal_1.webm")
+    assert client.get("/api/meal-logs/1").status_code == 404
+    assert client.get("/api/users/usr_1/diet").get_json()["logs"] == []
 
 
 def test_day_view_is_her_own_only(ctl, sign_in):

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { fetchCosts, type CostSummary, type FeatureCost } from '../../adminApi'
+import { fetchCosts, type CostSummary, type FeatureCost, type FoodUsage, type ModelCost } from '../../adminApi'
 import { ApiError } from '../../api'
 
 const RANGES = [7, 30, 90] as const
@@ -21,6 +21,24 @@ const FEATURE_LABELS: Record<string, string> = {
 }
 
 const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam' } as const
+
+const MODEL_LABELS: Record<string, string> = {
+  'claude-opus-5-5': 'Claude Opus 5.5',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-haiku-5-5': 'Claude Haiku 5.5',
+  'saaras:v4': 'Sarvam saaras:v4 (speech to text)',
+}
+
+// What each model does in diet tracking.
+const MODEL_ROLES: Record<string, string> = {
+  'claude-opus-5-5': 'Recipes for new dishes',
+  'claude-sonnet-5-5': 'Working out what she ate',
+  'saaras:v4': 'Recordings → text',
+}
+
+function modelLabel(model: string): string {
+  return MODEL_LABELS[model] ?? model
+}
 
 const rupees = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 })
 
@@ -169,6 +187,8 @@ export function CostsTab({ adminKey, onUnauthorized }: { adminKey: string; onUna
             )}
           </section>
 
+          <FoodSection food={data.food} days={data.days} />
+
           {data.by_feature.length > 0 && (
             <section className="card costs__section">
               <h2 className="costs__title">By feature</h2>
@@ -214,6 +234,129 @@ function FeatureTable({ features }: { features: FeatureCost[] }) {
               <td>{PROVIDER_LABELS[f.provider] ?? f.provider}</td>
               <td className="costs__num">{f.calls}</td>
               <td className="costs__num">{inr(f.inr)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// The share of dishes she mentioned that were already in the table.
+function reuseRate(usage: FoodUsage): string {
+  const mentioned = usage.reused_foods + usage.new_foods
+  return mentioned ? `${Math.round((usage.reused_foods / mentioned) * 100)}%` : '—'
+}
+
+// Diet tracking on its own: its cost by model, and per client the food
+// recordings processed and what they added to or reused from the food tables.
+function FoodSection({ food, days }: { food: CostSummary['food']; days: number }) {
+  const [open, setOpen] = useState<string | null>(null)
+  return (
+    <section className="card costs__section">
+      <h2 className="costs__title">Food tracking</h2>
+      {food.voice_notes === 0 && food.total_inr === 0 ? (
+        <p className="admin__muted">No food recordings in the last {days} days.</p>
+      ) : (
+        <>
+          <div className="costs__stats costs__stats--inner">
+            <Stat label="Food tracking cost" value={inr(food.total_inr)} strong />
+            <Stat label="Recordings processed" value={`${food.voice_notes}${food.failed ? ` (${food.failed} failed)` : ''}`} />
+            <Stat label="Per recording" value={inr(food.per_voice_note_inr)} />
+            <Stat label="New dishes added" value={String(food.new_foods)} />
+            <Stat label="New ingredients added" value={String(food.new_ingredients)} />
+            <Stat label="Dishes reused from table" value={`${food.reused_foods} (${reuseRate(food)})`} />
+          </div>
+
+          <h3 className="costs__subtitle">By model</h3>
+          <ModelTable models={food.by_model} />
+
+          <h3 className="costs__subtitle">Per client</h3>
+          <div className="costs__scroll">
+            <table className="costs__table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th className="costs__num">Recordings</th>
+                  <th className="costs__num">Failed</th>
+                  <th className="costs__num">New dishes</th>
+                  <th className="costs__num">New ingredients</th>
+                  <th className="costs__num">Reused dishes</th>
+                  <th className="costs__num">Cost</th>
+                  <th className="costs__num">Per recording</th>
+                </tr>
+              </thead>
+              <tbody>
+                {food.clients.map((client) => {
+                  const expanded = open === client.user_id
+                  return (
+                    <Fragment key={client.user_id}>
+                      <tr
+                        className={`costs__row${expanded ? ' costs__row--open' : ''}`}
+                        onClick={() => setOpen(expanded ? null : client.user_id)}
+                      >
+                        <td>
+                          <button type="button" className="costs__client" aria-expanded={expanded}>
+                            <span className="costs__caret" aria-hidden>
+                              {expanded ? '▾' : '▸'}
+                            </span>
+                            <span>
+                              <span className="costs__name">{client.name ?? client.user_id}</span>
+                              {client.name && <span className="costs__id">{client.user_id}</span>}
+                            </span>
+                          </button>
+                        </td>
+                        <td className="costs__num">{client.voice_notes}</td>
+                        <td className="costs__num">{client.failed}</td>
+                        <td className="costs__num">{client.new_foods}</td>
+                        <td className="costs__num">{client.new_ingredients}</td>
+                        <td className="costs__num">{client.reused_foods}</td>
+                        <td className="costs__num costs__total">{inr(client.total_inr)}</td>
+                        <td className="costs__num">{inr(client.per_voice_note_inr)}</td>
+                      </tr>
+                      {expanded && (
+                        <tr className="costs__detail">
+                          <td colSpan={8}>
+                            <ModelTable models={client.by_model} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="admin__muted costs__note">
+            A new dish is paid for once, by the client who first mentions it; everyone after reuses it. Discarded
+            recordings still count. Dishes are counted per mention.
+          </p>
+        </>
+      )}
+    </section>
+  )
+}
+
+function ModelTable({ models }: { models: ModelCost[] }) {
+  if (models.length === 0) return <p className="admin__muted">No AI calls recorded.</p>
+  return (
+    <div className="costs__scroll">
+      <table className="costs__table costs__table--compact">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Used for</th>
+            <th className="costs__num">Calls</th>
+            <th className="costs__num">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map((m) => (
+            <tr key={`${m.provider}:${m.model}`}>
+              <td>{modelLabel(m.model)}</td>
+              <td>{MODEL_ROLES[m.model] ?? PROVIDER_LABELS[m.provider] ?? m.provider}</td>
+              <td className="costs__num">{m.calls}</td>
+              <td className="costs__num">{inr(m.inr)}</td>
             </tr>
           ))}
         </tbody>

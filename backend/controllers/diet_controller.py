@@ -102,8 +102,9 @@ def create_meal_log():
 
 
 def _own_log(meal_log_id):
+    """Her log, unless she discarded it."""
     log = diet_repo.get_meal_log_detail(meal_log_id)
-    return log if log and log["user_id"] == g.user_id else None
+    return log if log and log["user_id"] == g.user_id and log["status"] != "discarded" else None
 
 
 def _own_item(item_id):
@@ -147,11 +148,14 @@ def confirm_meal_log(meal_log_id):
 @diet_bp.delete("/api/meal-logs/<int:meal_log_id>")
 @require_diet
 def delete_meal_log(meal_log_id):
-    """Discard a log (she's recording it again) and its recording."""
+    """Discard a log (she's recording it again, or removing one that
+    failed) and delete its recording. The row is kept as `discarded`, hidden
+    from her and the coach's food views, so its cost and what it added to
+    the shared tables still count in the Costs tab."""
     log = _own_log(meal_log_id)
     if log is None:
         return jsonify(_NO_LOG[0]), _NO_LOG[1]
-    diet_repo.delete_meal_log(meal_log_id)
+    diet_repo.discard_meal_log(meal_log_id)
     if log.get("audio_path"):
         try:
             feedback_storage().remove(log["audio_path"])

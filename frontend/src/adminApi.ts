@@ -386,6 +386,37 @@ export interface ClientCost {
   by_feature: FeatureCost[]
 }
 
+// Diet tracking's spend on one model (Claude model, or Sarvam's speech-to-text).
+export interface ModelCost {
+  provider: 'anthropic' | 'sarvam'
+  model: string
+  calls: number
+  inr: number
+}
+
+// Diet tracking on its own: what it cost, and what the food recordings did
+// to the shared food tables.
+export interface FoodUsage {
+  total_inr: number
+  claude_inr: number
+  sarvam_inr: number
+  per_voice_note_inr: number | null
+  by_model: ModelCost[]
+  // Food recordings worked out (successfully or not), and how many failed.
+  voice_notes: number
+  failed: number
+  // Dishes and ingredients added to the shared tables (new ones estimated by Claude).
+  new_foods: number
+  new_ingredients: number
+  // Dishes she mentioned that were already in the table (each mention counts).
+  reused_foods: number
+}
+
+export interface ClientFoodUsage extends FoodUsage {
+  user_id: string
+  name: string | null
+}
+
 export interface CostSummary {
   days: number
   since: string
@@ -400,6 +431,7 @@ export interface CostSummary {
   by_feature: FeatureCost[]
   // Highest spend first.
   clients: ClientCost[]
+  food: FoodUsage & { clients: ClientFoodUsage[] }
 }
 
 // AI spend (Claude + Sarvam, in rupees) per client over the last `days` days.

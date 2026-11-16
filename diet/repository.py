@@ -5,7 +5,7 @@
 `meal_log_item_ingredients`."""
 import os
 from datetime import date
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from dotenv import load_dotenv
 from supabase import Client, create_client
@@ -44,6 +44,16 @@ class DietRepository:
     def update_meal_log(self, meal_log_id: int, fields: Dict[str, Any]) -> None:
         self.client.table("meal_logs").update(fields).eq("id", meal_log_id).execute()
 
+    def finish_meal_log(self, meal_log_id: int, fields: Dict[str, Any]) -> bool:
+        """Set a processed log's outcome, but only while it's still
+        `processing` — one she discarded meanwhile stays discarded. False if
+        nothing was updated."""
+        rows = (
+            self.client.table("meal_logs").update(fields)
+            .eq("id", meal_log_id).eq("status", "processing").execute().data
+        )
+        return bool(rows)
+
     def get_meal_log(self, meal_log_id: int) -> Optional[Dict[str, Any]]:
         rows = self.client.table("meal_logs").select("*").eq("id", meal_log_id).limit(1).execute().data
         return rows[0] if rows else None
@@ -52,14 +62,19 @@ class DietRepository:
         rows = self.client.table("meal_logs").select(LOG_SELECT).eq("id", meal_log_id).limit(1).execute().data
         return rows[0] if rows else None
 
-    def delete_meal_log(self, meal_log_id: int) -> None:
-        self.client.table("meal_logs").delete().eq("id", meal_log_id).execute()
+    def discard_meal_log(self, meal_log_id: int) -> None:
+        """She threw a log away (Record again / Remove). Kept as `discarded`,
+        hidden everywhere, so what it cost and added still counts in the
+        admin Costs tab; its recording is removed separately."""
+        self.client.table("meal_logs").update(
+            {"status": "discarded", "audio_path": None}
+        ).eq("id", meal_log_id).execute()
 
     def list_meal_logs(self, user_id: str, start: date, end: date) -> List[Dict[str, Any]]:
         """Her logs for the days start..end (inclusive), oldest first."""
         return (
             self.client.table("meal_logs").select(LOG_SELECT)
-            .eq("user_id", user_id)
+            .eq("user_id", user_id).neq("status", "discarded")
             .gte("logged_for", start.isoformat()).lte("logged_for", end.isoformat())
             .order("created_at")
             .execute().data
@@ -86,16 +101,19 @@ class DietRepository:
         rows = self.client.table("foods").select("id, name_key").in_("name_key", keys).execute().data
         return {row["name_key"]: row["id"] for row in rows}
 
-    def insert_food(self, dish: Dict[str, Any], model: Optional[str], meal_log_id: Optional[int]) -> int:
+    def insert_food(
+        self, dish: Dict[str, Any], model: Optional[str], meal_log_id: Optional[int]
+    ) -> Tuple[int, bool]:
         """Add a validated dish (see validate.validate_dish) with its unit
-        weights and recipe; returns its id. If another log added the same
-        dish first, that one's id is returned and nothing is changed."""
+        weights and recipe; returns (its id, whether this call added it). If
+        another log added the same dish first, that one's id is returned with
+        False and nothing is changed."""
         inserted = self.client.table("foods").upsert({
             "name": dish["name"], "name_key": dish["name_key"], "aliases": dish["aliases"],
             "default_unit": dish["default_unit"], "model": model, "created_from_meal_log_id": meal_log_id,
         }, on_conflict="name_key", ignore_duplicates=True).execute().data
         if not inserted:
-            return self.find_food_ids([dish["name_key"]])[dish["name_key"]]
+            return self.find_food_ids([dish["name_key"]])[dish["name_key"]], False
         food_id = inserted[0]["id"]
         try:
             self.client.table("food_portions").insert([
@@ -108,7 +126,7 @@ class DietRepository:
             # A dish without its recipe would log as zero nutrients forever.
             self.client.table("foods").delete().eq("id", food_id).execute()
             raise
-        return food_id
+        return food_id, True
 
     def upsert_portion(self, food_id: int, unit: str, grams: float, source: str = "ai_estimate") -> None:
         self.client.table("food_portions").upsert(
@@ -120,16 +138,17 @@ class DietRepository:
     def ingredient_catalogue(self) -> List[Dict[str, Any]]:
         return self.client.table("ingredients").select("id, name, name_key").order("id").execute().data
 
-    def insert_ingredient(self, row: Dict[str, Any], model: Optional[str]) -> int:
-        """Add a validated ingredient; returns its id (the existing one's if
-        the name is already there)."""
+    def insert_ingredient(self, row: Dict[str, Any], model: Optional[str]) -> Tuple[int, bool]:
+        """Add a validated ingredient; returns (its id, whether this call
+        added it) — the existing one's id and False if the name is already
+        there."""
         inserted = self.client.table("ingredients").upsert(
             {**row, "model": model}, on_conflict="name_key", ignore_duplicates=True,
         ).execute().data
         if inserted:
-            return inserted[0]["id"]
+            return inserted[0]["id"], True
         existing = self.client.table("ingredients").select("id").eq("name_key", row["name_key"]).execute().data
-        return existing[0]["id"]
+        return existing[0]["id"], False
 
     # --- her own version of a dish ---------------------------------------
 

@@ -3996,3 +3996,15 @@ button.food-notice {
 .client-food__switch {
   width: auto;
 }
+
+/* Costs tab: food tracking */
+.costs__stats--inner .costs__stat {
+  box-shadow: none;
+  border: 1px solid var(--hairline);
+}
+.costs__subtitle {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--heading);
+}
