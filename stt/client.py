@@ -80,3 +80,34 @@ class SarvamBatchSTTClient(STTClient):
                 raise TranscriptionError(f"Sarvam STT job {job.job_id} produced no output for {file_name}")
             with open(output_path, encoding="utf-8") as f:
                 return (json.load(f).get("transcript") or "").strip()
+
+
+# What Sarvam calls each recording format we store (by file extension).
+_CODECS = {"webm": "webm", "ogg": "ogg", "m4a": "x-m4a", "mp4": "mp4", "aac": "aac", "mp3": "mp3", "wav": "wav"}
+
+
+class SarvamRestSTTClient(STTClient):
+    """STTClient backed by Sarvam's synchronous speech-to-text endpoint: one
+    request, answered in a couple of seconds, for recordings of up to
+    MAX_SECONDS. Longer ones need SarvamBatchSTTClient."""
+
+    MAX_SECONDS = 30
+
+    def __init__(self, language_code: str = "ta-IN", model: str = "saaras:v4", mode: str = "codemix"):
+        self._client = SarvamAI(api_subscription_key=os.environ["SARVAM_API_KEY"])
+        self._language_code = language_code
+        self._model = model
+        self._mode = mode
+
+    def transcribe(self, audio: bytes, file_name: str) -> str:
+        file_name = os.path.basename(file_name)
+        extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+        options = {"input_audio_codec": _CODECS[extension]} if extension in _CODECS else {}
+        response = self._client.speech_to_text.transcribe(
+            file=(file_name, audio),
+            model=self._model,
+            mode=self._mode,
+            language_code=self._language_code,
+            **options,
+        )
+        return (response.transcript or "").strip()

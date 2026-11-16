@@ -1,0 +1,311 @@
+import { Fragment, useEffect, useState } from 'react'
+import { ApiError } from '../../api'
+import {
+  fetchClientDiet,
+  fetchMealAudioUrl,
+  saveNutritionTargets,
+  type ClientDiet,
+  type CoachMealItem,
+  type CoachMealLog,
+} from '../../adminApi'
+import { portionLabel } from '../../food'
+import { formatDayDate } from '../../utils'
+import { MICRO_KEYS, NUTRIENT_LABELS, nutrientValue } from './foodLabels'
+
+const DAYS = 7
+
+// Coach-only: what a client said she ate over the last week — every nutrient
+// per day, and under each day the recordings, what was heard in them, the
+// ingredients assumed, and what she changed. Her daily protein and fibre
+// targets are set here.
+export function ClientFood({
+  adminKey,
+  userId,
+  onUnauthorized,
+}: {
+  adminKey: string
+  userId: string
+  onUnauthorized: () => void
+}) {
+  const [diet, setDiet] = useState<ClientDiet | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setDiet(null)
+    setError(null)
+    fetchClientDiet(adminKey, userId, DAYS)
+      .then((data) => !cancelled && setDiet(data))
+      .catch((err) => {
+        if (cancelled) return
+        if (err instanceof ApiError && err.status === 401) onUnauthorized()
+        else setError(err instanceof Error ? err.message : 'Could not load the food log.')
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminKey, userId])
+
+  return (
+    <div className="card admin__section client-food">
+      <h3 className="monitor__section-title">Food, last {DAYS} days</h3>
+      {error && <div className="error-banner">{error}</div>}
+      {!diet && !error && <p className="admin__muted">Loading…</p>}
+      {diet && (
+        <>
+          <Targets
+            adminKey={adminKey}
+            userId={userId}
+            initial={diet.targets}
+            onSaved={(targets) => setDiet({ ...diet, targets })}
+            onUnauthorized={onUnauthorized}
+          />
+          {diet.days.length === 0 ? (
+            <p className="admin__muted">Nothing logged in this period.</p>
+          ) : (
+            <div className="costs__scroll">
+              <table className="costs__table">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th className="costs__num">Energy</th>
+                    <th className="costs__num">Protein</th>
+                    <th className="costs__num">Carbs</th>
+                    <th className="costs__num">Fibre</th>
+                    <th className="costs__num">Fat</th>
+                    <th className="costs__num">Saturated</th>
+                    <th className="costs__num">Unsaturated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diet.days.map((day) => {
+                    const expanded = open === day.date
+                    return (
+                      <Fragment key={day.date}>
+                        <tr
+                          className={`costs__row${expanded ? ' costs__row--open' : ''}`}
+                          onClick={() => setOpen(expanded ? null : day.date)}
+                        >
+                          <td>
+                            <button type="button" className="costs__client" aria-expanded={expanded}>
+                              <span className="costs__caret" aria-hidden>
+                                {expanded ? '▾' : '▸'}
+                              </span>
+                              <span className="costs__name">{formatDayDate(day.date)}</span>
+                            </button>
+                          </td>
+                          {['energy_kcal', 'protein_g', 'carbs_g', 'fibre_g', 'fat_g', 'saturated_fat_g', 'unsaturated_fat_g'].map(
+                            (key) => (
+                              <td key={key} className={`costs__num${key === 'protein_g' ? ' costs__total' : ''}`}>
+                                {nutrientValue(key, day.totals[key])}
+                              </td>
+                            ),
+                          )}
+                        </tr>
+                        {expanded && (
+                          <tr className="costs__detail">
+                            <td colSpan={8}>
+                              <dl className="client-food__micros">
+                                {MICRO_KEYS.map((key) => (
+                                  <div key={key}>
+                                    <dt>{NUTRIENT_LABELS[key][0]}</dt>
+                                    <dd>{nutrientValue(key, day.totals[key])}</dd>
+                                  </div>
+                                ))}
+                              </dl>
+                              {day.logs.map((log) => (
+                                <LogBlock key={log.id} log={log} adminKey={adminKey} onUnauthorized={onUnauthorized} />
+                              ))}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="admin__muted client-food__note">
+            Estimates: amounts come from what she said and standard household measures, and nutrients from each
+            dish&apos;s recipe. Correct a dish or an ingredient in the Foods tab.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+function Targets({
+  adminKey,
+  userId,
+  initial,
+  onSaved,
+  onUnauthorized,
+}: {
+  adminKey: string
+  userId: string
+  initial: { protein_g: number; fibre_g: number }
+  onSaved: (targets: { protein_g: number; fibre_g: number }) => void
+  onUnauthorized: () => void
+}) {
+  const [protein, setProtein] = useState(String(initial.protein_g))
+  const [fibre, setFibre] = useState(String(initial.fibre_g))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const changed = Number(protein) !== initial.protein_g || Number(fibre) !== initial.fibre_g
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await saveNutritionTargets(adminKey, userId, {
+        protein_g: protein.trim() ? Number(protein) : null,
+        fibre_g: fibre.trim() ? Number(fibre) : null,
+      })
+      onSaved(result.targets)
+      setProtein(String(result.targets.protein_g))
+      setFibre(String(result.targets.fibre_g))
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return onUnauthorized()
+      setError(err instanceof Error ? err.message : 'Failed to save the targets.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="client-food__targets">
+        <label>
+          <span className="monitor__label">Protein target (g / day)</span>
+          <input
+            className="login-screen__input"
+            inputMode="numeric"
+            value={protein}
+            onChange={(e) => setProtein(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <label>
+          <span className="monitor__label">Fibre target (g / day)</span>
+          <input
+            className="login-screen__input"
+            inputMode="numeric"
+            value={fibre}
+            onChange={(e) => setFibre(e.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button className="btn-secondary" disabled={busy || !changed} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save targets'}
+        </button>
+      </div>
+      {error && <div className="error-banner">{error}</div>}
+    </>
+  )
+}
+
+const LOG_STATUS: Record<CoachMealLog['status'], string> = {
+  processing: 'Being worked out',
+  ready: 'Not reviewed by her',
+  confirmed: 'Reviewed by her',
+  failed: 'Could not be understood',
+}
+
+function LogBlock({
+  log,
+  adminKey,
+  onUnauthorized,
+}: {
+  log: CoachMealLog
+  adminKey: string
+  onUnauthorized: () => void
+}) {
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioError, setAudioError] = useState<string | null>(null)
+
+  async function play() {
+    setAudioError(null)
+    try {
+      setAudioUrl((await fetchMealAudioUrl(adminKey, log.id)).url)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return onUnauthorized()
+      setAudioError('Could not load the recording.')
+    }
+  }
+
+  return (
+    <div className="client-food__log">
+      <div className="monitor__row">
+        <span className={`monitor__chip${log.status === 'failed' ? ' monitor__chip--severe' : ''}`}>
+          {LOG_STATUS[log.status]}
+        </span>
+        <span className="admin__muted">
+          Recorded{' '}
+          {new Date(log.created_at).toLocaleString('en-GB', {
+            day: 'numeric',
+            month: 'short',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </span>
+        {log.has_audio &&
+          (audioUrl ? (
+            <audio src={audioUrl} controls autoPlay />
+          ) : (
+            <button type="button" className="btn-link" onClick={() => void play()}>
+              Play recording
+            </button>
+          ))}
+      </div>
+      {audioError && <div className="error-banner">{audioError}</div>}
+      {log.transcript && <p className="client-food__transcript">“{log.transcript}”</p>}
+      {log.items.map((item) => (
+        <ItemBlock key={item.id} item={item} />
+      ))}
+    </div>
+  )
+}
+
+function ItemBlock({ item }: { item: CoachMealItem }) {
+  const n = item.nutrients
+  return (
+    <div className="client-food__item">
+      <div className="monitor__row">
+        <strong>{item.name}</strong>
+        <span>
+          {portionLabel(item)}
+          {item.grams !== null && item.unit !== 'grams' ? ` (${Math.round(item.grams)} g)` : ''}
+        </span>
+        {item.meal && <span className="admin__muted">{item.meal}</span>}
+        {item.assumed && <span className="monitor__chip monitor__chip--mild">Amount assumed</span>}
+        {item.needs_review && <span className="monitor__chip monitor__chip--severe">Dish not worked out</span>}
+        {item.own_recipe && <span className="monitor__chip">Her own recipe</span>}
+        {item.edited && <span className="monitor__chip">Edited by her</span>}
+      </div>
+      {!item.needs_review && (
+        <p className="admin__muted client-food__line">
+          {nutrientValue('energy_kcal', n.energy_kcal)} · protein {nutrientValue('protein_g', n.protein_g)} · carbs{' '}
+          {nutrientValue('carbs_g', n.carbs_g)} · fibre {nutrientValue('fibre_g', n.fibre_g)} · fat{' '}
+          {nutrientValue('fat_g', n.fat_g)}
+        </p>
+      )}
+      {item.ingredients.length > 0 && (
+        <p className="client-food__line">
+          {item.ingredients.map((ingredient, i) => (
+            <span key={ingredient.ingredient_id} className={ingredient.edited ? 'client-food__changed' : undefined}>
+              {i > 0 && ', '}
+              {ingredient.name} {Math.round(ingredient.grams * 10) / 10} g
+              {ingredient.edited && ingredient.grams !== ingredient.default_grams
+                ? ` (was ${Math.round(ingredient.default_grams * 10) / 10} g)`
+                : ''}
+            </span>
+          ))}
+        </p>
+      )}
+    </div>
+  )
+}

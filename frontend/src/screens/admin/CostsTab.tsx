@@ -15,6 +15,9 @@ const FEATURE_LABELS: Record<string, string> = {
   reply_stt: 'Voice replies → text',
   summary_tts: 'Summary voice note',
   follow_up_tts: 'Follow-up voice note',
+  meal_stt: 'Food recordings → text',
+  meal_parsing: 'Food: what she ate',
+  recipe_estimation: 'Food: new dish recipes',
 }
 
 const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam' } as const

@@ -1,7 +1,8 @@
-from stt.client import SarvamBatchSTTClient, STTClient, TranscriptionError
+from stt.client import SarvamBatchSTTClient, SarvamRestSTTClient, STTClient, TranscriptionError
 
 __all__ = [
     "STTClient",
     "SarvamBatchSTTClient",
+    "SarvamRestSTTClient",
     "TranscriptionError",
 ]

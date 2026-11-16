@@ -23,6 +23,7 @@ import type { CardioPlan, ExerciseEntry } from '../../types'
 import { levelForCardioRating } from '../../components/effortLevels'
 import { humanize } from './planDraft'
 import { CoachSuggestions } from './CoachSuggestions'
+import { ClientFood } from './ClientFood'
 
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
@@ -202,6 +203,7 @@ function ClientDetail({
         onUnauthorized={onUnauthorized}
         onDone={onPlanChanged}
       />
+      <ClientFood key={client.user_id} adminKey={adminKey} userId={client.user_id} onUnauthorized={onUnauthorized} />
       <WorkoutSection title="Scheduled" workouts={workouts.scheduled} empty="Nothing scheduled.">
         {(w) => <WorkoutCard key={w.session_id} workout={w} adminKey={adminKey} onUnauthorized={onUnauthorized} />}
       </WorkoutSection>

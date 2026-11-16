@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { CollapsibleSection } from '../components/CollapsibleSection'
 import { LevelCard } from '../components/LevelCard'
 import { PlantHero } from '../components/PlantHero'
@@ -27,6 +28,7 @@ export function DashboardScreen() {
     loadMorePast,
   } = useAppState()
   const { start, error: startError, periodPrompt } = useStartWorkout()
+  const navigate = useNavigate()
 
   useEffect(() => {
     refreshDashboard().catch(() => {
@@ -97,6 +99,17 @@ export function DashboardScreen() {
 
       {/* Only this part scrolls; the plant and level card stay put. */}
       <div className="dashboard__scroll">
+        <button className="food-entry" onClick={() => navigate('/food')}>
+          <span className="food-entry__icon">
+            <Icon name="bowl" size={24} />
+          </span>
+          <span className="food-entry__text">
+            <span className="food-entry__title">What did you eat today?</span>
+            <span className="food-entry__hint">Tell us in your own words</span>
+          </span>
+          <Icon name="chevronRight" size={20} />
+        </button>
+
         <h2 className="screen-title">Your Workouts</h2>
         <p className="dashboard__subtitle">{subtitle}</p>
         {startError && <div className="error-banner">{startError}</div>}
