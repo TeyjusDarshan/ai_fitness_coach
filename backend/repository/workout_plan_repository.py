@@ -1694,7 +1694,7 @@ class WorkoutPlanRepository:
     def get_user_profile_row(self, user_id: str) -> Optional[dict]:
         rows = (
             self.client.table("user_profiles")
-            .select("user_id, name, gender, profile")
+            .select("user_id, name, gender, diet_enabled, profile")
             .eq("user_id", user_id)
             .execute()
             .data

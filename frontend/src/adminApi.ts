@@ -201,6 +201,8 @@ export interface ClientMonitor {
     user_id: string
     name: string | null
     gender: string | null
+    // Diet tracking is switched on for this client (off by default).
+    diet_enabled: boolean
     profile: {
       age: number | null
       sex: string | null
@@ -441,6 +443,18 @@ export interface CoachMealLog {
 export interface ClientDiet {
   targets: { protein_g: number; fibre_g: number }
   days: { date: string; totals: Nutrients; logs: CoachMealLog[] }[]
+}
+
+// Switch diet tracking on or off for a client. Off hides Food in her app.
+export function setDietTracking(
+  adminKey: string,
+  userId: string,
+  enabled: boolean,
+): Promise<{ user_id: string; diet_enabled: boolean }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/diet-tracking`, {
+    method: 'PATCH',
+    body: JSON.stringify({ enabled }),
+  })
 }
 
 export function fetchClientDiet(adminKey: string, userId: string, days: number): Promise<ClientDiet> {

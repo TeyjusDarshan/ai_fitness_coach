@@ -14,6 +14,8 @@ export interface Me {
   name: string | null
   // Set by the coach at intake; null for users created before it existed.
   gender: Gender | null
+  // Whether the coach switched diet tracking on for them. Off hides Food.
+  diet_enabled: boolean
 }
 
 export type Gender = 'male' | 'female' | 'other'

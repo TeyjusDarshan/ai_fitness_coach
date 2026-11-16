@@ -3986,3 +3986,13 @@ button.food-notice {
 .foods__actions .btn-secondary {
   width: auto;
 }
+.client-food__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.client-food__switch {
+  width: auto;
+}

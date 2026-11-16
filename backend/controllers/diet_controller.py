@@ -5,12 +5,15 @@ stored and a meal-log event published, and the meal-log consumer
 (diet/consumer.py) turns it into items — dishes with their ingredients —
 which she then reviews: change a portion, open a dish and change its
 ingredients (which becomes her own version of that dish), or remove it.
+Off by default: every client endpoint is refused (require_diet) until the
+coach switches diet tracking on for that client in Monitor clients.
 She sees protein and fibre against her targets; the coach sees every
 nutrient per day in Monitor clients, and reviews what Claude estimated
 (dishes, recipes, ingredients) in the Foods tab.
 """
 import logging
 from datetime import date, datetime, timedelta, timezone
+from functools import wraps
 
 from flask import Blueprint, g, jsonify, request
 
@@ -49,10 +52,22 @@ def _number(value):
     return float(value) if value == value and abs(value) != float("inf") else None
 
 
+def require_diet(view):
+    """A signed-in client's diet endpoint: refused (403) unless the coach
+    has switched diet tracking on for her. Off by default."""
+    @require_auth
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not diet_repo.is_enabled(g.user_id):
+            return jsonify({"error": "Diet tracking isn't switched on for you.", "diet_disabled": True}), 403
+        return view(*args, **kwargs)
+    return wrapper
+
+
 # --- the client's endpoints ------------------------------------------------
 
 @diet_bp.post("/api/meal-logs")
-@require_auth
+@require_diet
 def create_meal_log():
     """Start a meal log from a recording (multipart `audio`, optional
     `day`: `today` | `yesterday`). Answers straight away with the log in
@@ -105,7 +120,7 @@ _NO_ITEM = ({"error": "No such item."}, 404)
 
 
 @diet_bp.get("/api/meal-logs/<int:meal_log_id>")
-@require_auth
+@require_diet
 def get_meal_log(meal_log_id):
     log = _own_log(meal_log_id)
     if log is None:
@@ -114,7 +129,7 @@ def get_meal_log(meal_log_id):
 
 
 @diet_bp.post("/api/meal-logs/<int:meal_log_id>/confirm")
-@require_auth
+@require_diet
 def confirm_meal_log(meal_log_id):
     """She looked at the items and tapped Done."""
     log = _own_log(meal_log_id)
@@ -130,7 +145,7 @@ def confirm_meal_log(meal_log_id):
 
 
 @diet_bp.delete("/api/meal-logs/<int:meal_log_id>")
-@require_auth
+@require_diet
 def delete_meal_log(meal_log_id):
     """Discard a log (she's recording it again) and its recording."""
     log = _own_log(meal_log_id)
@@ -146,7 +161,7 @@ def delete_meal_log(meal_log_id):
 
 
 @diet_bp.get("/api/meal-log-items/<int:item_id>")
-@require_auth
+@require_diet
 def get_meal_log_item(item_id):
     """One logged dish with its ingredients and the amounts assumed."""
     item = _own_item(item_id)
@@ -176,7 +191,7 @@ def _edit_item(item_id, apply):
 
 
 @diet_bp.patch("/api/meal-log-items/<int:item_id>")
-@require_auth
+@require_diet
 def edit_meal_log_item(item_id):
     """`{"quantity": n}` — a bigger or smaller portion of the same dish."""
     quantity = _number((request.get_json(silent=True) or {}).get("quantity"))
@@ -186,7 +201,7 @@ def edit_meal_log_item(item_id):
 
 
 @diet_bp.delete("/api/meal-log-items/<int:item_id>")
-@require_auth
+@require_diet
 def delete_meal_log_item(item_id):
     item = _own_item(item_id)
     if item is None:
@@ -196,7 +211,7 @@ def delete_meal_log_item(item_id):
 
 
 @diet_bp.patch("/api/meal-log-items/<int:item_id>/ingredients/<int:ingredient_id>")
-@require_auth
+@require_diet
 def edit_meal_log_item_ingredient(item_id, ingredient_id):
     """`{"grams": n}` — how much of one ingredient is in this dish (0
     removes it). Also saved as her own version of the dish."""
@@ -209,14 +224,14 @@ def edit_meal_log_item_ingredient(item_id, ingredient_id):
 
 
 @diet_bp.post("/api/meal-log-items/<int:item_id>/reset-recipe")
-@require_auth
+@require_diet
 def reset_meal_log_item_recipe(item_id):
     """Drop her version of the dish and restore this entry's ingredients."""
     return _edit_item(item_id, lambda item: service.reset_recipe(diet_repo, item, g.user_id))
 
 
 @diet_bp.get("/api/users/<user_id>/diet")
-@require_auth
+@require_diet
 def get_diet_day(user_id):
     """Her day (`?date=YYYY-MM-DD`, default today): protein and fibre
     against her targets, and what she logged."""
@@ -265,6 +280,20 @@ def get_diet_for_coach(user_id):
             for day, day_logs in sorted(by_day.items(), reverse=True)
         ],
     }), 200
+
+
+@diet_bp.patch("/api/admin/users/<user_id>/diet-tracking")
+@require_admin
+def set_diet_tracking(user_id):
+    """`{"enabled": true | false}` — switch diet tracking on or off for a
+    client. Off (the default) hides Food in her app and refuses every one
+    of her diet endpoints; what she already logged is kept."""
+    enabled = (request.get_json(silent=True) or {}).get("enabled")
+    if not isinstance(enabled, bool):
+        return jsonify({"error": "'enabled' must be true or false."}), 400
+    if not diet_repo.set_enabled(user_id, enabled):
+        return jsonify({"error": f"No client with id {user_id}."}), 404
+    return jsonify({"user_id": user_id, "diet_enabled": enabled}), 200
 
 
 @diet_bp.get("/api/admin/meal-logs/<int:meal_log_id>/audio")

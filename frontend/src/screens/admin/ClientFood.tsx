@@ -4,6 +4,7 @@ import {
   fetchClientDiet,
   fetchMealAudioUrl,
   saveNutritionTargets,
+  setDietTracking,
   type ClientDiet,
   type CoachMealItem,
   type CoachMealLog,
@@ -17,21 +18,40 @@ const DAYS = 7
 // Coach-only: what a client said she ate over the last week — every nutrient
 // per day, and under each day the recordings, what was heard in them, the
 // ingredients assumed, and what she changed. Her daily protein and fibre
-// targets are set here.
+// targets are set here. Diet tracking is off for a client until the coach
+// switches it on here; while it's off she has no Food in her app.
 export function ClientFood({
   adminKey,
   userId,
+  initiallyEnabled,
   onUnauthorized,
 }: {
   adminKey: string
   userId: string
+  initiallyEnabled: boolean
   onUnauthorized: () => void
 }) {
+  const [enabled, setEnabled] = useState(initiallyEnabled)
+  const [switching, setSwitching] = useState(false)
   const [diet, setDiet] = useState<ClientDiet | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
 
+  async function switchTracking(on: boolean) {
+    setSwitching(true)
+    setError(null)
+    try {
+      setEnabled((await setDietTracking(adminKey, userId, on)).diet_enabled)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return onUnauthorized()
+      setError(err instanceof Error ? err.message : 'Could not change diet tracking.')
+    } finally {
+      setSwitching(false)
+    }
+  }
+
   useEffect(() => {
+    if (!enabled) return
     let cancelled = false
     setDiet(null)
     setError(null)
@@ -46,11 +66,33 @@ export function ClientFood({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adminKey, userId])
+  }, [adminKey, userId, enabled])
+
+  if (!enabled) {
+    return (
+      <div className="card admin__section client-food">
+        <h3 className="monitor__section-title">Diet tracking</h3>
+        <p className="admin__muted">
+          Off for this client. She doesn&apos;t see Food in her app and can&apos;t log what she eats.
+        </p>
+        {error && <div className="error-banner">{error}</div>}
+        <div className="monitor__row">
+          <button className="btn-secondary client-food__switch" disabled={switching} onClick={() => void switchTracking(true)}>
+            {switching ? 'Turning on…' : 'Turn on diet tracking'}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="card admin__section client-food">
-      <h3 className="monitor__section-title">Food, last {DAYS} days</h3>
+      <div className="client-food__head">
+        <h3 className="monitor__section-title">Food, last {DAYS} days</h3>
+        <button type="button" className="btn-link" disabled={switching} onClick={() => void switchTracking(false)}>
+          {switching ? 'Turning off…' : 'Turn off diet tracking'}
+        </button>
+      </div>
       {error && <div className="error-banner">{error}</div>}
       {!diet && !error && <p className="admin__muted">Loading…</p>}
       {diet && (

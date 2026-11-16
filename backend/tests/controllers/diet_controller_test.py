@@ -18,6 +18,7 @@ def ctl(app_module, monkeypatch):
     import backend.controllers.diet_controller as controller
 
     repo = FakeRepo()
+    repo.enabled = {"usr_1", "usr_2"}
     rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35, 2: 1})
     log = repo.add_log("usr_1", status="ready")
     repo.replace_items(log, [{
@@ -164,3 +165,41 @@ def test_coach_sets_targets(ctl, app_module):
     ctl.repo.set_targets.assert_called_once_with("usr_1", {"protein_g": 65})
     bad = client.patch("/api/admin/users/usr_1/nutrition-targets", json={"protein_g": 0}, headers=ADMIN)
     assert bad.status_code == 400
+
+
+@pytest.mark.parametrize("method, path, body", [
+    ("post", "/api/meal-logs", None),
+    ("get", "/api/meal-logs/1", None),
+    ("post", "/api/meal-logs/1/confirm", None),
+    ("delete", "/api/meal-logs/1", None),
+    ("get", "/api/meal-log-items/1", None),
+    ("patch", "/api/meal-log-items/1", {"quantity": 1}),
+    ("delete", "/api/meal-log-items/1", None),
+    ("patch", "/api/meal-log-items/1/ingredients/2", {"grams": 0}),
+    ("post", "/api/meal-log-items/1/reset-recipe", None),
+    ("get", "/api/users/usr_1/diet", None),
+])
+def test_everything_is_refused_until_the_coach_switches_it_on(ctl, sign_in, method, path, body):
+    ctl.repo.enabled.clear()                       # the default: off
+
+    response = getattr(sign_in("usr_1"), method)(path, json=body)
+
+    assert response.status_code == 403 and response.get_json()["diet_disabled"] is True
+    assert 1 in ctl.repo.logs and 1 in ctl.repo.items and len(ctl.repo.logs) == 1
+    ctl.kafka_producer.send_meal_log_event.assert_not_called()
+
+
+def test_coach_switches_diet_tracking_on_and_off(ctl, sign_in, app_module):
+    ctl.repo.enabled.clear()
+    admin = app_module.app.test_client()
+    path = "/api/admin/users/usr_1/diet-tracking"
+
+    assert admin.patch(path, json={"enabled": True}).status_code == 401
+    assert admin.patch(path, json={"enabled": "yes"}, headers=ADMIN).status_code == 400
+    assert admin.patch(path, json={"enabled": True}, headers=ADMIN).get_json() == {"user_id": "usr_1", "diet_enabled": True}
+    assert sign_in("usr_1").get("/api/meal-logs/1").status_code == 200
+
+    admin.patch(path, json={"enabled": False}, headers=ADMIN)
+    assert sign_in("usr_1").get("/api/meal-logs/1").status_code == 403
+    # What she logged is kept, and the coach can still see it.
+    assert admin.get("/api/admin/users/usr_1/diet", headers=ADMIN).get_json()["days"][0]["logs"]

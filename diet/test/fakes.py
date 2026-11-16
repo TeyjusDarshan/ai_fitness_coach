@@ -20,6 +20,14 @@ class FakeRepo:
         self.user_recipes: Dict[Any, List[Dict[str, Any]]] = {}
         self.logs: Dict[int, Dict[str, Any]] = {}
         self.items: Dict[int, Dict[str, Any]] = {}
+        self.enabled = set()
+
+    def is_enabled(self, user_id):
+        return user_id in self.enabled
+
+    def set_enabled(self, user_id, enabled):
+        (self.enabled.add if enabled else self.enabled.discard)(user_id)
+        return True
 
     # --- set-up helpers ---
     def add_food(self, name, portions, recipe, default_unit=None):
