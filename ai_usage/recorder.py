@@ -1,6 +1,6 @@
 """Records the cost of every paid AI call (Claude, Sarvam speech-to-text and
 text-to-speech) as one ai_usage row, against the client and session it was
-for. Shared by the backend and workout_analysis_consumer (a root package,
+for. Shared by the backend and voice_processor (a root package,
 like stt/ and tts/).
 
 Always best-effort: a failure to measure or record is logged and never

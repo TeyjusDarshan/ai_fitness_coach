@@ -2,7 +2,7 @@
 
 The client records what she ate on the PWA's Food screen; the recording is
 stored and a meal-log event published, and the meal-log consumer
-(diet/consumer.py) turns it into items — dishes with their ingredients —
+(voice_processor, via diet/pipeline.py) turns it into items — dishes with their ingredients —
 which she then reviews: change a portion, open a dish and change its
 ingredients (which becomes her own version of that dish), or remove it.
 Off by default: every client endpoint is refused (require_diet) until the

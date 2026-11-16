@@ -40,7 +40,7 @@ def _shape_question_history(
     """session_clarifications rows (newest first, joined with their sessions)
     -> one entry per session, newest first, at most max_sessions, with every
     question asked across its rounds and the answer's summary (None if never
-    answered). Mirrors workout_analysis_consumer.repository's copy (the two
+    answered). Mirrors voice_processor.repository's copy (the two
     packages deploy separately)."""
     by_session: Dict[int, Dict[str, Any]] = {}
     for row in rows:

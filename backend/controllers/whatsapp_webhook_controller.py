@@ -7,7 +7,7 @@ embeds "Session ID: <id>" / "Day: <n>" lines in the shared text, so a message
 carrying a session id (a sessions row — one training day of a plan) is
 treated as a workout-complete trigger: we ack it
 immediately, then publish a workout-complete event so
-workout_analysis_consumer can generate the analysis/voice note and push it
+voice_processor can generate the analysis/voice note and push it
 back to the sender once it's ready. That voice note ends with a few
 clarifying questions, so any other text or voice message is published as a
 workout-feedback-replies event for the consumer to match against the

@@ -16,9 +16,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from workout_analysis_consumer.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
-from workout_analysis_consumer.repository import AnalysisRepository
-from workout_analysis_consumer.summarizer import (
+from voice_processor.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
+from voice_processor.repository import AnalysisRepository
+from voice_processor.summarizer import (
     MODEL,
     SummaryRefusedError,
     WorkoutSummary,
@@ -58,14 +58,14 @@ def _parse_kwargs(mock_client: MagicMock) -> dict:
 
 def test_generate_workout_summary_returns_the_structured_output(monkeypatch):
     summary = _summary()
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client(summary))
+    monkeypatch.setattr("voice_processor.summarizer.client", _mock_client(summary))
 
     assert generate_workout_summary({"session_id": 1, "day_number": 1}) is summary
 
 
 def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypatch):
     mock_client = _mock_client(_summary())
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
+    monkeypatch.setattr("voice_processor.summarizer.client", mock_client)
 
     context = {"session_id": 5, "day_number": 2, "exercises": ["squat", "row"]}
     generate_workout_summary(context)
@@ -81,9 +81,9 @@ def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypat
 
 
 def test_generate_workout_summary_logs_the_whole_prompt(monkeypatch, caplog):
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", _mock_client(_summary()))
+    monkeypatch.setattr("voice_processor.summarizer.client", _mock_client(_summary()))
 
-    with caplog.at_level("INFO", logger="workout_analysis_consumer.summarizer"):
+    with caplog.at_level("INFO", logger="voice_processor.summarizer"):
         generate_workout_summary({"session_id": 5, "client_voice_feedback": "இன்னைக்கு romba kashtam"})
 
     [record] = caplog.records
@@ -99,7 +99,7 @@ def test_generate_workout_summary_serializes_non_json_native_values(monkeypatch)
     rather than raise.
     """
     mock_client = _mock_client(_summary())
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
+    monkeypatch.setattr("voice_processor.summarizer.client", mock_client)
 
     generate_workout_summary({"logged_at": datetime(2026, 1, 1, 12, 30)})
 
@@ -112,7 +112,7 @@ def test_generate_workout_summary_raises_on_refusal(monkeypatch):
     mock_client = _mock_client(
         stop_reason="refusal", stop_details=SimpleNamespace(category="general_harms")
     )
-    monkeypatch.setattr("workout_analysis_consumer.summarizer.client", mock_client)
+    monkeypatch.setattr("voice_processor.summarizer.client", mock_client)
 
     with pytest.raises(SummaryRefusedError, match="general_harms"):
         generate_workout_summary({"session_id": 1})

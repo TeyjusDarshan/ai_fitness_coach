@@ -1,26 +1,22 @@
-"""Consumer for workout-complete-events -> Tanglish workout-day summary plus
-clarifying questions, and for workout-feedback-replies -> the client's
-answers to those questions.
+"""The workout topics of the voice processor (voice_processor/main.py):
 
-Run (from the repo root):  python3 -m workout_analysis_consumer.main
+- workout-complete-events (handle_workout_complete): a shared workout ->
+  the client's voice notes transcribed, coach notes extracted, and a
+  Tanglish summary with clarifying questions sent back as a voice note.
+- workout-feedback-replies (handle_feedback_reply): her WhatsApp answers to
+  those questions, mapped onto them, with follow-ups when needed.
 """
-import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from whatsapp_client import WhatsAppClient
-from workout_analysis_consumer.consumer import (
-    FEEDBACK_REPLY_TOPIC,
-    WORKOUT_COMPLETE_TOPIC,
-    build_consumer,
-)
-from workout_analysis_consumer.feedback import (
+from voice_processor.feedback import (
     store_reply_audio,
     transcribe_audio,
     transcribe_many,
 )
-from workout_analysis_consumer.feedback_agent import (
+from voice_processor.feedback_agent import (
     VoiceNote,
     exercise_id_map,
     extract_feedback,
@@ -28,12 +24,11 @@ from workout_analysis_consumer.feedback_agent import (
     map_reply,
     validate_questions,
 )
-from workout_analysis_consumer.kafka_producer import KafkaProducerClient
-from workout_analysis_consumer.repository import AnalysisRepository
-from workout_analysis_consumer.summarizer import generate_workout_summary, spoken_text
-from workout_analysis_consumer.voice import generate_voice_note
+from voice_processor.kafka_producer import KafkaProducerClient
+from voice_processor.repository import AnalysisRepository
+from voice_processor.summarizer import generate_workout_summary, spoken_text
+from voice_processor.voice import generate_voice_note
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 producer = KafkaProducerClient()
@@ -327,41 +322,9 @@ def _send_follow_ups(phone_number: str, context: Dict[str, Any], follow_ups: Lis
         _send_text(phone_number, _questions_text(FOLLOW_UP_INTRO, follow_ups, FOLLOW_UP_CLOSING))
 
 
-def run() -> None:
-    consumer = build_consumer()
-    repo = AnalysisRepository()
-    consumer.subscribe([WORKOUT_COMPLETE_TOPIC, FEEDBACK_REPLY_TOPIC])
-    logger.info("Listening on topics=%s", [WORKOUT_COMPLETE_TOPIC, FEEDBACK_REPLY_TOPIC])
-
-    try:
-        while True:
-            msg = consumer.poll(timeout=1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                logger.error("Kafka consume error: %s", msg.error())
-                continue
-
-            # Best-effort: commit every message once attempted, success or
-            # not, so one bad/unprocessable message can't wedge the
-            # partition and block everything after it. Failures are logged
-            # for manual follow-up rather than retried automatically.
-            try:
-                payload = json.loads(msg.value())
-                if msg.topic() == FEEDBACK_REPLY_TOPIC:
-                    _process_reply(repo, payload)
-                else:
-                    _process_message(repo, payload["session_id"], payload["phone_number"])
-            except Exception:
-                logger.exception(
-                    "Failed to process message at topic=%s offset=%s partition=%s",
-                    msg.topic(), msg.offset(), msg.partition(),
-                )
-            finally:
-                consumer.commit(msg)
-    finally:
-        consumer.close()
+def handle_workout_complete(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
+    _process_message(repo, payload["session_id"], payload["phone_number"])
 
 
-if __name__ == "__main__":
-    run()
+def handle_feedback_reply(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
+    _process_reply(repo, payload)

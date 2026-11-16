@@ -20,7 +20,7 @@ from ai_usage import record_claude
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from workout_analysis_consumer.feedback_prompts import (
+from voice_processor.feedback_prompts import (
     EXTRACTION_SYSTEM_PROMPT,
     REPLY_MAPPING_SYSTEM_PROMPT,
 )

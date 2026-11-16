@@ -12,10 +12,10 @@ logger = logging.getLogger(__name__)
 
 WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
 # The client's WhatsApp replies to the clarifying questions asked after the
-# workout summary (consumed by workout_analysis_consumer, which duplicates
+# workout summary (consumed by voice_processor, which duplicates
 # the name since it's deployed separately).
 FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
-# One event per meal recording, consumed by diet/consumer.py (its own process).
+# One event per meal recording, consumed by voice_processor (diet tracking).
 MEAL_LOG_TOPIC = "meal-log-events"
 
 # backend/kafka_producer/client.py -> backend/certs/ca.pem

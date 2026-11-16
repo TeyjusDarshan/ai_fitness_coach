@@ -4,18 +4,18 @@ The _process_message tests mock everything outside the consumer (the
 transcription, the Claude extraction and summary, the voice note, WhatsApp
 and Kafka), so they only check the wiring. test_transcribe_feedback_against_real_sarvam
 (bottom of file) downloads a real recording and calls Sarvam for real, same
-convention as main_test.py.
+convention as workout_test.py.
 """
 import os
 from unittest.mock import MagicMock
 
 import pytest
 
-from workout_analysis_consumer import main
-from workout_analysis_consumer.feedback_agent import Question
-from workout_analysis_consumer.summarizer import WorkoutSummary
-from workout_analysis_consumer.feedback import transcribe_feedback
-from workout_analysis_consumer.repository import AnalysisRepository
+from voice_processor import workout
+from voice_processor.feedback_agent import Question
+from voice_processor.summarizer import WorkoutSummary
+from voice_processor.feedback import transcribe_feedback
+from voice_processor.repository import AnalysisRepository
 
 SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 
@@ -45,7 +45,7 @@ def mocks(monkeypatch):
         "whatsapp_client": MagicMock(),
     }
     for name, mock in mocks.items():
-        monkeypatch.setattr(main, name, mock)
+        monkeypatch.setattr(workout, name, mock)
     return mocks
 
 
@@ -71,7 +71,7 @@ def _summary_context(mocks):
 
 
 def test_voice_feedback_transcript_is_sent_to_claude_without_the_storage_path(mocks):
-    main._process_message(_repo("session_48.webm"), 48, "919876543210")
+    workout._process_message(_repo("session_48.webm"), 48, "919876543210")
 
     mocks["transcribe_many"].assert_called_once_with(
         {"session": "session_48.webm"}, {"feature": "voice_note_stt", "user_id": "usr_1", "session_id": 48}
@@ -91,7 +91,7 @@ def test_exercise_voice_notes_are_transcribed_and_extracted(mocks):
     mocks["extract_feedback"].return_value = rows
     repo = _repo(None, {301: "session_48_exercise_301.webm"})
 
-    main._process_message(repo, 48, "919876543210")
+    workout._process_message(repo, 48, "919876543210")
 
     [voice_note] = mocks["extract_feedback"].call_args.args[0]
     assert (voice_note.id, voice_note.source, voice_note.session_exercise_id) == (
@@ -111,7 +111,7 @@ def test_earlier_questions_and_answers_are_given_to_the_summary(mocks):
     repo = _repo(None)
     repo.fetch_question_history.return_value = history
 
-    main._process_message(repo, 48, "919876543210")
+    workout._process_message(repo, 48, "919876543210")
 
     repo.fetch_question_history.assert_called_once_with("usr_1", 48)
     assert _summary_context(mocks)["previous_questions_and_answers"] == history
@@ -121,7 +121,7 @@ def test_no_or_failed_history_leaves_it_out(mocks):
     repo = _repo(None)
     repo.fetch_question_history.side_effect = RuntimeError("db down")
 
-    main._process_message(repo, 48, "919876543210")
+    workout._process_message(repo, 48, "919876543210")
 
     assert "previous_questions_and_answers" not in _summary_context(mocks)
 
@@ -130,7 +130,7 @@ def test_a_failed_extraction_still_generates_the_analysis(mocks):
     mocks["extract_feedback"].side_effect = RuntimeError("claude down")
     repo = _repo("session_48.webm")
 
-    main._process_message(repo, 48, "919876543210")
+    workout._process_message(repo, 48, "919876543210")
 
     repo.replace_voice_note_comments.assert_not_called()
     repo.save_analysis.assert_called_once_with(48, "analysis text Bye!", None)
@@ -139,14 +139,14 @@ def test_a_failed_extraction_still_generates_the_analysis(mocks):
 def test_no_transcripts_skips_extraction(mocks):
     mocks["transcribe_many"].side_effect = lambda paths, usage=None: {}
 
-    main._process_message(_repo("session_48.webm"), 48, "919876543210")
+    workout._process_message(_repo("session_48.webm"), 48, "919876543210")
 
     assert "client_voice_feedback" not in _summary_context(mocks)
     mocks["extract_feedback"].assert_not_called()
 
 
 def test_no_recording_skips_transcription(mocks):
-    main._process_message(_repo(None), 48, "919876543210")
+    workout._process_message(_repo(None), 48, "919876543210")
 
     mocks["transcribe_many"].assert_not_called()
     context = _summary_context(mocks)
@@ -164,7 +164,7 @@ def test_questions_are_spoken_and_saved_before_the_voice_note_is_sent(mocks):
     repo.save_clarification.side_effect = lambda *a: order.append("saved")
     mocks["whatsapp_client"].send_audio.side_effect = lambda *a: order.append("sent")
 
-    main._process_message(repo, 48, "919876543210")
+    workout._process_message(repo, 48, "919876543210")
 
     spoken = "analysis text Oru sila kelvigal: Squat yen kashtam? Vera edhavadhu? Bye!"
     mocks["generate_voice_note"].assert_called_once_with(
@@ -183,7 +183,7 @@ def test_questions_fall_back_to_text_when_there_is_no_voice_note(mocks):
     mocks["generate_workout_summary"].return_value = _summary([("Squat yen kashtam?", 301)])
     mocks["generate_voice_note"].side_effect = RuntimeError("tts down")
 
-    main._process_message(_repo(None), 48, "919876543210")
+    workout._process_message(_repo(None), 48, "919876543210")
 
     mocks["whatsapp_client"].send_text.assert_called_once_with(
         "919876543210", "Oru sila kelvigal:\n\n1. Squat yen kashtam?\n\nBye!"

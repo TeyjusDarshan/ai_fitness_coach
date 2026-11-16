@@ -37,7 +37,7 @@ class WhatsAppClient:
 
     def send_audio(self, to: str, audio_url: str) -> None:
         """audio_url must be a publicly reachable link (e.g. the Supabase
-        storage URL produced by workout_analysis_consumer.voice) — the Cloud
+        storage URL produced by voice_processor.voice) — the Cloud
         API fetches it server-side rather than accepting an upload here.
         """
         self._send({

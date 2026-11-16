@@ -3,7 +3,8 @@ known dishes -> add any dish (and ingredient) nobody has logged before ->
 work out grams -> copy each dish's recipe (her own version if she has one)
 onto the item as ingredient rows.
 
-Used by the consumer (diet/consumer.py) and the dry run (diet/dry_run.py).
+Used by the voice processor (voice_processor/main.py, for meal-log-events)
+and the dry run (diet/dry_run.py).
 """
 import logging
 from datetime import datetime, timezone

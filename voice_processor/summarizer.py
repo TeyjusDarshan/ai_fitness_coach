@@ -8,8 +8,8 @@ from ai_usage import record_claude
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
-from workout_analysis_consumer.feedback_agent import Question
-from workout_analysis_consumer.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
+from voice_processor.feedback_agent import Question
+from voice_processor.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
 
 load_dotenv()
 

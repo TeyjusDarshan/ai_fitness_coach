@@ -4,8 +4,8 @@ every prompt and response. Nothing is written to the database, no voice note
 is generated and nothing is sent on WhatsApp or Kafka.
 
 Run (from the repo root):
-    .venv/bin/python -m workout_analysis_consumer.dry_run --user-id 9715424567
-    .venv/bin/python -m workout_analysis_consumer.dry_run --session-id 81
+    .venv/bin/python -m voice_processor.dry_run --user-id 9715424567
+    .venv/bin/python -m voice_processor.dry_run --session-id 81
     ... --voice-out /path/to/summary.mp3   # also run Sarvam TTS, saved locally only
 
 Costs real money: a Sarvam STT job per voice note and two Claude calls (and
@@ -19,10 +19,10 @@ from types import SimpleNamespace
 from typing import Optional
 
 from ai_usage import record_tts, set_feature_prefix
-from workout_analysis_consumer import feedback_agent, main, summarizer
-from workout_analysis_consumer.feedback_agent import exercise_id_map, extract_feedback, validate_questions
-from workout_analysis_consumer.repository import AnalysisRepository
-from workout_analysis_consumer.summarizer import generate_workout_summary, spoken_text
+from voice_processor import feedback_agent, summarizer, workout
+from voice_processor.feedback_agent import exercise_id_map, extract_feedback, validate_questions
+from voice_processor.repository import AnalysisRepository
+from voice_processor.summarizer import generate_workout_summary, spoken_text
 
 RULE = "=" * 100
 
@@ -94,7 +94,7 @@ def run(session_id: int, voice_out: Optional[str] = None) -> None:
     print(f"session voice note: {session_path or '-'}")
     print(f"exercise voice notes: {exercise_paths or '-'}")
 
-    voice_notes = main._transcribe_voice_notes(context, session_path, exercise_paths)
+    voice_notes = workout._transcribe_voice_notes(context, session_path, exercise_paths)
     _section("TRANSCRIPTS")
     for note in voice_notes:
         print(f"[{note.id}] {note.exercise_name or 'whole session'}: {note.text}")
@@ -120,7 +120,7 @@ def run(session_id: int, voice_out: Optional[str] = None) -> None:
 
     summary = generate_workout_summary(context)
     questions = validate_questions(
-        summary.questions, exercise_id_map(context), joints, "q", main.MAX_QUESTIONS
+        summary.questions, exercise_id_map(context), joints, "q", workout.MAX_QUESTIONS
     )
     names = {e["session_exercise_id"]: e["name"] for e in context.get("exercises", [])}
 
@@ -136,7 +136,7 @@ def run(session_id: int, voice_out: Optional[str] = None) -> None:
     print(f"\n({len(spoken_text(summary, questions))} characters)")
 
     if voice_out:
-        # Same TTS as workout_analysis_consumer.voice, minus the ogg
+        # Same TTS as voice_processor.voice, minus the ogg
         # transcode and the upload: an mp3 plays anywhere.
         from tts import SarvamTTSClient
         tts_client = SarvamTTSClient()

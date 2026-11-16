@@ -2,7 +2,7 @@
 caches media sent by link per URL) never replays an older note."""
 from unittest.mock import MagicMock
 
-from workout_analysis_consumer import voice
+from voice_processor import voice
 
 URL = "https://x.supabase.co/storage/v1/object/public/voice-notes/plan_76/day_5.ogg"
 
