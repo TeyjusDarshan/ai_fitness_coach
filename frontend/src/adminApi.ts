@@ -405,3 +405,113 @@ export function fetchCosts(adminKey: string, days: number, includeDryRuns: boole
   const query = `days=${days}${includeDryRuns ? '&include_dry_runs=1' : ''}`
   return adminRequest(adminKey, `/admin/costs?${query}`)
 }
+
+// --- Food (voice diet tracking) ---
+
+// Nutrient key -> amount (see NUTRIENT_LABELS in screens/admin/foodLabels.ts).
+export type Nutrients = Record<string, number | null>
+
+export interface CoachMealItem {
+  id: number
+  food_id: number | null
+  name: string
+  meal: string | null
+  quantity: number
+  unit: string
+  grams: number | null
+  assumed: boolean
+  needs_review: boolean
+  edited: boolean
+  own_recipe: boolean
+  quote: string | null
+  nutrients: Nutrients
+  ingredients: { ingredient_id: number; name: string; grams: number; default_grams: number; edited: boolean }[]
+}
+
+export interface CoachMealLog {
+  id: number
+  status: 'processing' | 'ready' | 'confirmed' | 'failed'
+  error: string | null
+  created_at: string
+  transcript: string | null
+  has_audio: boolean
+  items: CoachMealItem[]
+}
+
+export interface ClientDiet {
+  targets: { protein_g: number; fibre_g: number }
+  days: { date: string; totals: Nutrients; logs: CoachMealLog[] }[]
+}
+
+export function fetchClientDiet(adminKey: string, userId: string, days: number): Promise<ClientDiet> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/diet?days=${days}`)
+}
+
+export function fetchMealAudioUrl(adminKey: string, mealLogId: number): Promise<{ url: string }> {
+  return adminRequest(adminKey, `/admin/meal-logs/${mealLogId}/audio`)
+}
+
+export function saveNutritionTargets(
+  adminKey: string,
+  userId: string,
+  targets: { protein_g: number | null; fibre_g: number | null },
+): Promise<{ targets: { protein_g: number; fibre_g: number } }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/nutrition-targets`, {
+    method: 'PATCH',
+    body: JSON.stringify(targets),
+  })
+}
+
+// A dish: its household unit weights and its recipe (raw grams of each
+// ingredient per 100 g cooked).
+export interface LibraryFood {
+  id: number
+  name: string
+  aliases: string[]
+  default_unit: string
+  source: 'ai_estimate' | 'coach'
+  verified: boolean
+  portions: Record<string, number>
+  recipe: { ingredient_id: number; grams_per_100g: number }[]
+}
+
+// An ingredient: nutrients per 100 g raw.
+export interface LibraryIngredient extends Record<string, unknown> {
+  id: number
+  name: string
+  aliases: string[]
+  source: 'ai_estimate' | 'coach'
+  verified: boolean
+}
+
+export interface FoodLibrary {
+  foods: LibraryFood[]
+  ingredients: LibraryIngredient[]
+  portion_units: string[]
+  nutrients: string[]
+}
+
+export function fetchFoodLibrary(adminKey: string): Promise<FoodLibrary> {
+  return adminRequest(adminKey, '/admin/foods')
+}
+
+export function saveFood(
+  adminKey: string,
+  foodId: number,
+  change: {
+    verified?: boolean
+    default_unit?: string
+    portions?: Record<string, number>
+    recipe?: { ingredient_id: number; grams_per_100g: number }[]
+  },
+): Promise<LibraryFood> {
+  return adminRequest(adminKey, `/admin/foods/${foodId}`, { method: 'PATCH', body: JSON.stringify(change) })
+}
+
+export function saveIngredient(
+  adminKey: string,
+  ingredientId: number,
+  change: Record<string, number | boolean | null>,
+): Promise<Record<string, unknown>> {
+  return adminRequest(adminKey, `/admin/ingredients/${ingredientId}`, { method: 'PATCH', body: JSON.stringify(change) })
+}

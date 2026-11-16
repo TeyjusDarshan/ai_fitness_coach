@@ -85,6 +85,10 @@ const PATHS = {
       <path d="M5 19c3-5 6-8 10-10" />
     </>
   ),
+  bowl: <path d="M3 11h18a9 9 0 0 1-18 0ZM8 20.5h8M9.5 7.5c0-1.5 1.5-1.5 1.5-3M13.5 7.5c0-1.5 1.5-1.5 1.5-3" />,
+  minus: <path d="M5 12h14" />,
+  plus: <path d="M12 5v14M5 12h14" />,
+  close: <path d="m6 6 12 12M18 6 6 18" />,
   trophy: (
     <>
       <path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" />

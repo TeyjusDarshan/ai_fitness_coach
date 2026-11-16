@@ -201,3 +201,68 @@ export interface DayCompleteSummary {
   points: number
   points_earned: number
 }
+
+// --- Food (voice diet tracking) -------------------------------------------
+
+export type MealName = 'breakfast' | 'lunch' | 'dinner' | 'snack'
+// Why a meal log couldn't be worked out.
+export type MealLogError = 'no_speech' | 'no_food' | 'failed' | 'timeout'
+
+// One ingredient of a logged dish, with the amount assumed for her portion.
+export interface MealIngredient {
+  ingredient_id: number
+  name: string
+  grams: number
+  // What the recipe gave before she changed it.
+  default_grams: number
+  edited: boolean
+  // Shown in this unit (teaspoon, piece…) instead of grams when set.
+  display_unit: string | null
+  grams_per_display_unit: number | null
+}
+
+// One dish she said she ate.
+export interface MealItem {
+  id: number
+  food_id: number | null
+  name: string
+  meal: MealName | null
+  quantity: number
+  unit: string
+  grams: number | null
+  // She gave no amount, so one usual serving was assumed.
+  assumed: boolean
+  // A dish that couldn't be worked out yet (no nutrients).
+  needs_review: boolean
+  edited: boolean
+  // Built from her own version of the dish, not the standard recipe.
+  own_recipe: boolean
+  protein_g: number
+  fibre_g: number
+  energy_kcal: number
+  ingredients?: MealIngredient[]
+}
+
+export interface MealItemDetail extends MealItem {
+  ingredients: MealIngredient[]
+  meal_log_id: number
+  logged_for: string
+}
+
+// One recording and what was heard in it.
+export interface MealLog {
+  id: number
+  logged_for: string
+  status: 'processing' | 'ready' | 'confirmed' | 'failed'
+  error: MealLogError | null
+  created_at: string
+  items: MealItem[]
+}
+
+// Her simple view of a day: protein and fibre against her targets.
+export interface DietDay {
+  date: string
+  totals: { protein_g: number; fibre_g: number }
+  targets: { protein_g: number; fibre_g: number }
+  logs: MealLog[]
+}

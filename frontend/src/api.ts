@@ -1,4 +1,13 @@
-import type { CardioRating, Dashboard, DayCompleteSummary, PastWorkoutsPage, SetLog } from './types'
+import type {
+  CardioRating,
+  Dashboard,
+  DayCompleteSummary,
+  DietDay,
+  MealItemDetail,
+  MealLog,
+  PastWorkoutsPage,
+  SetLog,
+} from './types'
 
 class ApiError extends Error {
   status: number
@@ -129,6 +138,60 @@ export function rateCardio(sessionId: number, rating: CardioRating): Promise<{ r
 
 export function completeSession(sessionId: number): Promise<DayCompleteSummary> {
   return request(`/sessions/${sessionId}/complete`, { method: 'POST' })
+}
+
+// --- Food (voice diet tracking) ---
+
+// Her day: protein and fibre against her targets, and what she logged.
+export function fetchDietDay(userId: string, date: string): Promise<DietDay> {
+  return request(`/users/${encodeURIComponent(userId)}/diet?date=${date}`)
+}
+
+// A recording of what she ate. Answers straight away; the items arrive by
+// polling fetchMealLog until its status leaves `processing`.
+export function createMealLog(recording: Blob, day: 'today' | 'yesterday'): Promise<{ id: number }> {
+  const form = new FormData()
+  form.append('audio', recording, 'meal')
+  form.append('day', day)
+  return request('/meal-logs', { method: 'POST', body: form, headers: {} })
+}
+
+export function fetchMealLog(mealLogId: number): Promise<MealLog> {
+  return request(`/meal-logs/${mealLogId}`)
+}
+
+export function confirmMealLog(mealLogId: number): Promise<unknown> {
+  return request(`/meal-logs/${mealLogId}/confirm`, { method: 'POST' })
+}
+
+export function deleteMealLog(mealLogId: number): Promise<unknown> {
+  return request(`/meal-logs/${mealLogId}`, { method: 'DELETE' })
+}
+
+export function fetchMealItem(itemId: number): Promise<MealItemDetail> {
+  return request(`/meal-log-items/${itemId}`)
+}
+
+// A bigger or smaller portion of the same dish.
+export function setMealItemQuantity(itemId: number, quantity: number): Promise<MealItemDetail> {
+  return request(`/meal-log-items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ quantity }) })
+}
+
+export function deleteMealItem(itemId: number): Promise<unknown> {
+  return request(`/meal-log-items/${itemId}`, { method: 'DELETE' })
+}
+
+// How much of one ingredient is in this dish (0 removes it). Also becomes
+// her own version of the dish for future logs.
+export function setMealItemIngredient(itemId: number, ingredientId: number, grams: number): Promise<MealItemDetail> {
+  return request(`/meal-log-items/${itemId}/ingredients/${ingredientId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ grams }),
+  })
+}
+
+export function resetMealItemRecipe(itemId: number): Promise<MealItemDetail> {
+  return request(`/meal-log-items/${itemId}/reset-recipe`, { method: 'POST' })
 }
 
 export { ApiError }

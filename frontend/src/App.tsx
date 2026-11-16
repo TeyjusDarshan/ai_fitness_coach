@@ -14,6 +14,9 @@ import { WorkoutDetailScreen } from './screens/WorkoutDetailScreen'
 import { CardioScreen } from './screens/CardioScreen'
 import { CardioRatingScreen } from './screens/CardioRatingScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
+import { FoodScreen } from './screens/FoodScreen'
+import { MealReviewScreen } from './screens/MealReviewScreen'
+import { MealItemScreen } from './screens/MealItemScreen'
 
 function Spinner() {
   return (
@@ -152,6 +155,30 @@ function App() {
         element={
           <RequireAuth>
             <SummaryScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/food"
+        element={
+          <RequireAuth>
+            <FoodScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/food/log/:logId"
+        element={
+          <RequireAuth>
+            <MealReviewScreen />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/food/item/:itemId"
+        element={
+          <RequireAuth>
+            <MealItemScreen />
           </RequireAuth>
         }
       />

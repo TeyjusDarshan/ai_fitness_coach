@@ -15,6 +15,8 @@ WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
 # workout summary (consumed by workout_analysis_consumer, which duplicates
 # the name since it's deployed separately).
 FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
+# One event per meal recording, consumed by diet/consumer.py (its own process).
+MEAL_LOG_TOPIC = "meal-log-events"
 
 # backend/kafka_producer/client.py -> backend/certs/ca.pem
 _DEFAULT_CA_CERT_PATH = Path(__file__).resolve().parent.parent / "certs" / "ca.pem"
@@ -83,3 +85,18 @@ class KafkaProducerClient:
             logger.error(
                 "Kafka flush timed out with %d message(s) still undelivered", pending
             )
+
+    def send_meal_log_event(self, meal_log_id: int) -> bool:
+        """Produce a meal-log event ({meal_log_id}) and block until it's
+        acked or fails. False if it wasn't delivered in time."""
+        self._producer.produce(
+            MEAL_LOG_TOPIC,
+            value=json.dumps({"meal_log_id": meal_log_id}).encode("utf-8"),
+            callback=_delivery_callback,
+        )
+        pending = self._producer.flush(timeout=10)
+        if pending > 0:
+            logger.error(
+                "Kafka flush timed out with %d message(s) still undelivered", pending
+            )
+        return pending == 0

@@ -21,17 +21,19 @@ from agents.workout_agent import generate_workout_plan_v1
 from backend.auth import require_admin, require_auth
 from backend.cardio import CARDIO_RATINGS
 from backend.feedback_storage import (
-    MAX_FEEDBACK_BYTES,
     SIGNED_URL_TTL_SECONDS,
+    UploadError,
     exercise_feedback_path,
     feedback_path,
     feedback_storage,
+    read_audio_upload,
 )
 from backend.controllers.admin_coach_agent_controller import admin_coach_agent_bp
 from backend.controllers.admin_cost_controller import admin_cost_bp
 from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp
+from backend.controllers.diet_controller import diet_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
     CardioLogError,
@@ -50,6 +52,7 @@ app.register_blueprint(admin_plan_bp)
 app.register_blueprint(admin_monitor_bp)
 app.register_blueprint(admin_coach_agent_bp)
 app.register_blueprint(admin_cost_bp)
+app.register_blueprint(diet_bp)
 plan_repo = WorkoutPlanRepository()
 
 
@@ -439,18 +442,11 @@ def _store_feedback_upload(path_for, previous_path, save_path, what):
     """Store the uploaded voice recording (multipart field `audio`) at
     path_for(content_type), point the row at it with save_path(path), and
     remove previous_path if it was a different file. Returns the response."""
-    upload = request.files.get("audio")
-    if upload is None:
-        return jsonify({"error": "An 'audio' file is required."}), 400
-    content_type = (upload.mimetype or "").split(";")[0].strip().lower()
+    try:
+        content_type, data = read_audio_upload(request.files.get("audio"))
+    except UploadError as error:
+        return jsonify({"error": error.message}), error.status
     path = path_for(content_type)
-    if path is None:
-        return jsonify({"error": f"Unsupported audio type '{content_type}'."}), 415
-    data = upload.read(MAX_FEEDBACK_BYTES + 1)
-    if not data:
-        return jsonify({"error": "The recording is empty."}), 400
-    if len(data) > MAX_FEEDBACK_BYTES:
-        return jsonify({"error": "The recording is too long."}), 413
 
     try:
         feedback_storage().store(data, path, content_type)
