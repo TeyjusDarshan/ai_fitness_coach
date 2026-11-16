@@ -89,6 +89,7 @@ def client_monitor(user_id):
             "user_id": row["user_id"],
             "name": row.get("name"),
             "gender": row.get("gender"),
+            "diet_enabled": row.get("diet_enabled") is True,
             "profile": _profile_basics(row.get("profile")),
             "joint_pain": plan_repo.list_joint_pain(user_id),
             "period_days": plan_repo.list_period_days(user_id),

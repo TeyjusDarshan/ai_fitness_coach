@@ -201,6 +201,25 @@ class DietRepository:
     def clear_item_ingredients(self, item_id: int) -> None:
         self.client.table("meal_log_item_ingredients").delete().eq("meal_log_item_id", item_id).execute()
 
+    # --- switched on per client ------------------------------------------
+
+    def is_enabled(self, user_id: str) -> bool:
+        """Whether the coach switched diet tracking on for this client
+        (user_profiles.diet_enabled, off by default)."""
+        rows = (
+            self.client.table("user_profiles").select("diet_enabled")
+            .eq("user_id", user_id).limit(1).execute().data
+        )
+        return bool(rows) and rows[0].get("diet_enabled") is True
+
+    def set_enabled(self, user_id: str, enabled: bool) -> bool:
+        """False if there's no such user."""
+        rows = (
+            self.client.table("user_profiles").update({"diet_enabled": enabled})
+            .eq("user_id", user_id).execute().data
+        )
+        return bool(rows)
+
     # --- targets ---------------------------------------------------------
 
     def get_targets(self, user_id: str) -> Optional[Dict[str, Any]]:

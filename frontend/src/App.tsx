@@ -50,6 +50,14 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+// The Food screens exist only for clients the coach switched diet tracking
+// on for; anyone else is sent back to the dashboard.
+function RequireDiet({ children }: { children: ReactNode }) {
+  const { authStatus, dietEnabled } = useAppState()
+  if (authStatus === 'signedIn' && !dietEnabled) return <Navigate to="/" replace />
+  return <RequireAuth>{children}</RequireAuth>
+}
+
 function RedirectIfSignedIn({ children }: { children: ReactNode }) {
   const { authStatus } = useAppState()
   if (authStatus === 'checking') return <Spinner />
@@ -161,25 +169,25 @@ function App() {
       <Route
         path="/food"
         element={
-          <RequireAuth>
+          <RequireDiet>
             <FoodScreen />
-          </RequireAuth>
+          </RequireDiet>
         }
       />
       <Route
         path="/food/log/:logId"
         element={
-          <RequireAuth>
+          <RequireDiet>
             <MealReviewScreen />
-          </RequireAuth>
+          </RequireDiet>
         }
       />
       <Route
         path="/food/item/:itemId"
         element={
-          <RequireAuth>
+          <RequireDiet>
             <MealItemScreen />
-          </RequireAuth>
+          </RequireDiet>
         }
       />
       <Route path="*" element={<Navigate to="/" replace />} />

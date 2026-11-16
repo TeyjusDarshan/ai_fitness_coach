@@ -27,6 +27,8 @@ interface AppState {
   // don't have one on file.
   displayName: string | null
   gender: Gender | null
+  // Whether the coach switched diet tracking on for this user.
+  dietEnabled: boolean
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
@@ -55,6 +57,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null)
   const [userName, setUserName] = useState<string | null>(null)
   const [gender, setGender] = useState<Gender | null>(null)
+  const [dietEnabled, setDietEnabled] = useState(false)
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +94,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setUserId(me.user_id)
         setUserName(me.name)
         setGender(me.gender)
+        setDietEnabled(me.diet_enabled === true)
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
@@ -101,6 +105,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setUserId(me.user_id)
     setUserName(me.name)
     setGender(me.gender)
+    setDietEnabled(me.diet_enabled === true)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -176,6 +181,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       userId,
       displayName: userName ?? userId,
       gender,
+      dietEnabled,
       dashboard,
       loading,
       error,
@@ -196,6 +202,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       userId,
       userName,
       gender,
+      dietEnabled,
       dashboard,
       loading,
       error,

@@ -61,7 +61,7 @@ def test_monitor_returns_client_details_and_workouts(monitor):
     assert response.status_code == 200
     body = response.get_json()
     assert body["client"] == {
-        "user_id": "usr_1", "name": "Asha", "gender": "female",
+        "user_id": "usr_1", "name": "Asha", "gender": "female", "diet_enabled": False,
         "profile": {"age": 52, "sex": "female", "primary_goal": "strength", "experience_level": "beginner", "days_per_week": 3},
         "joint_pain": [{"joint": "knee", "pain_level": "mild"}],
         "period_days": ["2026-10-12"],

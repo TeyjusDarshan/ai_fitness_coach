@@ -203,7 +203,13 @@ function ClientDetail({
         onUnauthorized={onUnauthorized}
         onDone={onPlanChanged}
       />
-      <ClientFood key={client.user_id} adminKey={adminKey} userId={client.user_id} onUnauthorized={onUnauthorized} />
+      <ClientFood
+        key={client.user_id}
+        adminKey={adminKey}
+        userId={client.user_id}
+        initiallyEnabled={client.diet_enabled}
+        onUnauthorized={onUnauthorized}
+      />
       <WorkoutSection title="Scheduled" workouts={workouts.scheduled} empty="Nothing scheduled.">
         {(w) => <WorkoutCard key={w.session_id} workout={w} adminKey={adminKey} onUnauthorized={onUnauthorized} />}
       </WorkoutSection>
