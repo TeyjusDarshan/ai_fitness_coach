@@ -1,7 +1,7 @@
 """Integration test for _process_message.
 
 Only the Claude summary call and the outbound WhatsApp send are mocked
-(main.generate_workout_summary, main.whatsapp_client.send_audio), so the
+(workout.generate_workout_summary, workout.whatsapp_client.send_audio), so the
 test gets a fixed analysis text without paying for an LLM call, and since
 sending a real WhatsApp message has no test recipient. Everything else - the Supabase context fetch,
 Sarvam TTS, the mp3->ogg conversion, the Supabase Storage upload, and the
@@ -17,10 +17,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from workout_analysis_consumer.main import _process_message
-from workout_analysis_consumer.feedback import transcribe_feedback
-from workout_analysis_consumer.repository import AnalysisRepository
-from workout_analysis_consumer.summarizer import WorkoutSummary
+from voice_processor.workout import _process_message
+from voice_processor.feedback import transcribe_feedback
+from voice_processor.repository import AnalysisRepository
+from voice_processor.summarizer import WorkoutSummary
 
 SESSION_ID = 55
 PHONE_NUMBER = "7339284889"
@@ -35,14 +35,14 @@ CONSTANT_ANALYSIS_TEXT = (
 @pytest.mark.skipif(not SESSION_ID, reason="set ANALYSIS_IT_SESSION_ID to a test sessions row")
 def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     monkeypatch.setattr(
-        "workout_analysis_consumer.main.generate_workout_summary",
+        "voice_processor.workout.generate_workout_summary",
         MagicMock(return_value=WorkoutSummary(
             summary=CONSTANT_ANALYSIS_TEXT, questions_intro="", questions=[], closing="",
         )),
     )
 
     mock_send_audio = MagicMock()
-    monkeypatch.setattr("workout_analysis_consumer.main.whatsapp_client.send_audio", mock_send_audio)
+    monkeypatch.setattr("voice_processor.workout.whatsapp_client.send_audio", mock_send_audio)
 
     repo = AnalysisRepository()
     _process_message(repo, SESSION_ID, PHONE_NUMBER)
@@ -78,9 +78,9 @@ def test_process_message_generates_prints_and_stores_real_analysis(monkeypatch):
         transcripts.append(transcript)
         return transcript
 
-    monkeypatch.setattr("workout_analysis_consumer.main.transcribe_feedback", spy_transcribe_feedback)
-    monkeypatch.setattr("workout_analysis_consumer.main.whatsapp_client.send_audio", MagicMock())
-    monkeypatch.setattr("workout_analysis_consumer.main.producer", MagicMock())
+    monkeypatch.setattr("voice_processor.workout.transcribe_feedback", spy_transcribe_feedback)
+    monkeypatch.setattr("voice_processor.workout.whatsapp_client.send_audio", MagicMock())
+    monkeypatch.setattr("voice_processor.workout.producer", MagicMock())
 
     repo = AnalysisRepository()
     _process_message(repo, SESSION_ID, PHONE_NUMBER)

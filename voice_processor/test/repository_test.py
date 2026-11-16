@@ -1,5 +1,5 @@
 """Tests for the per-exercise "compared_to_last_time" the summary relies on."""
-from workout_analysis_consumer.repository import _compare_to_last_time
+from voice_processor.repository import _compare_to_last_time
 
 
 def _exercise(name, *completed):
@@ -48,8 +48,8 @@ def test_unlogged_sets_count_as_nothing_done():
 
 # ---------- cardio sessions ----------
 
-from workout_analysis_consumer.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT  # noqa: E402
-from workout_analysis_consumer.repository import AnalysisRepository  # noqa: E402
+from voice_processor.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT  # noqa: E402
+from voice_processor.repository import AnalysisRepository  # noqa: E402
 
 
 class _Query:
@@ -133,7 +133,7 @@ def test_a_period_cardio_session_is_compared_by_the_seconds_she_actually_did():
 
 # ---------- clarifying-question history ----------
 
-from workout_analysis_consumer.repository import _shape_question_history  # noqa: E402
+from voice_processor.repository import _shape_question_history  # noqa: E402
 
 
 def _round(session_id, round_number, questions, answers=None, completed_at="2026-11-10T09:00:00+00:00"):
@@ -179,7 +179,7 @@ def test_question_history_keeps_only_the_newest_sessions():
 
 # ---------- what actually happened in a cardio session ----------
 
-from workout_analysis_consumer.repository import _summarize_cardio_log  # noqa: E402
+from voice_processor.repository import _summarize_cardio_log  # noqa: E402
 
 
 def _step(round_number, position, name, actual=30, planned=30, skipped=False, paused=0, rest_skipped=False):

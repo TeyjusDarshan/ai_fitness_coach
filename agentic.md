@@ -1,7 +1,7 @@
 # Agentic AI Coach — feature roadmap
 
 ## Context
-Today every decision in the app is deterministic: `select_plan_type` + the workout agent build week 1, `create_progressed_plan` / `_compute_progressed_reps` (`backend/repository/workout_plan_repository.py`) progress it from RPE, set logs and joint pain, and `workout_analysis_consumer` writes a one-way Tanglish summary after the client shares on WhatsApp. Voice notes are recorded (session + per-exercise) but only the session note is transcribed, only after sharing, and only to colour the summary. The summary prompt even promises "Next workout la thevai aana changes panniralam", but nothing acts on it.
+Today every decision in the app is deterministic: `select_plan_type` + the workout agent build week 1, `create_progressed_plan` / `_compute_progressed_reps` (`backend/repository/workout_plan_repository.py`) progress it from RPE, set logs and joint pain, and `voice_processor` writes a one-way Tanglish summary after the client shares on WhatsApp. Voice notes are recorded (session + per-exercise) but only the session note is transcribed, only after sharing, and only to colour the summary. The summary prompt even promises "Next workout la thevai aana changes panniralam", but nothing acts on it.
 
 The goal is an AI coach that listens to voice feedback, asks questions on its own, progresses, regresses and skips work to fit the client, and feels like a real coach. It must also be unable to put a hallucinated exercise, rep count or medical claim in front of a client.
 
@@ -61,7 +61,7 @@ New tables have **RLS enabled from day one** and are reached only with the servi
 - **`user_profiles`**: add `phone_number` (unique, E.164), so that inbound WhatsApp messages can be matched to a user. Also add `ai_mode` (`off` | `shadow` | `live`, default `shadow`) and `coach_persona` (name / voice id).
 
 ## 3. Voice and feedback understanding
-- **Transcribe at upload time, not at WhatsApp-share time.** `POST /api/sessions/<id>/feedback-audio` and the per-exercise upload (`backend/app.py`, `backend/feedback_storage.py`) publish a Kafka `coach-events` message (`feedback_received`). Reuse `stt/client.py` (Sarvam `saaras:v4`, `ta-IN`, codemix) and `workout_analysis_consumer/feedback.py:transcribe_feedback`. Today the per-exercise notes (`session_exercises.feedback_audio_path`) are never transcribed; this fixes that.
+- **Transcribe at upload time, not at WhatsApp-share time.** `POST /api/sessions/<id>/feedback-audio` and the per-exercise upload (`backend/app.py`, `backend/feedback_storage.py`) publish a Kafka `coach-events` message (`feedback_received`). Reuse `stt/client.py` (Sarvam `saaras:v4`, `ta-IN`, codemix) and `voice_processor/feedback.py:transcribe_feedback`. Today the per-exercise notes (`session_exercises.feedback_audio_path`) are never transcribed; this fixes that.
 - **New extractor, `coach_agent/extract.py`.** One structured-output call per transcript returns:
   - `pain[]` (joint from the `joints` lookup enum, side, level `mild` / `moderate` / `severe`)
   - `difficulty[]` (session_exercise_id, `too_easy` / `right` / `too_hard`)
@@ -110,7 +110,7 @@ Each action is validated against the **current database state**, not the model's
   - `needs_coach`: any progression swap, a swap off the graph, severe pain, an over-budget skip, any change during a red flag, and the first 2 weeks of a new client.
 - **Grounding check on outgoing messages** (`coach_agent/grounding.py`):
   - Every exercise name mentioned must be in today's or next session's plan.
-  - Every number must match a stored target. The existing "no numbers" rule from `workout_analysis_consumer/prompts.py` stays for spoken Tanglish.
+  - Every number must match a stored target. The existing "no numbers" rule from `voice_processor/prompts.py` stays for spoken Tanglish.
   - Promised changes ("I've made it easier") are allowed only when a matching `plan_adjustments` row was actually applied in this turn.
   - No diagnosis or medication words.
 
@@ -149,7 +149,7 @@ Each action is validated against the **current database state**, not the model's
   - a rising easy/hard streak
 
   It also enforces quiet hours in `APP_TIMEZONE` and a per-client daily message cap.
-- The existing summary voice note (`workout_analysis_consumer`) becomes one output of the same agent and thread, so later chats can refer back to it.
+- The existing summary voice note (`voice_processor`) becomes one output of the same agent and thread, so later chats can refer back to it.
 
 ## 9. Making it feel human
 - **One persona** (name, voice, Tanglish register, 40–60 audience), shared by every prompt. The existing `prompts.py` voice rules move into `coach_agent/persona.py`.
@@ -169,7 +169,7 @@ Each action is validated against the **current database state**, not the model's
 - **Security prerequisite.** As CLAUDE.md already notes, every per-user table is readable and writable with the publishable key. Conversation transcripts and health memory raise the stakes, so switch the backend and consumers to the service-role key and enable RLS on every table **before** turning `live` on. New tables ship with RLS on.
 
 ## 11. Infrastructure
-- **New `coach-events` Kafka topic.** Producer: `backend/kafka_producer/client.py`. Consumer: a new `coach_agent/worker.py`, modelled on `workout_analysis_consumer/main.py`, with commit-on-attempt semantics. It runs the async routes: extraction, event reaction, weekly review and outbound sends.
+- **New `coach-events` Kafka topic.** Producer: `backend/kafka_producer/client.py`. Consumer: a new `coach_agent/worker.py`, modelled on `voice_processor/main.py`, with commit-on-attempt semantics. It runs the async routes: extraction, event reaction, weekly review and outbound sends.
 - Live routes run inside Flask, with a strict timeout and a deterministic fallback, because Vercel functions have execution limits.
 - **Idempotency.** Every event has a key (message id, session id + kind), and actions are deduplicated in `plan_adjustments`.
 - **Observability.** Log the prompt, tool calls, validator verdicts, tokens and cost per run, in a `coach_runs` table or as structured logs.
@@ -206,7 +206,7 @@ Each action is validated against the **current database state**, not the model's
   - `backend/app.py`, `backend/repository/workout_plan_repository.py` (skip state, `_compute_progressed_reps`, review hook after `_auto_progress`)
   - `backend/controllers/{whatsapp_webhook,admin_monitor}_controller.py`
   - `whatsapp_client/client.py`
-  - `workout_analysis_consumer/{main,prompts}.py`
+  - `voice_processor/{main,prompts}.py`
   - frontend `useStartWorkout.ts`, `ExerciseFeedbackScreen.tsx`, `ExerciseScreen.tsx`, `DashboardScreen.tsx`, `types.ts`, `api.ts`, `MonitorFlow.tsx`
   - `CLAUDE.md` (new tables and flows)
 

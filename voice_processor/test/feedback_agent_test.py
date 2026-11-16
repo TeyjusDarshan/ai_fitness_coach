@@ -8,8 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from workout_analysis_consumer import feedback_agent
-from workout_analysis_consumer.feedback_agent import (
+from voice_processor import feedback_agent
+from voice_processor.feedback_agent import (
     AnswerSummary,
     ExtractedNote,
     FeedbackExtraction,

@@ -1,6 +1,5 @@
 import os
 from pathlib import Path
-from typing import Optional
 
 from confluent_kafka import Consumer
 from dotenv import load_dotenv
@@ -16,15 +15,22 @@ WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
 # client's WhatsApp replies to the clarifying questions.
 FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
 
+# Must match backend/kafka_producer/client.py's MEAL_LOG_TOPIC: one event
+# per food recording (diet tracking).
+MEAL_LOG_TOPIC = "meal-log-events"
+
+# Kept from when this package was workout_analysis_consumer: the group's
+# committed offsets live under this id, and a new id (with
+# auto.offset.reset=earliest) would replay every past workout event and
+# re-send old voice notes to clients.
 DEFAULT_CONSUMER_GROUP_ID = "workout-analysis-consumer"
 
 _DEFAULT_CA_CERT_PATH = Path(__file__).resolve().parent / "certs" / "ca.pem"
 
 
-def build_consumer(group_id: Optional[str] = None) -> Consumer:
+def build_consumer() -> Consumer:
     """Consumer for the Aiven-hosted Kafka cluster (same SASL_SSL/SCRAM-SHA-256
-    auth as backend/kafka_producer/client.py). `group_id` overrides the
-    workout-analysis group, for another consumer process (diet/consumer.py).
+    auth as backend/kafka_producer/client.py).
 
     enable.auto.commit is off: main.py commits each message explicitly after
     attempting to process it, once per message regardless of outcome, so a
@@ -39,7 +45,7 @@ def build_consumer(group_id: Optional[str] = None) -> Consumer:
         "sasl.username": os.environ["KAFKA_USERNAME"],
         "sasl.password": os.environ["KAFKA_PASSWORD"],
         "ssl.ca.location": os.getenv("KAFKA_CA_CERT_PATH", str(_DEFAULT_CA_CERT_PATH)),
-        "group.id": group_id or os.getenv("KAFKA_CONSUMER_GROUP_ID", DEFAULT_CONSUMER_GROUP_ID),
+        "group.id": os.getenv("KAFKA_CONSUMER_GROUP_ID", DEFAULT_CONSUMER_GROUP_ID),
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,
         # One workout-complete message can run several STT jobs (up to

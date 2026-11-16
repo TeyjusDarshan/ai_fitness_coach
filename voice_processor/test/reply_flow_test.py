@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from workout_analysis_consumer import main
+from voice_processor import workout
 
 PHONE = "919876543210"
 QUESTIONS = [
@@ -58,14 +58,14 @@ def mocks(monkeypatch):
         "store_reply_audio": MagicMock(side_effect=lambda audio, name, content_type: name),
     }
     for name, mock in mocks.items():
-        monkeypatch.setattr(main, name, mock)
+        monkeypatch.setattr(workout, name, mock)
     return mocks
 
 
 def test_a_reply_with_no_open_questions_is_ignored(repo, mocks):
     repo.find_open_clarification.return_value = None
 
-    main._process_reply(repo, _payload())
+    workout._process_reply(repo, _payload())
 
     repo.record_reply.assert_not_called()
     mocks["map_reply"].assert_not_called()
@@ -74,7 +74,7 @@ def test_a_reply_with_no_open_questions_is_ignored(repo, mocks):
 def test_an_already_processed_reply_is_skipped(repo, mocks):
     repo.record_reply.return_value = None
 
-    main._process_reply(repo, _payload())
+    workout._process_reply(repo, _payload())
 
     mocks["map_reply"].assert_not_called()
 
@@ -82,7 +82,7 @@ def test_an_already_processed_reply_is_skipped(repo, mocks):
 def test_a_partial_answer_is_stored_without_replying(repo, mocks):
     mocks["map_reply"].return_value = {"answers": {"q1": "Knee hurt."}, "notes": [dict(PAIN_NOTE)], "follow_ups": []}
 
-    main._process_reply(repo, _payload())
+    workout._process_reply(repo, _payload())
 
     args = mocks["map_reply"].call_args
     assert args.args[:3] == (QUESTIONS, ["earlier reply"], "knee valikkudhu")
@@ -109,12 +109,12 @@ def test_answering_everything_closes_the_round_and_thanks_her(repo, mocks):
     )
     mocks["map_reply"].return_value = {"answers": {"q2": "Nothing else."}, "notes": [], "follow_ups": []}
 
-    main._process_reply(repo, _payload(text="vera onnum illa"))
+    workout._process_reply(repo, _payload(text="vera onnum illa"))
 
     fields = repo.update_clarification.call_args.args[1]
     assert fields["status"] == "answered"
     assert set(fields["answers"]) == {"q1", "q2"}
-    mocks["whatsapp_client"].send_text.assert_called_once_with(PHONE, main.THANK_YOU_MESSAGE)
+    mocks["whatsapp_client"].send_text.assert_called_once_with(PHONE, workout.THANK_YOU_MESSAGE)
     repo.save_clarification.assert_not_called()
 
 
@@ -123,7 +123,7 @@ def test_follow_ups_open_round_two_and_are_sent_as_a_voice_note(repo, mocks):
                  "topic": "joint_pain", "session_exercise_id": 301, "joint": "knee"}
     mocks["map_reply"].return_value = {"answers": {"q1": "Knee hurt."}, "notes": [], "follow_ups": [follow_up]}
 
-    main._process_reply(repo, _payload())
+    workout._process_reply(repo, _payload())
 
     fields = repo.update_clarification.call_args.args[1]
     assert fields["status"] == "superseded"  # q2 never answered
@@ -139,7 +139,7 @@ def test_follow_ups_open_round_two_and_are_sent_as_a_voice_note(repo, mocks):
 def test_round_two_allows_no_more_follow_ups(repo, mocks):
     repo.find_open_clarification.return_value = _clarification(round_number=2)
 
-    main._process_reply(repo, _payload())
+    workout._process_reply(repo, _payload())
 
     assert mocks["map_reply"].call_args.kwargs["follow_ups_allowed"] is False
     # No follow-ups can be asked, so the history isn't fetched.
@@ -150,7 +150,7 @@ def test_round_two_allows_no_more_follow_ups(repo, mocks):
 def test_a_voice_reply_is_downloaded_stored_and_transcribed(repo, mocks):
     mocks["whatsapp_client"].download_media.return_value = (b"ogg-bytes", "audio/ogg; codecs=opus")
 
-    main._process_reply(repo, _payload(type="audio", text=None, media_id="media-1"))
+    workout._process_reply(repo, _payload(type="audio", text=None, media_id="media-1"))
 
     mocks["whatsapp_client"].download_media.assert_called_once_with("media-1")
     mocks["store_reply_audio"].assert_called_once_with(b"ogg-bytes", "session_48_reply_900.ogg", "audio/ogg")
@@ -164,7 +164,7 @@ def test_a_voice_reply_is_downloaded_stored_and_transcribed(repo, mocks):
 
 
 def test_an_empty_reply_is_marked_processed_without_calling_claude(repo, mocks):
-    main._process_reply(repo, _payload(text="   "))
+    workout._process_reply(repo, _payload(text="   "))
 
     mocks["map_reply"].assert_not_called()
     assert "processed_at" in repo.update_reply.call_args.args[1]

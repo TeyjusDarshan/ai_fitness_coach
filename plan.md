@@ -33,7 +33,7 @@ A session is **missed** when `completed_at IS NULL` and `scheduled_date < app_to
 - `frontend/src/components/DayRow.tsx`: show a "Missed" label for `status === 'missed'`, plus a `day-row--missed` style.
 - If midnight passes mid-workout, the next set/RPE/complete call gets a 409. Make sure the exercise screens show the error, as `DashboardScreen` already does.
 
-### 4. Workout analysis: `workout_analysis_consumer/repository.py`
+### 4. Workout analysis: `voice_processor/repository.py`
 - `_fetch_previous_session_context`: if the parent plan's same-day session has no `completed_at` (missed), follow `parent_plan_id` back to the most recent same-day session that was completed (maximum a few hops). Otherwise the summary compares against an empty workout.
 
 ### 5. Docs: `CLAUDE.md`

@@ -28,7 +28,7 @@ read time.
 | `agents/` | LangChain agents: `preprocessor_agent.py` (raw text → structured profile), `workout_agent.py` (profile → weekly plan), prompt templates, tools |
 | `backend/` | Flask API (`app.py`) + `repository/` — the Supabase access layer |
 | `frontend/` | React + TypeScript PWA (Vite) — the app end users interact with |
-| `diet/` | Voice diet tracking: the two Claude calls, validation, nutrition maths, and the meal-log Kafka consumer (`python -m diet.consumer`) |
+| `diet/` | Voice diet tracking: the two Claude calls, validation, nutrition maths, and validation; meal-log events are processed by `voice_processor` |
 | `workout_engine/` | Standalone FastAPI prototype UI for the profile → plan pipeline (separate from `backend/`/`frontend/`, not the production app) |
 | `evaluation/` | Synthetic client `personas.py` for LLM-judging the intake → plan pipeline |
 | `utilities/` | `workout_builder/` (exercise library CSVs + tooling) and `scripts/` (e.g. Supabase migration script) |
@@ -46,13 +46,14 @@ python3 -m backend.app        # http://localhost:8001
 cd frontend && npm install && npm run dev   # http://localhost:5173
 ```
 
-**Meal-log consumer** — turns a client's food recording into logged dishes (see "Voice diet tracking" in
-`CLAUDE.md`). Its own process and Kafka consumer group, run next to `workout_analysis_consumer`; needs the
-same `.env` (`SUPABASE_*`, `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`, `KAFKA_*`), ffmpeg, and the
-`meal-log-events` topic to exist:
+**Voice processor** — one Kafka consumer for every topic that carries a client's voice: shared workouts and
+her WhatsApp replies (summary and clarifying questions) and food recordings (diet tracking, see "Voice diet
+tracking" in `CLAUDE.md`). Needs the same `.env` (`SUPABASE_*`, `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`,
+`KAFKA_*`, WhatsApp), ffmpeg, and the topics `workout-complete-events`, `workout-feedback-replies` and
+`meal-log-events` to exist:
 ```bash
-python3 -m diet.consumer
-.venv/bin/python -m diet.dry_run --text "kaalaila moonu idli, oru karandi sambar"   # try it, stores nothing
+python3 -m voice_processor.main
+.venv/bin/python -m diet.dry_run --text "kaalaila moonu idli, oru karandi sambar"   # try diet parsing, stores nothing
 ```
 
 **Frontend (prod)**: `npm run build` in `frontend/`, then Flask serves the built `frontend/dist`

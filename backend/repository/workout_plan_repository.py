@@ -552,7 +552,7 @@ class WorkoutPlanRepository:
         return bool(result)
 
     def get_session_analysis(self, session_id: int) -> Optional[dict]:
-        """Fetch the workout_analysis_consumer-generated summary for a session, if ready."""
+        """Fetch the voice_processor-generated summary for a session, if ready."""
         rows = (
             self.client.table("session_analysis")
             .select("analysis, audio_url")
