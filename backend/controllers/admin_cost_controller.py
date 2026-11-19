@@ -24,12 +24,11 @@ MAX_DAYS = 365
 PAGE_SIZE = 1000  # Supabase returns at most 1000 rows per request.
 DRY_RUN_PREFIX = "dry_run_"
 UNATTRIBUTED = "(unattributed)"
-# ai_usage features recorded by diet tracking (see diet/).
-# The older ones (before the 2026-11-20 rewrite) still appear in past rows.
-FOOD_FEATURES = (
-    "meal_stt", "meal_estimation", "meal_parsing", "recipe_estimation", "ingredient_nutrients",
-)
-MEAL_LOG_STATS = "user_id, processed_at, error"
+# ai_usage features recorded by diet tracking (see diet/). The engine before
+# the 2026-11-20 rewrite also recorded meal_parsing, recipe_estimation and
+# ingredient_nutrients; those still show in the per-feature totals.
+FOOD_FEATURES = ("meal_stt", "meal_estimation")
+MEAL_LOG_STATS = "user_id, created_at, processed_at, error"
 
 
 def _fetch_usage(since: datetime, include_dry_runs: bool) -> List[Dict[str, Any]]:
@@ -154,6 +153,10 @@ def _is_food(feature: str) -> bool:
     return (feature[len(DRY_RUN_PREFIX):] if feature.startswith(DRY_RUN_PREFIX) else feature) in FOOD_FEATURES
 
 
+def _time(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 def _models(totals: Dict[tuple, Dict[str, float]]) -> List[Dict[str, Any]]:
     return sorted(
         (
@@ -169,7 +172,12 @@ def summarize_food(
 ) -> Dict[str, Any]:
     """Diet tracking on its own: ai_usage rows (any feature; the food ones
     are picked out) and meal_logs rows -> its cost by model, and the same
-    per client with the food recordings processed (and how many failed)."""
+    per client with the food recordings processed (and how many failed).
+
+    Spend from before the period's first recording is left out: food calls
+    only happen after their recording is created, so such rows belong to
+    recordings that no longer exist (e.g. the meal_logs dropped in the
+    2026-11-20 rewrite) and would inflate the cost per recording."""
     zero = lambda: {"inr": 0.0, "calls": 0}  # noqa: E731
     counts = ("voice_notes", "failed")
 
@@ -179,8 +187,11 @@ def summarize_food(
     overall = blank()
     users: Dict[str, Dict[str, Any]] = {}
 
+    first_log = min((_time(log["created_at"]) for log in logs if log.get("created_at")), default=None)
     for row in rows:
         if not _is_food(row["feature"]):
+            continue
+        if first_log is None or _time(row["created_at"]) < first_log:
             continue
         inr = float(row.get("cost_inr_total") or 0)
         calls = int(row.get("calls") or 1)

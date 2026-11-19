@@ -72,8 +72,8 @@ def test_day_summary_counts_ready_and_confirmed_logs_only(repo):
 
     day = service.day_summary([ready, processing], {"protein_g": 60}, "2026-11-16")
 
-    assert day["totals"] == {"protein_g": 2.9, "fibre_g": 0.4}
-    assert day["targets"] == {"protein_g": 60, "fibre_g": 25}
+    assert day["totals"] == {"energy_kcal": 158, "protein_g": 2.9, "fibre_g": 0.4, "carbs_g": 32.8, "fat_g": 1.4}
+    assert day["targets"] == {"energy_kcal": 1800, "protein_g": 60, "fibre_g": 25, "carbs_g": 225, "fat_g": 60}
     assert [log["status"] for log in day["logs"]] == ["ready", "processing"]
 
 

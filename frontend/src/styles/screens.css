@@ -3515,6 +3515,10 @@
   background: var(--surface-alt);
 }
 .food-day-toggle__option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 11px 12px;
   border: none;
   border-radius: var(--radius-pill);
@@ -3524,100 +3528,380 @@
   font-weight: 600;
   cursor: pointer;
 }
+@media (max-width: 420px) {
+  .food-day-toggle__option {
+    gap: 6px;
+    padding: 11px 8px;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+  .food-day-toggle__option svg {
+    width: 17px;
+    height: 17px;
+  }
+}
 .food-day-toggle__option--on {
   background: var(--surface);
   color: var(--heading);
   box-shadow: var(--shadow-card);
 }
 
-/* Protein and fibre */
-.food-totals {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  margin-bottom: 16px;
+/* Daily goal: calories ring and the four goal nutrients */
+.food-goal {
+  margin-bottom: 8px;
+  padding: 16px 16px 18px;
 }
-.food-progress__head {
+.food-goal__head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
-.food-progress__label {
-  font-size: 17px;
+.food-goal__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
   font-weight: 700;
   color: var(--heading);
 }
-.food-progress__value {
+.food-goal__title svg {
+  color: var(--success);
+}
+.food-goal__kcal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 15px;
   color: var(--ink-secondary);
   font-variant-numeric: tabular-nums;
 }
-.food-progress__value strong {
-  font-size: 18px;
-  color: var(--ink);
+.food-goal__kcal svg {
+  color: var(--accent);
 }
-.food-progress__track {
-  height: 12px;
+.food-goal__body {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
+  gap: 14px;
+  align-items: center;
+}
+.food-goal__ring-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding-right: 12px;
+  border-right: 1px solid var(--hairline);
+}
+.food-goal__ring {
+  position: relative;
+  width: 100%;
+  max-width: 140px;
+  aspect-ratio: 1;
+}
+.food-goal__ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.food-goal__ring-track,
+.food-goal__ring-fill {
+  fill: none;
+  stroke-width: 12;
+}
+.food-goal__ring-track {
+  stroke: var(--accent-soft);
+}
+.food-goal__ring-fill {
+  stroke: var(--success);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.5s ease;
+}
+.food-goal__ring-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.food-goal__ring-text strong {
+  font-size: 26px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--heading);
+}
+.food-goal__ring-text span {
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+.food-goal__percent {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--heading);
+  font-variant-numeric: tabular-nums;
+}
+.food-goal__bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.food-goal__bar {
+  --tone: var(--success);
+  --tone-soft: #e3f3e8;
+  --tone-ink: #23774a;
+}
+.food-goal__bar--fibre {
+  --tone: #f07c2b;
+  --tone-soft: #fdebdc;
+  --tone-ink: #c45a12;
+}
+.food-goal__bar--carbs {
+  --tone: #7b61d1;
+  --tone-soft: #ece7fa;
+  --tone-ink: #5a42b0;
+}
+.food-goal__bar--fat {
+  --tone: #e8b22f;
+  --tone-soft: #fbf1d4;
+  --tone-ink: #a87a0a;
+}
+.food-goal__bar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+.food-goal__bar-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.food-goal__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--tone);
+  flex-shrink: 0;
+}
+.food-goal__bar-value {
+  font-size: 13px;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.food-goal__bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.food-goal__track {
+  flex: 1;
+  height: 8px;
   border-radius: var(--radius-pill);
   background: var(--surface-alt);
   overflow: hidden;
 }
-.food-progress__fill {
+.food-goal__fill {
   height: 100%;
   border-radius: var(--radius-pill);
-  background: var(--success);
+  background: var(--tone);
   transition: width 0.4s ease;
 }
+.food-goal__pill {
+  min-width: 46px;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--tone-soft);
+  color: var(--tone-ink);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 360px) {
+  .food-goal__body {
+    grid-template-columns: 1fr;
+  }
+  .food-goal__ring-wrap {
+    padding: 0 0 12px;
+    border-right: none;
+    border-bottom: 1px solid var(--hairline);
+  }
+}
 
-/* Record */
-.food-record {
+/* Floating mic (Today) */
+.food-screen--with-mic {
+  padding-bottom: calc(150px + env(safe-area-inset-bottom));
+}
+.food-mic {
+  position: fixed;
+  right: max(16px, calc(50% - 240px + 16px));
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 20;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  text-align: center;
-  margin-bottom: 16px;
+  align-items: flex-end;
+  gap: 10px;
+  max-width: calc(100% - 32px);
 }
-.food-record__mic {
+.food-mic__button {
   display: grid;
   place-items: center;
-  width: 92px;
-  height: 92px;
-  margin-bottom: 14px;
+  width: 72px;
+  height: 72px;
+  margin-right: 8px;
   border: none;
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  box-shadow: 0 6px 18px rgba(31, 92, 69, 0.3);
+  box-shadow: 0 0 0 8px rgba(46, 139, 87, 0.12), 0 8px 20px rgba(31, 92, 69, 0.3);
   cursor: pointer;
 }
-.food-record__mic:disabled {
-  opacity: 0.4;
+.food-mic__button:disabled {
   cursor: default;
 }
-.food-record__mic--live {
+.food-mic__button--live {
   background: var(--danger);
   box-shadow: none;
   animation: mic-pulse 1.3s ease-in-out infinite;
 }
-.food-record__title {
-  margin: 0 0 6px;
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--heading);
+.food-mic__spinner {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+}
+.food-mic__bubble {
+  position: relative;
+  padding: 8px 14px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  color: var(--ink);
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
-.food-record__hint {
+.food-mic__bubble--error {
+  color: var(--danger);
+  font-size: 14px;
+}
+
+/* Past 10 days: Nutrition Overview */
+.food-overview__head {
+  margin: 4px 4px 12px;
+}
+.food-overview__title {
+  margin: 0 0 2px;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--heading);
+}
+.food-overview__sub {
   margin: 0;
   font-size: 15px;
-  line-height: 1.45;
   color: var(--ink-secondary);
 }
-.food-record__error {
-  margin: 10px 0 0;
-  font-size: 14px;
-  color: var(--danger);
+.food-chart {
+  margin-bottom: 12px;
+  padding: 14px 16px 10px;
+}
+.food-chart__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-bottom: 10px;
+}
+.food-chart__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.food-chart__title svg {
+  color: var(--accent);
+}
+.food-chart__avg {
+  font-size: 15px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.food-chart__target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.food-chart__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.food-chart__plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 8px;
+  height: 84px;
+  border-bottom: 1px solid var(--hairline);
+}
+.food-chart__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1.5px dashed #c9c1ad;
+  pointer-events: none;
+}
+.food-chart__col {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.food-chart__bar {
+  width: 100%;
+  max-width: 30px;
+  border-radius: 6px 6px 3px 3px;
+  background: #8fd1a6;
+  transition: height 0.4s ease;
+}
+.food-chart__bar--today {
+  background: var(--accent);
+}
+.food-chart__bar--empty {
+  height: 3px;
+  background: var(--surface-alt);
+}
+.food-chart__labels {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 8px;
+  padding-top: 6px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.food-chart__label--today {
+  font-weight: 700;
+  color: var(--heading);
 }
 
 .food-notice {
@@ -4007,4 +4291,55 @@ button.food-notice {
   font-size: 14px;
   font-weight: 700;
   color: var(--heading);
+}
+
+/* Workouts / Diet bar (clients with diet tracking on) */
+:root {
+  --bottom-nav-h: calc(68px + env(safe-area-inset-bottom));
+}
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  max-width: 480px;
+  margin: 0 auto;
+  height: var(--bottom-nav-h);
+  padding: 6px 24px env(safe-area-inset-bottom);
+  border-top: 1px solid var(--hairline);
+  border-radius: 24px 24px 0 0;
+  background: var(--surface);
+  box-shadow: 0 -6px 20px rgba(60, 50, 30, 0.08);
+}
+.bottom-nav__tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.bottom-nav__tab--active {
+  color: var(--accent);
+}
+body.with-bottom-nav .dashboard-screen {
+  height: calc(100dvh - var(--bottom-nav-h));
+}
+body.with-bottom-nav .dashboard__scroll {
+  padding-bottom: 24px;
+}
+body.with-bottom-nav .food-screen--with-mic {
+  padding-bottom: calc(150px + var(--bottom-nav-h));
+}
+body.with-bottom-nav .food-mic {
+  bottom: calc(var(--bottom-nav-h) + 14px);
 }

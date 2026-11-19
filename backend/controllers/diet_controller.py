@@ -30,7 +30,7 @@ from backend.feedback_storage import (
 )
 from backend.repository.workout_plan_repository import app_today
 from diet import service
-from diet.nutrition import DEFAULT_TARGETS, rounded, targets_for
+from diet.nutrition import DEFAULT_TARGETS, TARGET_RANGES, rounded, targets_for
 from diet.repository import DietRepository
 
 logger = logging.getLogger(__name__)
@@ -42,7 +42,8 @@ diet_repo = DietRepository(plan_repo.client)
 # How far back she can open a day, and the coach's default / longest window.
 MAX_DAYS_BACK = 60
 DEFAULT_ADMIN_DAYS, MAX_ADMIN_DAYS = 7, 60
-MAX_TARGET_GRAMS = 500
+# Her Past days list.
+DEFAULT_RECENT_DAYS = 10
 
 
 def _number(value):
@@ -252,6 +253,27 @@ def get_diet_day(user_id):
     return jsonify(service.day_summary(logs, diet_repo.get_targets(user_id), day.isoformat())), 200
 
 
+@diet_bp.get("/api/users/<user_id>/diet/days")
+@require_diet
+def get_recent_diet_days(user_id):
+    """Her last `days` days (1–60, default 10), newest first: each day's
+    calories, protein, fibre, carbs and fat, and how many dishes she logged.
+    Open one with GET /api/users/<user_id>/diet?date=."""
+    if user_id != g.user_id:
+        return jsonify({"error": "You don't have access to this user's food log."}), 403
+    try:
+        days = int(request.args.get("days", DEFAULT_RECENT_DAYS))
+    except ValueError:
+        return jsonify({"error": "'days' must be a number."}), 400
+    days = max(1, min(MAX_DAYS_BACK + 1, days))
+    today = app_today()
+    logs = diet_repo.list_meal_logs(user_id, today - timedelta(days=days - 1), today)
+    return jsonify({
+        "targets": targets_for(diet_repo.get_targets(user_id)),
+        "days": service.recent_days(logs, today, days),
+    }), 200
+
+
 # --- the coach's endpoints -------------------------------------------------
 
 @diet_bp.get("/api/admin/users/<user_id>/diet")
@@ -313,16 +335,17 @@ def get_meal_audio_for_coach(meal_log_id):
 @diet_bp.patch("/api/admin/users/<user_id>/nutrition-targets")
 @require_admin
 def edit_nutrition_targets(user_id):
-    """`{"protein_g": n, "fibre_g": n}` — her daily targets. A null or
-    missing one goes back to the default."""
+    """Any of `{"energy_kcal", "protein_g", "fibre_g", "carbs_g", "fat_g"}`
+    — her daily targets. A null or missing one goes back to the default."""
     body = request.get_json(silent=True) or {}
     targets = {}
     for key in DEFAULT_TARGETS:
         if body.get(key) is None:
             continue
         value = _number(body[key])
-        if value is None or not 1 <= value <= MAX_TARGET_GRAMS:
-            return jsonify({"error": f"'{key}' must be between 1 and {MAX_TARGET_GRAMS}."}), 400
+        low, high = TARGET_RANGES[key]
+        if value is None or not low <= value <= high:
+            return jsonify({"error": f"'{key}' must be between {low} and {high}."}), 400
         targets[key] = round(value)
     if not diet_repo.set_targets(user_id, targets or None):
         return jsonify({"error": f"No client with id {user_id}."}), 404

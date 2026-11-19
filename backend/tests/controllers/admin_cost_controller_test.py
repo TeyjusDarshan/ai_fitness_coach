@@ -57,8 +57,8 @@ def _food_row(user_id, feature, model, inr, provider="anthropic", calls=1):
 
 
 def _meal_log(user_id, processed=True, error=None):
-    return {"user_id": user_id, "processed_at": "2026-11-15T10:00:00+00:00" if processed else None,
-            "error": error}
+    return {"user_id": user_id, "created_at": "2026-11-15T09:59:00+00:00",
+            "processed_at": "2026-11-15T10:00:00+00:00" if processed else None, "error": error}
 
 
 def test_summarize_food_by_model_and_per_client():
@@ -68,9 +68,11 @@ def test_summarize_food_by_model_and_per_client():
         _food_row("usr_1", "meal_stt", "saaras:v4", 0.5, provider="sarvam"),
         _food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 0.6),
         _food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 0.4),
-        _food_row("usr_1", "recipe_estimation", "claude-opus-5-5", 12.0),           # before the rewrite
+        _food_row("usr_1", "recipe_estimation", "claude-opus-5-5", 12.0),           # old engine: not food any more
         _food_row("usr_2", "meal_estimation", "claude-sonnet-5-5", 0.5),
         _food_row("usr_2", "dry_run_meal_estimation", "claude-sonnet-5-5", 9.0),   # counted only if fetched
+        # Before the first recording in the period: its recording is gone.
+        {**_food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 7.0), "created_at": "2026-11-14T08:00:00+00:00"},
     ]
     logs = [
         _meal_log("usr_1"),
@@ -81,17 +83,24 @@ def test_summarize_food_by_model_and_per_client():
 
     food = summarize_food(rows, logs, {"usr_1": "Sasikala", "usr_2": "Asha"})
 
-    assert (food["total_inr"], food["claude_inr"], food["sarvam_inr"]) == (23.0, 22.5, 0.5)
+    assert (food["total_inr"], food["claude_inr"], food["sarvam_inr"]) == (11.0, 10.5, 0.5)
     assert food["by_model"] == [
-        {"provider": "anthropic", "model": "claude-opus-5-5", "calls": 1, "inr": 12.0},
         {"provider": "anthropic", "model": "claude-sonnet-5-5", "calls": 4, "inr": 10.5},
         {"provider": "sarvam", "model": "saaras:v4", "calls": 1, "inr": 0.5},
     ]
     assert (food["voice_notes"], food["failed"]) == (3, 1)
     assert "new_foods" not in food
     first, second = food["clients"]
-    assert (first["name"], first["total_inr"], first["voice_notes"], first["per_voice_note_inr"]) == ("Sasikala", 13.5, 2, 6.75)
-    assert (second["name"], second["voice_notes"], second["failed"], second["total_inr"]) == ("Asha", 1, 1, 9.5)
+    assert (first["name"], first["voice_notes"], first["failed"], first["total_inr"]) == ("Asha", 1, 1, 9.5)
+    assert (second["name"], second["total_inr"], second["voice_notes"], second["per_voice_note_inr"]) == ("Sasikala", 1.5, 2, 0.75)
+
+
+def test_summarize_food_without_recordings_counts_no_spend():
+    from backend.controllers.admin_cost_controller import summarize_food
+
+    food = summarize_food([_food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 3.0)], [], {})
+
+    assert (food["total_inr"], food["voice_notes"], food["clients"]) == (0, 0, [])
 
 
 @pytest.fixture

@@ -30,7 +30,11 @@ MICROS = (
 )
 NUTRIENTS = MACROS + MICROS
 
-DEFAULT_TARGETS = {"protein_g": 50, "fibre_g": 25}
+# Her daily goals when the coach hasn't set them (a moderately active woman
+# aged 40-55), and the range a coach may set each to.
+DEFAULT_TARGETS = {"energy_kcal": 1800, "protein_g": 50, "fibre_g": 25, "carbs_g": 225, "fat_g": 60}
+TARGET_RANGES = {"energy_kcal": (500, 5000), "protein_g": (1, 500), "fibre_g": (1, 500), "carbs_g": (1, 1000),
+                 "fat_g": (1, 500)}
 
 # Ingredients a cook measures by the spoon, shown to her in teaspoons:
 # reference category -> grams in one teaspoon.

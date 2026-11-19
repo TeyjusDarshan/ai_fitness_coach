@@ -3,6 +3,7 @@ import type {
   Dashboard,
   DayCompleteSummary,
   DietDay,
+  RecentDiet,
   MealItemDetail,
   MealLog,
   PastWorkoutsPage,
@@ -145,6 +146,11 @@ export function completeSession(sessionId: number): Promise<DayCompleteSummary> 
 // Her day: protein and fibre against her targets, and what she logged.
 export function fetchDietDay(userId: string, date: string): Promise<DietDay> {
   return request(`/users/${encodeURIComponent(userId)}/diet?date=${date}`)
+}
+
+// Her last `days` days, newest first, with each day's totals.
+export function fetchRecentDiet(userId: string, days = 10): Promise<RecentDiet> {
+  return request(`/users/${encodeURIComponent(userId)}/diet/days?days=${days}`)
 }
 
 // A recording of what she ate. Answers straight away; the items arrive by

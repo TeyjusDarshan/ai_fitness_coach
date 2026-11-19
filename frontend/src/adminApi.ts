@@ -465,8 +465,17 @@ export interface CoachMealLog {
   items: CoachMealItem[]
 }
 
+// Her daily goals (the coach's, else the defaults).
+export interface NutritionTargets {
+  energy_kcal: number
+  protein_g: number
+  fibre_g: number
+  carbs_g: number
+  fat_g: number
+}
+
 export interface ClientDiet {
-  targets: { protein_g: number; fibre_g: number }
+  targets: NutritionTargets
   days: { date: string; totals: Nutrients; logs: CoachMealLog[] }[]
 }
 
@@ -493,8 +502,8 @@ export function fetchMealAudioUrl(adminKey: string, mealLogId: number): Promise<
 export function saveNutritionTargets(
   adminKey: string,
   userId: string,
-  targets: { protein_g: number | null; fibre_g: number | null },
-): Promise<{ targets: { protein_g: number; fibre_g: number } }> {
+  targets: Record<keyof NutritionTargets, number | null>,
+): Promise<{ targets: NutritionTargets }> {
   return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/nutrition-targets`, {
     method: 'PATCH',
     body: JSON.stringify(targets),

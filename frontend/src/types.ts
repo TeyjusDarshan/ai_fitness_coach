@@ -256,10 +256,33 @@ export interface MealLog {
   items: MealItem[]
 }
 
-// Her simple view of a day: protein and fibre against her targets.
+// Calories and the four goal nutrients, for a day's totals or her targets.
+export interface DietGoals {
+  energy_kcal: number
+  protein_g: number
+  fibre_g: number
+  carbs_g: number
+  fat_g: number
+}
+
+// Her view of a day: the goal nutrients against her targets, and the day's logs.
 export interface DietDay {
   date: string
-  totals: { protein_g: number; fibre_g: number }
-  targets: { protein_g: number; fibre_g: number }
+  totals: DietGoals
+  targets: DietGoals
   logs: MealLog[]
+}
+
+// One of her recent days, for the Past days list.
+export interface DietDaySummary {
+  date: string
+  totals: DietGoals
+  // Dishes logged (in worked-out logs) that day.
+  dishes: number
+}
+
+export interface RecentDiet {
+  targets: DietGoals
+  // Newest first, including days with nothing logged.
+  days: DietDaySummary[]
 }

@@ -16,9 +16,11 @@ const FEATURE_LABELS: Record<string, string> = {
   summary_tts: 'Summary voice note',
   follow_up_tts: 'Follow-up voice note',
   meal_stt: 'Food recordings → text',
-  meal_parsing: 'Food: what she ate',
-  recipe_estimation: 'Food: new dish recipes',
-  ingredient_nutrients: 'Food: new ingredient nutrients',
+  meal_estimation: 'Food: dishes and ingredients',
+  // The food engine before the 2026-11-20 rewrite.
+  meal_parsing: 'Food (old): what she ate',
+  recipe_estimation: 'Food (old): new dish recipes',
+  ingredient_nutrients: 'Food (old): new ingredient nutrients',
 }
 
 const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam' } as const
@@ -32,8 +34,7 @@ const MODEL_LABELS: Record<string, string> = {
 
 // What each model does in diet tracking.
 const MODEL_ROLES: Record<string, string> = {
-  'claude-opus-5-5': 'Nutrients of new ingredients',
-  'claude-sonnet-5-5': 'Working out what she ate; recipes for new dishes',
+  'claude-sonnet-5-5': 'Dishes she ate and the grams of each ingredient',
   'saaras:v4': 'Recordings → text',
 }
 

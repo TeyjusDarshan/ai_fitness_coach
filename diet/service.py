@@ -2,11 +2,11 @@
 the screens, total a day, and apply her edits (portion size, an
 ingredient's amount, back to the estimate). Every edit recomputes the
 item's stored nutrients from its ingredient rows."""
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from diet.nutrition import (
-    WEIGHT_UNITS, add_totals, display_unit, empty_totals, nutrients_of, rounded, targets_for,
+    DEFAULT_TARGETS, WEIGHT_UNITS, add_totals, display_unit, empty_totals, nutrients_of, rounded, targets_for,
 )
 from diet.repository import REFERENCE_TABLE, DietRepository
 
@@ -105,16 +105,39 @@ def totals_of(logs: List[Dict[str, Any]]) -> Dict[str, float]:
     return totals
 
 
+def _goal_totals(totals: Dict[str, float]) -> Dict[str, float]:
+    """The totals her screen shows: calories and the four goal nutrients."""
+    return {key: round(totals[key], 0 if key == "energy_kcal" else 1) for key in DEFAULT_TARGETS}
+
+
 def day_summary(logs: List[Dict[str, Any]], stored_targets: Optional[Dict[str, Any]], day: str) -> Dict[str, Any]:
-    """Her simple view of one day: protein and fibre against her targets,
-    and the day's logs."""
-    totals = totals_of(logs)
+    """Her view of one day: calories, protein, fibre, carbs and fat against
+    her targets, and the day's logs."""
     return {
         "date": day,
-        "totals": {"protein_g": round(totals["protein_g"], 1), "fibre_g": round(totals["fibre_g"], 1)},
+        "totals": _goal_totals(totals_of(logs)),
         "targets": targets_for(stored_targets),
         "logs": [shape_log(log) for log in logs],
     }
+
+
+def recent_days(logs: List[Dict[str, Any]], end: date, days: int) -> List[Dict[str, Any]]:
+    """The `days` days up to `end`, newest first, each with its totals and
+    how many dishes she logged (0 for a day with nothing)."""
+    by_day: Dict[str, List[Dict[str, Any]]] = {}
+    for log in logs:
+        by_day.setdefault(log["logged_for"], []).append(log)
+    result = []
+    for offset in range(days):
+        day = (end - timedelta(days=offset)).isoformat()
+        day_logs = by_day.get(day, [])
+        result.append({
+            "date": day,
+            "totals": _goal_totals(totals_of(day_logs)),
+            "dishes": sum(len(log.get("meal_log_items") or []) for log in day_logs
+                          if log["status"] in COUNTED_STATUSES),
+        })
+    return result
 
 
 class EditError(ValueError):

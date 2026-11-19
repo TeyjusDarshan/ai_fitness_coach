@@ -17,6 +17,7 @@ import { AdminScreen } from './screens/admin/AdminScreen'
 import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
+import { BottomNav } from './components/BottomNav'
 
 function Spinner() {
   return (
@@ -67,131 +68,134 @@ function RedirectIfSignedIn({ children }: { children: ReactNode }) {
 
 function App() {
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={
-          <RedirectIfSignedIn>
-            <LoginScreen />
-          </RedirectIfSignedIn>
-        }
-      />
-      <Route path="/enroll" element={<EnrollScreen />} />
-      <Route path="/admin" element={<AdminScreen />} />
-      <Route
-        path="/"
-        element={
-          <RequireAuth>
-            <DashboardScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/workout/:sessionId"
-        element={
-          <RequireAuth>
-            <WorkoutDetailScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/warmup"
-        element={
-          <RequireAuth>
-            <RoutineVideoScreen kind="warmup" />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/cooldown"
-        element={
-          <RequireAuth>
-            <RoutineVideoScreen kind="cooldown" />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/exercise/:slotIndex"
-        element={
-          <RequireAuth>
-            <ExerciseScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/exercise/:slotIndex/feedback"
-        element={
-          <RequireAuth>
-            <ExerciseFeedbackScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/rest"
-        element={
-          <RequireAuth>
-            <RestTimerScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/cardio"
-        element={
-          <RequireAuth>
-            <CardioScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/cardio/rate"
-        element={
-          <RequireAuth>
-            <CardioRatingScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/grow"
-        element={
-          <RequireAuth>
-            <GrowScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/day/:dayNumber/summary"
-        element={
-          <RequireAuth>
-            <SummaryScreen />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/food"
-        element={
-          <RequireDiet>
-            <FoodScreen />
-          </RequireDiet>
-        }
-      />
-      <Route
-        path="/food/log/:logId"
-        element={
-          <RequireDiet>
-            <MealReviewScreen />
-          </RequireDiet>
-        }
-      />
-      <Route
-        path="/food/item/:itemId"
-        element={
-          <RequireDiet>
-            <MealItemScreen />
-          </RequireDiet>
-        }
-      />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route
+          path="/login"
+          element={
+            <RedirectIfSignedIn>
+              <LoginScreen />
+            </RedirectIfSignedIn>
+          }
+        />
+        <Route path="/enroll" element={<EnrollScreen />} />
+        <Route path="/admin" element={<AdminScreen />} />
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <DashboardScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/workout/:sessionId"
+          element={
+            <RequireAuth>
+              <WorkoutDetailScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/warmup"
+          element={
+            <RequireAuth>
+              <RoutineVideoScreen kind="warmup" />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/cooldown"
+          element={
+            <RequireAuth>
+              <RoutineVideoScreen kind="cooldown" />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/exercise/:slotIndex"
+          element={
+            <RequireAuth>
+              <ExerciseScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/exercise/:slotIndex/feedback"
+          element={
+            <RequireAuth>
+              <ExerciseFeedbackScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/rest"
+          element={
+            <RequireAuth>
+              <RestTimerScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/cardio"
+          element={
+            <RequireAuth>
+              <CardioScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/cardio/rate"
+          element={
+            <RequireAuth>
+              <CardioRatingScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/grow"
+          element={
+            <RequireAuth>
+              <GrowScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/day/:dayNumber/summary"
+          element={
+            <RequireAuth>
+              <SummaryScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/food"
+          element={
+            <RequireDiet>
+              <FoodScreen />
+            </RequireDiet>
+          }
+        />
+        <Route
+          path="/food/log/:logId"
+          element={
+            <RequireDiet>
+              <MealReviewScreen />
+            </RequireDiet>
+          }
+        />
+        <Route
+          path="/food/item/:itemId"
+          element={
+            <RequireDiet>
+              <MealItemScreen />
+            </RequireDiet>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+      <BottomNav />
+    </>
   )
 }
 

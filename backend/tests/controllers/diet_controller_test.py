@@ -135,8 +135,8 @@ def test_day_view_is_her_own_only(ctl, sign_in):
 
     day = client.get("/api/users/usr_1/diet").get_json()
 
-    assert day["totals"] == {"protein_g": 2.9, "fibre_g": 0.4}
-    assert day["targets"] == {"protein_g": 50, "fibre_g": 25}
+    assert day["totals"] == {"energy_kcal": 158, "protein_g": 2.9, "fibre_g": 0.4, "carbs_g": 32.8, "fat_g": 1.4}
+    assert day["targets"] == {"energy_kcal": 1800, "protein_g": 50, "fibre_g": 25, "carbs_g": 225, "fat_g": 60}
     assert client.get("/api/users/usr_2/diet").status_code == 403
     assert client.get("/api/users/usr_1/diet?date=nope").status_code == 400
 
@@ -156,12 +156,30 @@ def test_coach_view_has_every_nutrient_and_needs_the_admin_key(ctl, app_module):
 def test_coach_sets_targets(ctl, app_module):
     client = app_module.app.test_client()
 
-    response = client.patch("/api/admin/users/usr_1/nutrition-targets", json={"protein_g": 65}, headers=ADMIN)
+    response = client.patch("/api/admin/users/usr_1/nutrition-targets",
+                            json={"protein_g": 65, "energy_kcal": 1600}, headers=ADMIN)
 
-    assert response.get_json() == {"targets": {"protein_g": 65, "fibre_g": 25}}
-    ctl.repo.set_targets.assert_called_once_with("usr_1", {"protein_g": 65})
-    bad = client.patch("/api/admin/users/usr_1/nutrition-targets", json={"protein_g": 0}, headers=ADMIN)
-    assert bad.status_code == 400
+    assert response.get_json()["targets"] == {
+        "energy_kcal": 1600, "protein_g": 65, "fibre_g": 25, "carbs_g": 225, "fat_g": 60,
+    }
+    ctl.repo.set_targets.assert_called_once_with("usr_1", {"energy_kcal": 1600, "protein_g": 65})
+    for bad in ({"protein_g": 0}, {"energy_kcal": 200}, {"fat_g": "60"}):
+        assert client.patch("/api/admin/users/usr_1/nutrition-targets", json=bad, headers=ADMIN).status_code == 400
+
+
+def test_recent_days_are_her_own_and_include_empty_days(ctl, sign_in):
+    ctl.repo.logs[1]["logged_for"] = str(ctl.app_today())
+    client = sign_in("usr_1")
+
+    body = client.get("/api/users/usr_1/diet/days").get_json()
+
+    assert len(body["days"]) == 10 and body["targets"]["energy_kcal"] == 1800
+    today, yesterday = body["days"][:2]
+    assert (today["date"], today["dishes"], today["totals"]["protein_g"]) == (str(ctl.app_today()), 1, 2.9)
+    assert (yesterday["dishes"], yesterday["totals"]["energy_kcal"]) == (0, 0)
+    assert len(client.get("/api/users/usr_1/diet/days?days=3").get_json()["days"]) == 3
+    assert client.get("/api/users/usr_2/diet/days").status_code == 403
+    assert client.get("/api/users/usr_1/diet/days?days=x").status_code == 400
 
 
 @pytest.mark.parametrize("method, path, body", [
@@ -175,6 +193,7 @@ def test_coach_sets_targets(ctl, app_module):
     ("patch", "/api/meal-log-items/1/ingredients/2", {"grams": 0}),
     ("post", "/api/meal-log-items/1/reset", None),
     ("get", "/api/users/usr_1/diet", None),
+    ("get", "/api/users/usr_1/diet/days", None),
 ])
 def test_everything_is_refused_until_the_coach_switches_it_on(ctl, sign_in, method, path, body):
     ctl.repo.enabled.clear()                       # the default: off

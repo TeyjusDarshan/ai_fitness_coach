@@ -8,6 +8,7 @@ import {
   type ClientDiet,
   type CoachMealItem,
   type CoachMealLog,
+  type NutritionTargets,
 } from '../../adminApi'
 import { portionLabel } from '../../food'
 import { formatDayDate } from '../../utils'
@@ -182,6 +183,22 @@ export function ClientFood({
   )
 }
 
+// Her daily goals, as the coach sets them (blank = back to the default).
+const TARGET_FIELDS: { key: keyof NutritionTargets; label: string }[] = [
+  { key: 'energy_kcal', label: 'Calories (kcal / day)' },
+  { key: 'protein_g', label: 'Protein (g / day)' },
+  { key: 'fibre_g', label: 'Fibre (g / day)' },
+  { key: 'carbs_g', label: 'Carbs (g / day)' },
+  { key: 'fat_g', label: 'Fat (g / day)' },
+]
+
+function asText(targets: NutritionTargets): Record<keyof NutritionTargets, string> {
+  return Object.fromEntries(TARGET_FIELDS.map(({ key }) => [key, String(targets[key])])) as Record<
+    keyof NutritionTargets,
+    string
+  >
+}
+
 function Targets({
   adminKey,
   userId,
@@ -191,27 +208,28 @@ function Targets({
 }: {
   adminKey: string
   userId: string
-  initial: { protein_g: number; fibre_g: number }
-  onSaved: (targets: { protein_g: number; fibre_g: number }) => void
+  initial: NutritionTargets
+  onSaved: (targets: NutritionTargets) => void
   onUnauthorized: () => void
 }) {
-  const [protein, setProtein] = useState(String(initial.protein_g))
-  const [fibre, setFibre] = useState(String(initial.fibre_g))
+  const [values, setValues] = useState(() => asText(initial))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const changed = Number(protein) !== initial.protein_g || Number(fibre) !== initial.fibre_g
+  const changed = TARGET_FIELDS.some(({ key }) => Number(values[key]) !== initial[key])
 
   async function save() {
     setBusy(true)
     setError(null)
     try {
-      const result = await saveNutritionTargets(adminKey, userId, {
-        protein_g: protein.trim() ? Number(protein) : null,
-        fibre_g: fibre.trim() ? Number(fibre) : null,
-      })
+      const result = await saveNutritionTargets(
+        adminKey,
+        userId,
+        Object.fromEntries(
+          TARGET_FIELDS.map(({ key }) => [key, values[key].trim() ? Number(values[key]) : null]),
+        ) as Record<keyof NutritionTargets, number | null>,
+      )
       onSaved(result.targets)
-      setProtein(String(result.targets.protein_g))
-      setFibre(String(result.targets.fibre_g))
+      setValues(asText(result.targets))
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) return onUnauthorized()
       setError(err instanceof Error ? err.message : 'Failed to save the targets.')
@@ -223,26 +241,18 @@ function Targets({
   return (
     <>
       <div className="client-food__targets">
-        <label>
-          <span className="monitor__label">Protein target (g / day)</span>
-          <input
-            className="login-screen__input"
-            inputMode="numeric"
-            value={protein}
-            onChange={(e) => setProtein(e.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <label>
-          <span className="monitor__label">Fibre target (g / day)</span>
-          <input
-            className="login-screen__input"
-            inputMode="numeric"
-            value={fibre}
-            onChange={(e) => setFibre(e.target.value)}
-            disabled={busy}
-          />
-        </label>
+        {TARGET_FIELDS.map(({ key, label }) => (
+          <label key={key}>
+            <span className="monitor__label">{label}</span>
+            <input
+              className="login-screen__input"
+              inputMode="numeric"
+              value={values[key]}
+              onChange={(e) => setValues({ ...values, [key]: e.target.value })}
+              disabled={busy}
+            />
+          </label>
+        ))}
         <button className="btn-secondary" disabled={busy || !changed} onClick={() => void save()}>
           {busy ? 'Saving…' : 'Save targets'}
         </button>
