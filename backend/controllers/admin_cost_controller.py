@@ -2,7 +2,7 @@
 ai_usage table (every Claude and Sarvam call, already priced in rupees) over
 the last N days, per client and per feature — plus diet tracking on its
 own: its cost per model, and per client the food recordings processed and
-what they added to (or reused from) the shared food tables. Read-only.
+how many failed. Read-only.
 """
 import logging
 from collections import defaultdict
@@ -25,8 +25,11 @@ PAGE_SIZE = 1000  # Supabase returns at most 1000 rows per request.
 DRY_RUN_PREFIX = "dry_run_"
 UNATTRIBUTED = "(unattributed)"
 # ai_usage features recorded by diet tracking (see diet/).
-FOOD_FEATURES = ("meal_stt", "meal_parsing", "recipe_estimation")
-MEAL_LOG_STATS = "user_id, processed_at, error, new_food_count, new_ingredient_count, reused_food_count"
+# The older ones (before the 2026-11-20 rewrite) still appear in past rows.
+FOOD_FEATURES = (
+    "meal_stt", "meal_estimation", "meal_parsing", "recipe_estimation", "ingredient_nutrients",
+)
+MEAL_LOG_STATS = "user_id, processed_at, error"
 
 
 def _fetch_usage(since: datetime, include_dry_runs: bool) -> List[Dict[str, Any]]:
@@ -49,7 +52,7 @@ def _fetch_usage(since: datetime, include_dry_runs: bool) -> List[Dict[str, Any]
 
 def _fetch_meal_logs(since: datetime) -> List[Dict[str, Any]]:
     """Every food recording since `since` (discarded ones included: what
-    they cost and added still counts), page by page."""
+    they cost still counts), page by page."""
     rows, start = [], 0
     while True:
         page = (
@@ -166,11 +169,9 @@ def summarize_food(
 ) -> Dict[str, Any]:
     """Diet tracking on its own: ai_usage rows (any feature; the food ones
     are picked out) and meal_logs rows -> its cost by model, and the same
-    per client with the food recordings processed (and how many failed),
-    and the dishes and ingredients they added to the shared tables or
-    found already there."""
+    per client with the food recordings processed (and how many failed)."""
     zero = lambda: {"inr": 0.0, "calls": 0}  # noqa: E731
-    counts = ("voice_notes", "failed", "new_foods", "new_ingredients", "reused_foods")
+    counts = ("voice_notes", "failed")
 
     def blank():
         return {"inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "models": defaultdict(zero), **{c: 0 for c in counts}}
@@ -197,9 +198,6 @@ def summarize_food(
                 target["voice_notes"] += 1
             if log.get("error"):
                 target["failed"] += 1
-            target["new_foods"] += log.get("new_food_count") or 0
-            target["new_ingredients"] += log.get("new_ingredient_count") or 0
-            target["reused_foods"] += log.get("reused_food_count") or 0
 
     def shape(totals: Dict[str, Any]) -> Dict[str, Any]:
         return {

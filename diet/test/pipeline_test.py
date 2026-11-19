@@ -3,9 +3,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from diet import agent, pipeline
-from diet.test.fakes import FakeRepo, estimation, new_dish, new_ingredient, parsed
+from diet.test.fakes import FakeRepo, dish, estimate
 
-TRANSCRIPT = "moonu idli, oru karandi sadam, oru plate sadam"
+TRANSCRIPT = "kaalaila moonu idli, madhiyam rendu karandi sadam"
+IDLI = dish("moonu idli", "Idli", 3, "piece", 120, [("Raw white rice", 45), ("Urad dal", 15)], meal="breakfast")
+RICE = dish("rendu karandi sadam", "Cooked Rice", 2, "karandi", 120,
+            [("Raw white rice", 42), ("Sesame (gingelly) oil", 1.2)], meal="lunch")
 
 
 @pytest.fixture
@@ -15,10 +18,9 @@ def repo():
 
 @pytest.fixture
 def claude(monkeypatch):
-    calls = MagicMock()
-    monkeypatch.setattr(agent, "parse_meal", calls.parse_meal)
-    monkeypatch.setattr(agent, "estimate", calls.estimate)
-    return calls
+    call = MagicMock()
+    monkeypatch.setattr(agent, "estimate_meal", call)
+    return call
 
 
 def _run(repo, log_id, transcript=TRANSCRIPT):
@@ -26,94 +28,54 @@ def _run(repo, log_id, transcript=TRANSCRIPT):
     return repo.logs[log_id], repo.log_items(log_id)
 
 
-def test_known_dish_is_fetched_from_the_table_without_estimating(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35, 2: 1})
-    claude.parse_meal.return_value = parsed(("oru karandi sadam", rice, "Cooked Rice", 2, "karandi", True, "lunch"))
+def _amounts(item):
+    return {r["reference_id"]: r["grams"] for r in item["meal_log_item_ingredients"]}
+
+
+def test_dishes_are_saved_with_ingredients_and_nutrients(repo, claude):
+    claude.return_value = estimate(IDLI, RICE)
 
     log, items = _run(repo, repo.add_log())
 
-    claude.estimate.assert_not_called()
-    assert (log["status"], log["transcript"]) == ("ready", TRANSCRIPT)
-    item = items[0]
-    assert (item["food_id"], item["grams"], item["meal"], item["assumed"]) == (rice, 120, "lunch", False)
-    assert {r["ingredient_id"]: r["grams"] for r in item["meal_log_item_ingredients"]} == {1: 42, 2: 1.2}
+    assert (log["status"], log["transcript"], log["model"]) == ("ready", TRANSCRIPT, agent.MEAL_MODEL)
+    idli, rice = items
+    assert (idli["dish_name"], idli["meal"], idli["portion_grams"], idli["needs_review"]) == ("Idli", "breakfast", 120, False)
+    assert _amounts(idli) == {1: 45, 3: 15}
+    assert _amounts(rice) == {1: 42, 2: 1.2}
+    # 45 g rice at 7 g + 15 g urad at 24 g protein per 100 g.
+    assert round(idli["nutrients"]["protein_g"], 2) == 6.75
+    assert round(rice["nutrients"]["fat_g"], 2) == 1.41
+    assert rice["meal_log_item_ingredients"][1]["ingredient_name"] == "Sesame (gingelly) oil"
 
 
-def test_unknown_dish_is_estimated_added_and_then_reused(repo, claude):
-    claude.parse_meal.return_value = parsed(("moonu idli", None, "Idli", 3, "piece"))
-    claude.estimate.return_value = estimation(
-        dishes=[new_dish("Idli", {"piece": 40}, [(1, "Raw Rice", 30), (None, "Urad Dal", 10)])],
-        ingredients=[new_ingredient("Urad Dal", protein=24, carbs=60, fat=1.5)],
+def test_claude_gets_only_the_transcript_and_each_name_once(repo, claude):
+    claude.return_value = estimate(IDLI)
+
+    _run(repo, repo.add_log("usr_7"))
+
+    transcript, names, user_id = claude.call_args.args
+    # "Raw white rice" is in two categories; it's offered (and stored) once, as the lowest id.
+    assert (transcript, sorted(names), user_id) == (
+        TRANSCRIPT, ["Raw white rice", "Sesame (gingelly) oil", "Urad dal"], "usr_7",
     )
 
-    log, items = _run(repo, repo.add_log())
+
+def test_an_implausible_dish_is_kept_for_review(repo, claude):
+    claude.return_value = estimate(dish("moonu idli", "Idli", 3, "piece", 120, [("Raw white rice", 900)]))
+
+    log, [item] = _run(repo, repo.add_log())
 
     assert log["status"] == "ready"
-    assert claude.estimate.call_args.args[0] == ["Idli"]
-    idli = next(f for f in repo.foods.values() if f["name"] == "Idli")
-    urad = next(i for i in repo.ingredients.values() if i["name"] == "Urad Dal")
-    assert idli["recipe"] == [{"ingredient_id": 1, "grams_per_100g": 30}, {"ingredient_id": urad["id"], "grams_per_100g": 10}]
-    assert (items[0]["food_id"], items[0]["grams"], items[0]["needs_review"]) == (idli["id"], 120, False)
-
-    # Next time the parse matches it (or names it the same): no second estimate.
-    claude.estimate.reset_mock()
-    _, again = _run(repo, repo.add_log())
-    claude.estimate.assert_not_called()
-    assert again[0]["food_id"] == idli["id"] and len(repo.foods) == 1
+    assert (item["needs_review"], item["meal_log_item_ingredients"], item["nutrients"]["energy_kcal"]) == (True, [], 0)
 
 
-def test_dish_that_cannot_be_estimated_is_kept_for_review(repo, claude):
-    claude.parse_meal.return_value = parsed(("moonu idli", None, "Idli", 3, "piece"))
-    claude.estimate.side_effect = RuntimeError("boom")
-
-    log, items = _run(repo, repo.add_log())
-
-    assert log["status"] == "ready"
-    assert (items[0]["food_id"], items[0]["grams"], items[0]["needs_review"]) == (None, None, True)
-    assert items[0]["meal_log_item_ingredients"] == []
-
-
-def test_missing_unit_weight_is_added_to_a_known_dish(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35})
-    claude.parse_meal.return_value = parsed(("oru plate sadam", rice, "Cooked Rice", 1, "plate"))
-    claude.estimate.return_value = estimation(portions=[(rice, "plate", 250), (rice, "cup", 150)])
-
-    _, items = _run(repo, repo.add_log())
-
-    assert repo.foods[rice]["portions"] == {"karandi": 60, "plate": 250}   # only the one asked for
-    assert (items[0]["unit"], items[0]["grams"], items[0]["assumed"]) == ("plate", 250, False)
-
-
-def test_no_amount_means_one_default_serving_marked_assumed(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60, "cup": 150}, {1: 35}, default_unit="cup")
-    claude.parse_meal.return_value = parsed(("oru karandi sadam", rice, "Cooked Rice", 1, "piece", False))
-
-    _, items = _run(repo, repo.add_log())
-
-    assert (items[0]["quantity"], items[0]["unit"], items[0]["grams"], items[0]["assumed"]) == (1, "cup", 150, True)
-
-
-def test_her_own_version_of_a_dish_is_used_only_for_her(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35, 2: 1})
-    repo.user_recipes[("usr_1", rice)] = [{"ingredient_id": 1, "grams_per_100g": 35},
-                                          {"ingredient_id": 2, "grams_per_100g": 0}]
-    claude.parse_meal.return_value = parsed(("oru karandi sadam", rice, "Cooked Rice", 1, "karandi"))
-
-    _, hers = _run(repo, repo.add_log("usr_1"))
-    _, other = _run(repo, repo.add_log("usr_2"))
-
-    assert hers[0]["used_own_recipe"] and not other[0]["used_own_recipe"]
-    assert {r["ingredient_id"]: r["grams"] for r in hers[0]["meal_log_item_ingredients"]} == {1: 21, 2: 0}
-    assert {r["ingredient_id"]: r["grams"] for r in other[0]["meal_log_item_ingredients"]} == {1: 21, 2: 0.6}
-
-
-@pytest.mark.parametrize("transcript, items, error", [
+@pytest.mark.parametrize("transcript, proposed, error", [
     ("", None, "no_speech"),
-    ("inniku workout nalla irundhuchu", parsed(), "no_food"),
-    ("sambar saapten", parsed(("rendu vadai", None, "Vadai", 2, "piece")), "no_food"),   # invented item
+    ("inniku workout nalla irundhuchu", estimate(), "no_food"),
+    ("sambar saapten", estimate(dish("rendu vadai", "Vadai", 2, "piece", 80, [("Urad dal", 40)])), "no_food"),
 ])
-def test_nothing_usable_fails_the_log(repo, claude, transcript, items, error):
-    claude.parse_meal.return_value = items
+def test_nothing_usable_fails_the_log(repo, claude, transcript, proposed, error):
+    claude.return_value = proposed
 
     log, saved = _run(repo, repo.add_log(), transcript)
 
@@ -121,7 +83,7 @@ def test_nothing_usable_fails_the_log(repo, claude, transcript, items, error):
 
 
 def test_a_crash_fails_the_log_and_a_processed_log_is_left_alone(repo, claude):
-    claude.parse_meal.side_effect = RuntimeError("refused")
+    claude.side_effect = RuntimeError("refused")
     log, _ = _run(repo, repo.add_log())
     assert (log["status"], log["error"]) == ("failed", "failed")
 
@@ -130,37 +92,21 @@ def test_a_crash_fails_the_log_and_a_processed_log_is_left_alone(repo, claude):
     assert repo.logs[done]["status"] == "confirmed"
 
 
-def test_a_log_records_what_it_added_and_what_it_reused(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35})
-    claude.parse_meal.return_value = parsed(
-        ("moonu idli", None, "Idli", 3, "piece"),
-        ("oru karandi sadam", rice, "Cooked Rice", 1, "karandi"),
-        ("oru plate sadam", rice, "Cooked Rice", 1, "karandi"),
-    )
-    claude.estimate.return_value = estimation(
-        dishes=[new_dish("Idli", {"piece": 40}, [(1, "Raw Rice", 30), (None, "Urad Dal", 10)])],
-        ingredients=[new_ingredient("Urad Dal", protein=24, carbs=60, fat=1.5),
-                     new_ingredient("Raw Rice")],          # already there: not new
-    )
-
-    log, _ = _run(repo, repo.add_log())
-
-    assert (log["new_food_count"], log["new_ingredient_count"], log["reused_food_count"]) == (1, 1, 2)
-
-    claude.parse_meal.return_value = parsed(("moonu idli", None, "Idli", 3, "piece"))
-    again, _ = _run(repo, repo.add_log())
-    assert (again["new_food_count"], again["new_ingredient_count"], again["reused_food_count"]) == (0, 0, 1)
-
-
 def test_a_log_discarded_while_processing_stays_discarded(repo, claude):
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35})
     log_id = repo.add_log()
 
-    def parse(*args):
+    def estimate_meal(*args):
         repo.discard_meal_log(log_id)          # she taps Record again meanwhile
-        return parsed(("oru karandi sadam", rice, "Cooked Rice", 1, "karandi"))
+        return estimate(IDLI)
 
-    claude.parse_meal.side_effect = parse
+    claude.side_effect = estimate_meal
     log, _ = _run(repo, log_id)
 
     assert log["status"] == "discarded"
+
+
+def test_the_output_schema_only_allows_the_given_names():
+    schema = agent.meal_schema(("Raw white rice", "Urad dal")).model_json_schema()
+
+    ingredient = next(d for name, d in schema["$defs"].items() if name.startswith("DishIngredient"))
+    assert sorted(ingredient["properties"]["name"]["enum"]) == ["Raw white rice", "Urad dal"]

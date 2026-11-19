@@ -1,23 +1,24 @@
-"""An in-memory stand-in for DietRepository, and builders for what the
-Claude calls return."""
+"""An in-memory stand-in for DietRepository, and a builder for what the
+Claude call returns."""
 from types import SimpleNamespace
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-from diet.nutrition import MICROS
+from diet.nutrition import nutrients_of, rounded
+from diet.repository import REFERENCE_TABLE
 
-RICE = {"id": 1, "name": "Raw Rice", "name_key": "raw rice", "energy_kcal": 350, "protein_g": 7, "carbs_g": 78,
-        "fibre_g": 1, "fat_g": 0.5, "saturated_fat_g": 0.1, "unsaturated_fat_g": 0.3, "calcium_mg": 10,
-        "display_unit": None, "grams_per_display_unit": None}
-OIL = {"id": 2, "name": "Gingelly Oil", "name_key": "gingelly oil", "energy_kcal": 900, "protein_g": 0,
-       "carbs_g": 0, "fibre_g": 0, "fat_g": 100, "saturated_fat_g": 15, "unsaturated_fat_g": 80,
-       "display_unit": "teaspoon", "grams_per_display_unit": 5}
+RICE = {"id": 1, "name": "Raw white rice", "category": "carb", "energy_kcal": 350, "protein_g": 7, "carbs_g": 78,
+        "fibre_g": 1, "fat_g": 0.5, "saturated_fat_g": 0.1, "calcium_mg": 10}
+OIL = {"id": 2, "name": "Sesame (gingelly) oil", "category": "oil_ghee", "energy_kcal": 900, "protein_g": 0,
+       "carbs_g": 0, "fibre_g": 0, "fat_g": 100, "saturated_fat_g": 14.2}
+URAD = {"id": 3, "name": "Urad dal", "category": "veg_protein", "energy_kcal": 327, "protein_g": 24,
+        "carbs_g": 59.6, "fibre_g": 11, "fat_g": 1.6, "saturated_fat_g": 0.1}
+# The same name in a second category (the reference table repeats some).
+RICE_AGAIN = {**RICE, "id": 9, "category": "grain"}
 
 
 class FakeRepo:
     def __init__(self):
-        self.ingredients: Dict[int, Dict[str, Any]] = {1: dict(RICE), 2: dict(OIL)}
-        self.foods: Dict[int, Dict[str, Any]] = {}
-        self.user_recipes: Dict[Any, List[Dict[str, Any]]] = {}
+        self.reference = {row["id"]: dict(row) for row in (RICE, OIL, URAD, RICE_AGAIN)}
         self.logs: Dict[int, Dict[str, Any]] = {}
         self.items: Dict[int, Dict[str, Any]] = {}
         self.enabled = set()
@@ -30,15 +31,6 @@ class FakeRepo:
         return True
 
     # --- set-up helpers ---
-    def add_food(self, name, portions, recipe, default_unit=None):
-        food_id = len(self.foods) + 1
-        self.foods[food_id] = {
-            "id": food_id, "name": name, "name_key": name.casefold(), "aliases": [],
-            "default_unit": default_unit or next(iter(portions)), "portions": dict(portions),
-            "recipe": [{"ingredient_id": i, "grams_per_100g": g} for i, g in recipe.items()],
-        }
-        return food_id
-
     def add_log(self, user_id="usr_1", status="processing", **fields):
         log_id = len(self.logs) + 1
         self.logs[log_id] = {"id": log_id, "user_id": user_id, "status": status, "logged_for": "2026-11-16",
@@ -46,7 +38,30 @@ class FakeRepo:
                              "created_at": "2026-11-16T05:00:00+00:00", **fields}
         return log_id
 
+    def add_item(self, meal_log_id, dish_name, grams_by_reference, **fields):
+        """A logged dish as the pipeline would save it: ingredient rows and
+        their nutrient totals."""
+        lines = [{"reference": self.reference[ref_id], "grams": grams} for ref_id, grams in grams_by_reference.items()]
+        item = {
+            "dish_name": dish_name, "meal": None, "quote": dish_name, "quantity": 1, "unit": "piece",
+            "portion_grams": 100, "assumed": False, "needs_review": False,
+            "nutrients": rounded(nutrients_of(lines), 3),
+            "ingredients": [
+                {"reference_id": line["reference"]["id"], "ingredient_name": line["reference"]["name"],
+                 "grams": line["grams"]} for line in lines
+            ],
+            **fields,
+        }
+        self._insert(meal_log_id, item)
+        return max(self.items)
+
     # --- DietRepository ---
+    def reference_ingredients(self):
+        canonical = {}
+        for row in sorted(self.reference.values(), key=lambda r: r["id"]):
+            canonical.setdefault(row["name"], row)
+        return list(canonical.values())
+
     def get_meal_log(self, meal_log_id):
         return self.logs.get(meal_log_id)
 
@@ -62,111 +77,52 @@ class FakeRepo:
     def discard_meal_log(self, meal_log_id):
         self.logs[meal_log_id].update(status="discarded", audio_path=None)
 
-    def food_catalogue(self):
-        return [{"id": f["id"], "name": f["name"], "aliases": f["aliases"]} for f in self.foods.values()]
-
-    def get_foods(self, food_ids):
-        return {i: self.foods[i] for i in set(food_ids) if i in self.foods}
-
-    def find_food_ids(self, name_keys):
-        keys = set(name_keys)
-        return {f["name_key"]: f["id"] for f in self.foods.values() if f["name_key"] in keys}
-
-    def insert_food(self, dish, model, meal_log_id):
-        existing = self.find_food_ids([dish["name_key"]])
-        if existing:
-            return existing[dish["name_key"]], False
-        food_id = len(self.foods) + 1
-        self.foods[food_id] = {**dish, "id": food_id}
-        return food_id, True
-
-    def upsert_portion(self, food_id, unit, grams, source="ai_estimate"):
-        self.foods[food_id]["portions"][unit] = grams
-
-    def ingredient_catalogue(self):
-        return [{"id": i["id"], "name": i["name"], "name_key": i["name_key"]} for i in self.ingredients.values()]
-
-    def insert_ingredient(self, row, model):
-        ingredient_id = len(self.ingredients) + 1
-        self.ingredients[ingredient_id] = {**row, "id": ingredient_id}
-        return ingredient_id, True
-
-    def get_user_recipes(self, user_id, food_ids):
-        return {i: self.user_recipes[(user_id, i)] for i in set(food_ids) if (user_id, i) in self.user_recipes}
-
-    def replace_user_recipe(self, user_id, food_id, recipe):
-        self.user_recipes[(user_id, food_id)] = recipe
-
-    def delete_user_recipe(self, user_id, food_id):
-        self.user_recipes.pop((user_id, food_id), None)
+    def _insert(self, meal_log_id, item):
+        item_id = max(self.items, default=0) + 1
+        row = {key: value for key, value in item.items() if key != "ingredients"}
+        self.items[item_id] = {**row, "id": item_id, "meal_log_id": meal_log_id, "edited": False,
+                               "meal_log_item_ingredients": []}
+        self.set_item_ingredients(item_id, [
+            {**line, "default_grams": line["grams"], "edited": False} for line in item["ingredients"]
+        ])
 
     def replace_items(self, meal_log_id, items):
         self.items = {i: item for i, item in self.items.items() if item["meal_log_id"] != meal_log_id}
         for item in items:
-            item_id = len(self.items) + 1
-            row = {key: value for key, value in item.items() if key != "ingredients"}
-            self.items[item_id] = {**row, "id": item_id, "meal_log_id": meal_log_id, "edited": False,
-                                   "meal_log_item_ingredients": []}
-            self.set_item_ingredients(item_id, [
-                {**line, "default_grams": line["grams"], "edited": False} for line in item["ingredients"]
-            ])
+            self._insert(meal_log_id, item)
 
     def get_item(self, item_id):
         item = self.items.get(item_id)
         if item is None:
             return None
         return {**item, "meal_logs": self.logs.get(item["meal_log_id"]), "meal_log_item_ingredients": [
-            {**row, "ingredients": self.ingredients[row["ingredient_id"]]}
+            {**row, REFERENCE_TABLE: self.reference[row["reference_id"]]}
             for row in item["meal_log_item_ingredients"]
         ]}
 
     def update_item(self, item_id, fields):
         self.items[item_id].update(fields)
 
-    def set_item_ingredients(self, item_id, rows):
-        current = {row["ingredient_id"]: row for row in self.items[item_id]["meal_log_item_ingredients"]}
-        current.update({row["ingredient_id"]: dict(row) for row in rows})
-        self.items[item_id]["meal_log_item_ingredients"] = list(current.values())
+    def delete_item(self, item_id):
+        self.items.pop(item_id)
 
-    def clear_item_ingredients(self, item_id):
-        self.items[item_id]["meal_log_item_ingredients"] = []
+    def set_item_ingredients(self, item_id, rows):
+        current = {row["reference_id"]: row for row in self.items[item_id]["meal_log_item_ingredients"]}
+        current.update({row["reference_id"]: dict(row) for row in rows})
+        self.items[item_id]["meal_log_item_ingredients"] = list(current.values())
 
     def log_items(self, meal_log_id):
         return [self.get_item(i) for i, item in self.items.items() if item["meal_log_id"] == meal_log_id]
 
 
-def parsed(*items):
-    """A ParsedMeal-like object: each item is (quote, food_id, name,
-    quantity, unit[, stated[, meal]])."""
-    out = []
-    for item in items:
-        quote, food_id, name, quantity, unit, *rest = item
-        out.append(SimpleNamespace(
-            quote=quote, food_id=food_id, food_name=name, quantity=quantity, unit=unit,
-            quantity_stated=rest[0] if rest else True, meal=rest[1] if len(rest) > 1 else None,
-        ))
-    return SimpleNamespace(items=out)
-
-
-def new_ingredient(name, protein=2.0, carbs=10.0, fat=1.0, **overrides):
-    values = {"name": name, "aliases": [], "energy_kcal": 4 * protein + 4 * carbs + 9 * fat, "protein_g": protein,
-              "carbs_g": carbs, "fibre_g": 1.0, "fat_g": fat, "saturated_fat_g": fat * 0.3,
-              "unsaturated_fat_g": fat * 0.6, "display_unit": None, "grams_per_display_unit": None,
-              **{key: None for key in MICROS}}
-    return SimpleNamespace(**{**values, **overrides})
-
-
-def new_dish(name, portions, ingredients, default_unit=None, aliases=()):
-    """ingredients: [(ingredient_id or None, name, grams_per_100g)]."""
+def dish(quote, name, quantity, unit, portion_grams, ingredients, stated=True, meal=None):
+    """One dish as Claude returns it; `ingredients` is [(name, grams)]."""
     return SimpleNamespace(
-        name=name, aliases=list(aliases), default_unit=default_unit or next(iter(portions), "cup"),
-        portions=[SimpleNamespace(unit=unit, grams=grams) for unit, grams in portions.items()],
-        ingredients=[SimpleNamespace(ingredient_id=i, name=n, grams_per_100g=g) for i, n, g in ingredients],
+        quote=quote, dish_name=name, quantity=quantity, unit=unit, quantity_stated=stated, meal=meal,
+        portion_grams=portion_grams,
+        ingredients=[SimpleNamespace(name=n, grams=g) for n, g in ingredients],
     )
 
 
-def estimation(dishes=(), ingredients=(), portions=()):
-    return SimpleNamespace(
-        dishes=list(dishes), new_ingredients=list(ingredients),
-        portions_for_known_dishes=[SimpleNamespace(food_id=f, unit=u, grams=g) for f, u, g in portions],
-    )
+def estimate(*dishes):
+    return SimpleNamespace(dishes=list(dishes))

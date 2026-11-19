@@ -2,14 +2,15 @@
 
 The client records what she ate on the PWA's Food screen; the recording is
 stored and a meal-log event published, and the meal-log consumer
-(voice_processor, via diet/pipeline.py) turns it into items — dishes with their ingredients —
-which she then reviews: change a portion, open a dish and change its
-ingredients (which becomes her own version of that dish), or remove it.
+(voice_processor, via diet/pipeline.py) turns it into items — dishes with
+the raw grams of each ingredient in her portion, written by Claude from the
+names in ingredient_nutrition_reference, and their nutrients worked out from
+that table — which she then reviews: change a portion, open a dish and
+change an ingredient's amount on that entry, or remove it.
 Off by default: every client endpoint is refused (require_diet) until the
 coach switches diet tracking on for that client in Monitor clients.
 She sees protein and fibre against her targets; the coach sees every
-nutrient per day in Monitor clients, and reviews what Claude estimated
-(dishes, recipes, ingredients) in the Foods tab.
+nutrient per day in Monitor clients.
 """
 import logging
 from datetime import date, datetime, timedelta, timezone
@@ -29,9 +30,8 @@ from backend.feedback_storage import (
 )
 from backend.repository.workout_plan_repository import app_today
 from diet import service
-from diet.nutrition import DEFAULT_TARGETS, MACROS, MICROS, PORTION_UNITS, rounded, targets_for
+from diet.nutrition import DEFAULT_TARGETS, rounded, targets_for
 from diet.repository import DietRepository
-from diet.validate import DISPLAY_UNITS, MAX_PORTION_GRAMS, MAX_INGREDIENT_PER_100G, MIN_PORTION_GRAMS
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +150,8 @@ def confirm_meal_log(meal_log_id):
 def delete_meal_log(meal_log_id):
     """Discard a log (she's recording it again, or removing one that
     failed) and delete its recording. The row is kept as `discarded`, hidden
-    from her and the coach's food views, so its cost and what it added to
-    the shared tables still count in the Costs tab."""
+    from her and the coach's food views, so its cost still counts in the
+    Costs tab."""
     log = _own_log(meal_log_id)
     if log is None:
         return jsonify(_NO_LOG[0]), _NO_LOG[1]
@@ -218,20 +218,20 @@ def delete_meal_log_item(item_id):
 @require_diet
 def edit_meal_log_item_ingredient(item_id, ingredient_id):
     """`{"grams": n}` — how much of one ingredient is in this dish (0
-    removes it). Also saved as her own version of the dish."""
+    removes it). Only this entry changes."""
     grams = _number((request.get_json(silent=True) or {}).get("grams"))
     if grams is None:
         return jsonify({"error": "'grams' must be a number."}), 400
     return _edit_item(
-        item_id, lambda item: service.change_ingredient(diet_repo, item, g.user_id, ingredient_id, grams)
+        item_id, lambda item: service.change_ingredient(diet_repo, item, ingredient_id, grams)
     )
 
 
-@diet_bp.post("/api/meal-log-items/<int:item_id>/reset-recipe")
+@diet_bp.post("/api/meal-log-items/<int:item_id>/reset")
 @require_diet
-def reset_meal_log_item_recipe(item_id):
-    """Drop her version of the dish and restore this entry's ingredients."""
-    return _edit_item(item_id, lambda item: service.reset_recipe(diet_repo, item, g.user_id))
+def reset_meal_log_item(item_id):
+    """Every ingredient of this entry back to the estimated amount."""
+    return _edit_item(item_id, lambda item: service.reset_item(diet_repo, item))
 
 
 @diet_bp.get("/api/users/<user_id>/diet")
@@ -259,7 +259,7 @@ def get_diet_day(user_id):
 def get_diet_for_coach(user_id):
     """The client's last `days` days (1–60, default 7), newest first: every
     nutrient per day, and each log with its transcript and items (with
-    ingredients and what was assumed, edited or still unverified)."""
+    ingredients and what was assumed or edited)."""
     try:
         days = int(request.args.get("days", DEFAULT_ADMIN_DAYS))
     except ValueError:
@@ -327,134 +327,3 @@ def edit_nutrition_targets(user_id):
     if not diet_repo.set_targets(user_id, targets or None):
         return jsonify({"error": f"No client with id {user_id}."}), 404
     return jsonify({"targets": targets_for(targets)}), 200
-
-
-@diet_bp.get("/api/admin/foods")
-@require_admin
-def list_foods():
-    """The food library: every dish (unit weights, recipe) and every
-    ingredient (nutrients per 100 g), unverified first."""
-    return jsonify({
-        "foods": diet_repo.list_foods(),
-        "ingredients": diet_repo.list_ingredients(),
-        "portion_units": list(PORTION_UNITS),
-        "nutrients": list(MACROS + MICROS),
-    }), 200
-
-
-def _aliases(value):
-    if not isinstance(value, list) or not all(isinstance(alias, str) for alias in value):
-        return None
-    return [alias.strip()[:80] for alias in value if alias.strip()][:20]
-
-
-@diet_bp.patch("/api/admin/foods/<int:food_id>")
-@require_admin
-def edit_food(food_id):
-    """The coach's correction of a dish. Any of: `aliases` (list),
-    `default_unit`, `verified`, `portions` ({unit: grams}, the whole set),
-    `recipe` ([{ingredient_id, grams_per_100g}], the whole recipe). A
-    changed recipe applies to logs from now on; clients' own versions of
-    the dish are left as they are."""
-    body = request.get_json(silent=True) or {}
-    fields = {"source": "coach", "updated_at": datetime.now(timezone.utc).isoformat()}
-    if "aliases" in body:
-        if (aliases := _aliases(body["aliases"])) is None:
-            return jsonify({"error": "'aliases' must be a list of text."}), 400
-        fields["aliases"] = aliases
-    if "verified" in body:
-        if not isinstance(body["verified"], bool):
-            return jsonify({"error": "'verified' must be true or false."}), 400
-        fields["verified"] = body["verified"]
-
-    portions = None
-    if "portions" in body:
-        raw = body["portions"]
-        if not isinstance(raw, dict) or not raw:
-            return jsonify({"error": "'portions' must list at least one unit."}), 400
-        portions = {}
-        for unit, grams in raw.items():
-            grams = _number(grams)
-            if unit not in PORTION_UNITS or grams is None or not MIN_PORTION_GRAMS <= grams <= MAX_PORTION_GRAMS:
-                return jsonify({
-                    "error": f"Each unit weight must be {MIN_PORTION_GRAMS}–{MAX_PORTION_GRAMS} g of a known unit."
-                }), 400
-            portions[unit] = round(grams, 1)
-
-    existing = diet_repo.get_foods([food_id]).get(food_id)
-    if existing is None:
-        return jsonify({"error": "No such dish."}), 404
-    if "default_unit" in body:
-        if body["default_unit"] not in (portions if portions is not None else existing["portions"]):
-            return jsonify({"error": "'default_unit' must be one of the dish's units."}), 400
-        fields["default_unit"] = body["default_unit"]
-    elif portions is not None and existing["default_unit"] not in portions:
-        return jsonify({"error": "The dish's default unit must keep a weight."}), 400
-
-    recipe = None
-    if "recipe" in body:
-        raw = body["recipe"]
-        known = set(diet_repo.ingredient_ids())
-        if not isinstance(raw, list) or not raw:
-            return jsonify({"error": "'recipe' must list at least one ingredient."}), 400
-        merged = {}
-        for line in raw:
-            grams = _number(line.get("grams_per_100g")) if isinstance(line, dict) else None
-            if grams is None or not 0 < grams <= MAX_INGREDIENT_PER_100G or line.get("ingredient_id") not in known:
-                return jsonify({
-                    "error": f"Each recipe line needs a known ingredient and 0–{MAX_INGREDIENT_PER_100G} g per 100 g."
-                }), 400
-            merged[line["ingredient_id"]] = round(grams, 2)
-        recipe = [{"ingredient_id": key, "grams_per_100g": value} for key, value in merged.items()]
-
-    try:
-        diet_repo.update_food(food_id, fields, portions, recipe)
-    except Exception:
-        logger.exception("Failed to edit food_id=%s", food_id)
-        return jsonify({"error": "Failed to save the dish."}), 500
-    return jsonify(diet_repo.get_foods([food_id])[food_id]), 200
-
-
-@diet_bp.patch("/api/admin/ingredients/<int:ingredient_id>")
-@require_admin
-def edit_ingredient(ingredient_id):
-    """The coach's correction of an ingredient: any nutrient (per 100 g
-    raw; a micronutrient may be null for unknown), `aliases`, `verified`,
-    `display_unit` + `grams_per_display_unit`. Nutrients are read from here
-    whenever a day is totalled, so a correction changes past days too."""
-    body = request.get_json(silent=True) or {}
-    fields = {"source": "coach", "updated_at": datetime.now(timezone.utc).isoformat()}
-    for key in MACROS + MICROS:
-        if key not in body:
-            continue
-        value = _number(body[key])
-        if body[key] is None and key in MICROS:
-            fields[key] = None
-        elif value is None or not 0 <= value <= (900 if key == "energy_kcal" else 100000):
-            return jsonify({"error": f"'{key}' must be a number, 0 or more."}), 400
-        else:
-            fields[key] = value
-    if "aliases" in body:
-        if (aliases := _aliases(body["aliases"])) is None:
-            return jsonify({"error": "'aliases' must be a list of text."}), 400
-        fields["aliases"] = aliases
-    if "verified" in body:
-        if not isinstance(body["verified"], bool):
-            return jsonify({"error": "'verified' must be true or false."}), 400
-        fields["verified"] = body["verified"]
-    if "display_unit" in body:
-        unit, per_unit = body["display_unit"], _number(body.get("grams_per_display_unit"))
-        if unit is None:
-            fields["display_unit"], fields["grams_per_display_unit"] = None, None
-        elif unit not in DISPLAY_UNITS or per_unit is None or not 0 < per_unit <= 500:
-            return jsonify({"error": "'display_unit' needs a known unit and its weight in grams."}), 400
-        else:
-            fields["display_unit"], fields["grams_per_display_unit"] = unit, per_unit
-
-    try:
-        if not diet_repo.update_ingredient(ingredient_id, fields):
-            return jsonify({"error": "No such ingredient."}), 404
-    except Exception:
-        logger.exception("Failed to edit ingredient_id=%s", ingredient_id)
-        return jsonify({"error": "Failed to save the ingredient."}), 500
-    return jsonify({"id": ingredient_id, **fields}), 200

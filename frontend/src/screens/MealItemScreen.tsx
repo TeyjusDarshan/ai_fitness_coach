@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '../components/Icon'
-import { fetchMealItem, resetMealItemRecipe, setMealItemIngredient } from '../api'
+import { fetchMealItem, resetMealItem, setMealItemIngredient } from '../api'
 import {
   formatCount,
   ingredientAmount,
@@ -17,8 +17,7 @@ const SAVE_DELAY_MS = 600
 
 // One logged dish opened up: every ingredient with the amount assumed for
 // her portion. She can change an amount (− / +, or type it) or remove an
-// ingredient; that becomes her own version of the dish from then on, and
-// "Use the standard recipe" undoes it.
+// ingredient — on this entry only — and "Back to our estimate" undoes it.
 export function MealItemScreen() {
   const navigate = useNavigate()
   const itemId = Number(useParams().itemId)
@@ -47,7 +46,7 @@ export function MealItemScreen() {
       (prev) =>
         prev && {
           ...prev,
-          own_recipe: true,
+          edited: true,
           ingredients: prev.ingredients.map((row) =>
             row.ingredient_id === ingredient.ingredient_id ? { ...row, grams, edited: true } : row,
           ),
@@ -82,7 +81,7 @@ export function MealItemScreen() {
     saveTimers.current.forEach((id) => window.clearTimeout(id))
     saveTimers.current.clear()
     try {
-      const saved = await resetMealItemRecipe(itemId)
+      const saved = await resetMealItem(itemId)
       setItem((prev) => prev && { ...prev, ...saved })
       setError(null)
     } catch (e) {
@@ -120,14 +119,13 @@ export function MealItemScreen() {
       {item.ingredients.length === 0 ? (
         <p className="food-screen__empty">
           {item.needs_review
-            ? "This dish is new to us, so we don't have its ingredients yet. Your coach will check it."
+            ? "We couldn't work out the ingredients of this dish. Your coach will check it."
             : 'No ingredients are listed for this dish.'}
         </p>
       ) : (
         <>
           <p className="food-screen__lead">
-            This is what we assumed went into your portion. Change anything that is different in your kitchen and
-            we&apos;ll remember it for next time.
+            This is what we assumed went into your portion. Change anything that is different in your kitchen.
           </p>
           <div className="card food-ingredients">
             {item.ingredients.map((ingredient) => {
@@ -202,11 +200,11 @@ export function MealItemScreen() {
             })}
           </div>
 
-          {item.own_recipe && (
+          {item.ingredients.some((row) => row.grams !== row.default_grams) && (
             <div className="food-own-recipe">
-              <p>This is your own version of {item.name}. We&apos;ll use it whenever you log it.</p>
+              <p>You changed what went into this {item.name}.</p>
               <button className="btn-secondary" disabled={resetting} onClick={() => void reset()}>
-                {resetting ? 'Resetting…' : 'Use the standard recipe'}
+                {resetting ? 'Resetting…' : 'Back to our estimate'}
               </button>
             </div>
           )}

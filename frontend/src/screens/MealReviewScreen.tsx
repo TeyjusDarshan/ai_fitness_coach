@@ -154,7 +154,7 @@ export function MealReviewScreen() {
               <span className="food-card__meta">
                 {item.needs_review
                   ? 'New dish. Your coach will check it.'
-                  : `${item.protein_g} g protein${item.own_recipe ? ' · your recipe' : ''}`}
+                  : `${item.protein_g} g protein`}
               </span>
               {item.assumed && <span className="food-card__guess">We guessed the amount</span>}
             </button>

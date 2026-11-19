@@ -405,11 +405,6 @@ export interface FoodUsage {
   // Food recordings worked out (successfully or not), and how many failed.
   voice_notes: number
   failed: number
-  // Dishes and ingredients added to the shared tables (new ones estimated by Claude).
-  new_foods: number
-  new_ingredients: number
-  // Dishes she mentioned that were already in the table (each mention counts).
-  reused_foods: number
 }
 
 export interface ClientFoodUsage extends FoodUsage {
@@ -447,7 +442,6 @@ export type Nutrients = Record<string, number | null>
 
 export interface CoachMealItem {
   id: number
-  food_id: number | null
   name: string
   meal: string | null
   quantity: number
@@ -456,7 +450,6 @@ export interface CoachMealItem {
   assumed: boolean
   needs_review: boolean
   edited: boolean
-  own_recipe: boolean
   quote: string | null
   nutrients: Nutrients
   ingredients: { ingredient_id: number; name: string; grams: number; default_grams: number; edited: boolean }[]
@@ -506,58 +499,4 @@ export function saveNutritionTargets(
     method: 'PATCH',
     body: JSON.stringify(targets),
   })
-}
-
-// A dish: its household unit weights and its recipe (raw grams of each
-// ingredient per 100 g cooked).
-export interface LibraryFood {
-  id: number
-  name: string
-  aliases: string[]
-  default_unit: string
-  source: 'ai_estimate' | 'coach'
-  verified: boolean
-  portions: Record<string, number>
-  recipe: { ingredient_id: number; grams_per_100g: number }[]
-}
-
-// An ingredient: nutrients per 100 g raw.
-export interface LibraryIngredient extends Record<string, unknown> {
-  id: number
-  name: string
-  aliases: string[]
-  source: 'ai_estimate' | 'coach'
-  verified: boolean
-}
-
-export interface FoodLibrary {
-  foods: LibraryFood[]
-  ingredients: LibraryIngredient[]
-  portion_units: string[]
-  nutrients: string[]
-}
-
-export function fetchFoodLibrary(adminKey: string): Promise<FoodLibrary> {
-  return adminRequest(adminKey, '/admin/foods')
-}
-
-export function saveFood(
-  adminKey: string,
-  foodId: number,
-  change: {
-    verified?: boolean
-    default_unit?: string
-    portions?: Record<string, number>
-    recipe?: { ingredient_id: number; grams_per_100g: number }[]
-  },
-): Promise<LibraryFood> {
-  return adminRequest(adminKey, `/admin/foods/${foodId}`, { method: 'PATCH', body: JSON.stringify(change) })
-}
-
-export function saveIngredient(
-  adminKey: string,
-  ingredientId: number,
-  change: Record<string, number | boolean | null>,
-): Promise<Record<string, unknown>> {
-  return adminRequest(adminKey, `/admin/ingredients/${ingredientId}`, { method: 'PATCH', body: JSON.stringify(change) })
 }

@@ -11,7 +11,11 @@ import {
 } from '../../adminApi'
 import { portionLabel } from '../../food'
 import { formatDayDate } from '../../utils'
-import { MICRO_KEYS, NUTRIENT_LABELS, nutrientValue } from './foodLabels'
+import { NUTRIENT_LABELS, nutrientValue } from './foodLabels'
+
+// The day's columns; every other nutrient is listed when the day is opened.
+const SUMMARY_KEYS = ['energy_kcal', 'protein_g', 'carbs_g', 'fibre_g', 'fat_g', 'saturated_fat_g', 'unsaturated_fat_g']
+const DETAIL_KEYS = Object.keys(NUTRIENT_LABELS).filter((key) => !SUMMARY_KEYS.includes(key))
 
 const DAYS = 7
 
@@ -138,19 +142,17 @@ export function ClientFood({
                               <span className="costs__name">{formatDayDate(day.date)}</span>
                             </button>
                           </td>
-                          {['energy_kcal', 'protein_g', 'carbs_g', 'fibre_g', 'fat_g', 'saturated_fat_g', 'unsaturated_fat_g'].map(
-                            (key) => (
-                              <td key={key} className={`costs__num${key === 'protein_g' ? ' costs__total' : ''}`}>
-                                {nutrientValue(key, day.totals[key])}
-                              </td>
-                            ),
-                          )}
+                          {SUMMARY_KEYS.map((key) => (
+                            <td key={key} className={`costs__num${key === 'protein_g' ? ' costs__total' : ''}`}>
+                              {nutrientValue(key, day.totals[key])}
+                            </td>
+                          ))}
                         </tr>
                         {expanded && (
                           <tr className="costs__detail">
                             <td colSpan={8}>
                               <dl className="client-food__micros">
-                                {MICRO_KEYS.map((key) => (
+                                {DETAIL_KEYS.map((key) => (
                                   <div key={key}>
                                     <dt>{NUTRIENT_LABELS[key][0]}</dt>
                                     <dd>{nutrientValue(key, day.totals[key])}</dd>
@@ -171,8 +173,8 @@ export function ClientFood({
             </div>
           )}
           <p className="admin__muted client-food__note">
-            Estimates: amounts come from what she said and standard household measures, and nutrients from each
-            dish&apos;s recipe. Correct a dish or an ingredient in the Foods tab.
+            Estimates: Claude works out each dish&apos;s ingredients and their raw grams for her portion, and the
+            nutrients come from the ingredient reference table.
           </p>
         </>
       )}
@@ -325,7 +327,6 @@ function ItemBlock({ item }: { item: CoachMealItem }) {
         {item.meal && <span className="admin__muted">{item.meal}</span>}
         {item.assumed && <span className="monitor__chip monitor__chip--mild">Amount assumed</span>}
         {item.needs_review && <span className="monitor__chip monitor__chip--severe">Dish not worked out</span>}
-        {item.own_recipe && <span className="monitor__chip">Her own recipe</span>}
         {item.edited && <span className="monitor__chip">Edited by her</span>}
       </div>
       {!item.needs_review && (

@@ -56,10 +56,9 @@ def _food_row(user_id, feature, model, inr, provider="anthropic", calls=1):
             "calls": calls, "cost_inr_total": inr, "created_at": "2026-11-15T10:00:00+00:00"}
 
 
-def _meal_log(user_id, processed=True, error=None, new_foods=0, new_ingredients=0, reused=0):
+def _meal_log(user_id, processed=True, error=None):
     return {"user_id": user_id, "processed_at": "2026-11-15T10:00:00+00:00" if processed else None,
-            "error": error, "new_food_count": new_foods, "new_ingredient_count": new_ingredients,
-            "reused_food_count": reused}
+            "error": error}
 
 
 def test_summarize_food_by_model_and_per_client():
@@ -67,15 +66,15 @@ def test_summarize_food_by_model_and_per_client():
 
     rows = ROWS + [
         _food_row("usr_1", "meal_stt", "saaras:v4", 0.5, provider="sarvam"),
-        _food_row("usr_1", "meal_parsing", "claude-sonnet-5-5", 0.6),
-        _food_row("usr_1", "meal_parsing", "claude-sonnet-5-5", 0.4),
-        _food_row("usr_1", "recipe_estimation", "claude-opus-5-5", 12.0),
-        _food_row("usr_2", "meal_parsing", "claude-sonnet-5-5", 0.5),
-        _food_row("usr_2", "dry_run_meal_parsing", "claude-sonnet-5-5", 9.0),   # counted only if fetched
+        _food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 0.6),
+        _food_row("usr_1", "meal_estimation", "claude-sonnet-5-5", 0.4),
+        _food_row("usr_1", "recipe_estimation", "claude-opus-5-5", 12.0),           # before the rewrite
+        _food_row("usr_2", "meal_estimation", "claude-sonnet-5-5", 0.5),
+        _food_row("usr_2", "dry_run_meal_estimation", "claude-sonnet-5-5", 9.0),   # counted only if fetched
     ]
     logs = [
-        _meal_log("usr_1", new_foods=2, new_ingredients=11),
-        _meal_log("usr_1", reused=2),
+        _meal_log("usr_1"),
+        _meal_log("usr_1"),
         _meal_log("usr_2", error="no_food"),
         _meal_log("usr_2", processed=False),                                     # discarded before processing
     ]
@@ -88,11 +87,10 @@ def test_summarize_food_by_model_and_per_client():
         {"provider": "anthropic", "model": "claude-sonnet-5-5", "calls": 4, "inr": 10.5},
         {"provider": "sarvam", "model": "saaras:v4", "calls": 1, "inr": 0.5},
     ]
-    assert (food["voice_notes"], food["failed"], food["new_foods"], food["new_ingredients"], food["reused_foods"]) \
-        == (3, 1, 2, 11, 2)
+    assert (food["voice_notes"], food["failed"]) == (3, 1)
+    assert "new_foods" not in food
     first, second = food["clients"]
     assert (first["name"], first["total_inr"], first["voice_notes"], first["per_voice_note_inr"]) == ("Sasikala", 13.5, 2, 6.75)
-    assert (first["new_foods"], first["new_ingredients"], first["reused_foods"]) == (2, 11, 2)
     assert (second["name"], second["voice_notes"], second["failed"], second["total_inr"]) == ("Asha", 1, 1, 9.5)
 
 

@@ -19,14 +19,9 @@ def ctl(app_module, monkeypatch):
 
     repo = FakeRepo()
     repo.enabled = {"usr_1", "usr_2"}
-    rice = repo.add_food("Cooked Rice", {"karandi": 60}, {1: 35, 2: 1})
     log = repo.add_log("usr_1", status="ready")
-    repo.replace_items(log, [{
-        "food_id": rice, "food_name": "Cooked Rice", "meal": "lunch", "quote": "rendu karandi sadam",
-        "quantity": 2, "unit": "karandi", "grams": 120, "assumed": False, "needs_review": False,
-        "used_own_recipe": False,
-        "ingredients": [{"ingredient_id": 1, "grams": 42}, {"ingredient_id": 2, "grams": 1.2}],
-    }])
+    repo.add_item(log, "Cooked Rice", {1: 42, 2: 1.2}, meal="lunch", quote="rendu karandi sadam",
+                  quantity=2, unit="karandi", portion_grams=120)
     repo.get_meal_log_detail = lambda log_id: (
         {**repo.logs[log_id], "meal_log_items": repo.log_items(log_id)} if log_id in repo.logs else None
     )
@@ -35,7 +30,6 @@ def ctl(app_module, monkeypatch):
         if row["user_id"] == user_id and row["status"] != "discarded"
     ]
     repo.create_meal_log = lambda user_id, logged_for: repo.logs[repo.add_log(user_id, logged_for=logged_for.isoformat())]
-    repo.delete_item = lambda item_id: repo.items.pop(item_id)
     repo.get_targets = lambda user_id: None
     repo.set_targets = MagicMock(return_value=True)
 
@@ -87,7 +81,7 @@ def test_she_sees_her_log_and_item_with_ingredients(ctl, sign_in):
 
     assert (log["status"], log["items"][0]["name"], log["items"][0]["protein_g"]) == ("ready", "Cooked Rice", 2.9)
     assert "nutrients" not in log["items"][0] and "transcript" not in log
-    assert [(i["name"], i["grams"]) for i in item["ingredients"]] == [("Raw Rice", 42), ("Gingelly Oil", 1.2)]
+    assert [(i["name"], i["grams"]) for i in item["ingredients"]] == [("Raw white rice", 42), ("Sesame (gingelly) oil", 1.2)]
 
 
 @pytest.mark.parametrize("method, path, body", [
@@ -98,13 +92,14 @@ def test_she_sees_her_log_and_item_with_ingredients(ctl, sign_in):
     ("patch", "/api/meal-log-items/1", {"quantity": 1}),
     ("delete", "/api/meal-log-items/1", None),
     ("patch", "/api/meal-log-items/1/ingredients/2", {"grams": 0}),
-    ("post", "/api/meal-log-items/1/reset-recipe", None),
+    ("post", "/api/meal-log-items/1/reset", None),
 ])
 def test_another_client_cannot_see_or_change_her_log(ctl, sign_in, method, path, body):
     response = getattr(sign_in("usr_2"), method)(path, json=body)
 
     assert response.status_code == 404
-    assert 1 in ctl.repo.logs and 1 in ctl.repo.items and ctl.repo.user_recipes == {}
+    assert 1 in ctl.repo.logs and 1 in ctl.repo.items
+    assert {r["grams"] for r in ctl.repo.items[1]["meal_log_item_ingredients"]} == {42, 1.2}
 
 
 def test_edits_apply_and_come_back_in_the_response(ctl, sign_in):
@@ -114,13 +109,12 @@ def test_edits_apply_and_come_back_in_the_response(ctl, sign_in):
     no_oil = client.patch("/api/meal-log-items/1/ingredients/2", json={"grams": 0}).get_json()
 
     assert (smaller["quantity"], smaller["grams"]) == (1, 60)
-    assert no_oil["own_recipe"] and no_oil["ingredients"][1]["grams"] == 0
-    assert ("usr_1", 1) in ctl.repo.user_recipes
+    assert no_oil["edited"] and no_oil["ingredients"][1]["grams"] == 0
     assert client.patch("/api/meal-log-items/1", json={"quantity": "2"}).status_code == 400
     assert client.patch("/api/meal-log-items/1/ingredients/2", json={"grams": -1}).status_code == 400
 
-    reset = client.post("/api/meal-log-items/1/reset-recipe").get_json()
-    assert not reset["own_recipe"] and ctl.repo.user_recipes == {}
+    reset = client.post("/api/meal-log-items/1/reset").get_json()
+    assert [i["grams"] for i in reset["ingredients"]] == [21, 0.6]
 
 
 def test_confirm_and_delete(ctl, sign_in):
@@ -156,7 +150,7 @@ def test_coach_view_has_every_nutrient_and_needs_the_admin_key(ctl, app_module):
     day = body["days"][0]
     assert day["totals"]["fat_g"] == 1.4 and "calcium_mg" in day["totals"]
     item = day["logs"][0]["items"][0]
-    assert item["quote"] == "rendu karandi sadam" and item["ingredients"][0]["name"] == "Raw Rice"
+    assert item["quote"] == "rendu karandi sadam" and item["ingredients"][0]["name"] == "Raw white rice"
 
 
 def test_coach_sets_targets(ctl, app_module):
@@ -179,7 +173,7 @@ def test_coach_sets_targets(ctl, app_module):
     ("patch", "/api/meal-log-items/1", {"quantity": 1}),
     ("delete", "/api/meal-log-items/1", None),
     ("patch", "/api/meal-log-items/1/ingredients/2", {"grams": 0}),
-    ("post", "/api/meal-log-items/1/reset-recipe", None),
+    ("post", "/api/meal-log-items/1/reset", None),
     ("get", "/api/users/usr_1/diet", None),
 ])
 def test_everything_is_refused_until_the_coach_switches_it_on(ctl, sign_in, method, path, body):

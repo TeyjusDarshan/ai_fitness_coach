@@ -213,7 +213,7 @@ export interface MealIngredient {
   ingredient_id: number
   name: string
   grams: number
-  // What the recipe gave before she changed it.
+  // What was estimated before she changed it.
   default_grams: number
   edited: boolean
   // Shown in this unit (teaspoon, piece…) instead of grams when set.
@@ -224,7 +224,6 @@ export interface MealIngredient {
 // One dish she said she ate.
 export interface MealItem {
   id: number
-  food_id: number | null
   name: string
   meal: MealName | null
   quantity: number
@@ -235,8 +234,6 @@ export interface MealItem {
   // A dish that couldn't be worked out yet (no nutrients).
   needs_review: boolean
   edited: boolean
-  // Built from her own version of the dish, not the standard recipe.
-  own_recipe: boolean
   protein_g: number
   fibre_g: number
   energy_kcal: number

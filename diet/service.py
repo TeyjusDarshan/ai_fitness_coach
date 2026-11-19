@@ -1,13 +1,14 @@
 """What the diet endpoints do with stored rows: shape logs and items for
 the screens, total a day, and apply her edits (portion size, an
-ingredient's amount, reset to the standard recipe)."""
+ingredient's amount, back to the estimate). Every edit recomputes the
+item's stored nutrients from its ingredient rows."""
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from diet.nutrition import (
-    WEIGHT_UNITS, add_totals, empty_totals, nutrients_of, recipe_from_amounts, rounded, scale_recipe, targets_for,
+    WEIGHT_UNITS, add_totals, display_unit, empty_totals, nutrients_of, rounded, targets_for,
 )
-from diet.repository import DietRepository
+from diet.repository import REFERENCE_TABLE, DietRepository
 
 # A log whose processing never finished (consumer down, a lost event) is
 # shown as failed after this long, so she can record again.
@@ -27,13 +28,13 @@ def log_status(log: Dict[str, Any], now: Optional[datetime] = None) -> str:
     return log["status"]
 
 
-def _ingredient_rows(item: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """An item's ingredient rows as {grams, ingredient, ...} for nutrients_of."""
-    return [{**row, "ingredient": row.get("ingredients") or {}} for row in item.get("meal_log_item_ingredients") or []]
+def _rows(item: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return item.get("meal_log_item_ingredients") or []
 
 
 def item_nutrients(item: Dict[str, Any]) -> Dict[str, float]:
-    return nutrients_of(_ingredient_rows(item))
+    """The item's stored nutrient totals (every key, missing ones 0)."""
+    return add_totals(empty_totals(), item.get("nutrients"))
 
 
 def shape_item(item: Dict[str, Any], detail: bool = False, nutrients: bool = False) -> Dict[str, Any]:
@@ -43,16 +44,14 @@ def shape_item(item: Dict[str, Any], detail: bool = False, nutrients: bool = Fal
     totals = item_nutrients(item)
     shaped = {
         "id": item["id"],
-        "food_id": item.get("food_id"),
-        "name": item["food_name"],
+        "name": item["dish_name"],
         "meal": item.get("meal"),
         "quantity": float(item["quantity"]),
         "unit": item["unit"],
-        "grams": float(item["grams"]) if item.get("grams") is not None else None,
+        "grams": float(item["portion_grams"]) if item.get("portion_grams") is not None else None,
         "assumed": bool(item.get("assumed")),
         "needs_review": bool(item.get("needs_review")),
         "edited": bool(item.get("edited")),
-        "own_recipe": bool(item.get("used_own_recipe")),
         "protein_g": round(totals["protein_g"], 1),
         "fibre_g": round(totals["fibre_g"], 1),
         "energy_kcal": round(totals["energy_kcal"]),
@@ -61,18 +60,20 @@ def shape_item(item: Dict[str, Any], detail: bool = False, nutrients: bool = Fal
         shaped["nutrients"] = rounded(totals)
         shaped["quote"] = item.get("quote")
     if detail:
-        shaped["ingredients"] = sorted((
-            {
-                "ingredient_id": row["ingredient_id"],
-                "name": (row.get("ingredients") or {}).get("name"),
+        ingredients = []
+        for row in _rows(item):
+            reference = row.get(REFERENCE_TABLE) or {}
+            unit, per_unit = display_unit(reference.get("category"), row.get("ingredient_name"))
+            ingredients.append({
+                "ingredient_id": row["reference_id"],
+                "name": row.get("ingredient_name"),
                 "grams": float(row["grams"]),
                 "default_grams": float(row["default_grams"]),
                 "edited": bool(row.get("edited")),
-                "display_unit": (row.get("ingredients") or {}).get("display_unit"),
-                "grams_per_display_unit": (row.get("ingredients") or {}).get("grams_per_display_unit"),
-            }
-            for row in item.get("meal_log_item_ingredients") or []
-        ), key=lambda row: -row["default_grams"])
+                "display_unit": unit,
+                "grams_per_display_unit": per_unit,
+            })
+        shaped["ingredients"] = sorted(ingredients, key=lambda row: -row["default_grams"])
     return shaped
 
 
@@ -100,7 +101,7 @@ def totals_of(logs: List[Dict[str, Any]]) -> Dict[str, float]:
     for log in logs:
         if log["status"] in COUNTED_STATUSES:
             for item in log.get("meal_log_items") or []:
-                add_totals(totals, item_nutrients(item))
+                add_totals(totals, item.get("nutrients"))
     return totals
 
 
@@ -120,8 +121,19 @@ class EditError(ValueError):
     """Why an edit can't be applied (shown to the client)."""
 
 
+def _save(repo: DietRepository, item: Dict[str, Any], rows: List[Dict[str, Any]], fields: Dict[str, Any]) -> None:
+    """Write new ingredient amounts and the item's fields, with its
+    nutrients recomputed from those amounts."""
+    repo.set_item_ingredients(item["id"], [
+        {key: row[key] for key in ("reference_id", "ingredient_name", "grams", "default_grams", "edited")}
+        for row in rows
+    ])
+    totals = nutrients_of({"grams": row["grams"], "reference": row.get(REFERENCE_TABLE)} for row in rows)
+    repo.update_item(item["id"], {**fields, "nutrients": rounded(totals, 3)})
+
+
 def change_quantity(repo: DietRepository, item: Dict[str, Any], quantity: float) -> None:
-    """A different portion of the same dish: the item's grams and every
+    """A different portion of the same dish: its weight and every
     ingredient amount scale with it."""
     # An amount said in grams or ml is a weight, not a count of servings.
     low, high = (1, MAX_INGREDIENT_GRAMS) if item["unit"] in WEIGHT_UNITS else (MIN_QUANTITY, MAX_QUANTITY)
@@ -129,58 +141,36 @@ def change_quantity(repo: DietRepository, item: Dict[str, Any], quantity: float)
         raise EditError(f"Quantity must be between {low} and {high}.")
     ratio = quantity / float(item["quantity"])
     fields: Dict[str, Any] = {"quantity": quantity, "edited": True, "assumed": False}
-    if item.get("grams") is not None:
-        fields["grams"] = round(float(item["grams"]) * ratio, 1)
-    repo.update_item(item["id"], fields)
-    repo.set_item_ingredients(item["id"], [
-        {
-            "ingredient_id": row["ingredient_id"],
-            "grams": round(float(row["grams"]) * ratio, 2),
-            "default_grams": round(float(row["default_grams"]) * ratio, 2),
-            "edited": bool(row.get("edited")),
-        }
-        for row in item.get("meal_log_item_ingredients") or []
-    ])
+    if item.get("portion_grams") is not None:
+        fields["portion_grams"] = round(float(item["portion_grams"]) * ratio, 1)
+    rows = [
+        {**row, "grams": round(float(row["grams"]) * ratio, 2),
+         "default_grams": round(float(row["default_grams"]) * ratio, 2)}
+        for row in _rows(item)
+    ]
+    _save(repo, item, rows, fields)
 
 
-def change_ingredient(repo: DietRepository, item: Dict[str, Any], user_id: str, ingredient_id: int,
-                      grams: float) -> None:
+def change_ingredient(repo: DietRepository, item: Dict[str, Any], ingredient_id: int, grams: float) -> None:
     """She changed how much of one ingredient is in this dish (0 removes
-    it). The entry changes, and the dish as she makes it — this entry's
-    ingredient amounts per 100 g — becomes her version for future logs. The
-    shared recipe isn't touched."""
+    it). Only this entry changes."""
     if not 0 <= grams <= MAX_INGREDIENT_GRAMS:
         raise EditError(f"Amount must be between 0 and {MAX_INGREDIENT_GRAMS} g.")
-    rows = item.get("meal_log_item_ingredients") or []
-    row = next((row for row in rows if row["ingredient_id"] == ingredient_id), None)
-    if row is None:
+    rows = _rows(item)
+    if not any(row["reference_id"] == ingredient_id for row in rows):
         raise EditError("That ingredient isn't in this dish.")
-    repo.set_item_ingredients(item["id"], [{
-        "ingredient_id": ingredient_id, "grams": round(grams, 2),
-        "default_grams": float(row["default_grams"]), "edited": True,
-    }])
-    repo.update_item(item["id"], {"edited": True, "used_own_recipe": True})
-    if item.get("food_id") is not None and item.get("grams"):
-        amounts = [
-            {"ingredient_id": r["ingredient_id"], "grams": grams if r["ingredient_id"] == ingredient_id else r["grams"]}
-            for r in rows
-        ]
-        repo.replace_user_recipe(user_id, item["food_id"], recipe_from_amounts(amounts, float(item["grams"])))
+    rows = [
+        {**row, "grams": round(grams, 2), "edited": True} if row["reference_id"] == ingredient_id else row
+        for row in rows
+    ]
+    _save(repo, item, rows, {"edited": True})
 
 
-def reset_recipe(repo: DietRepository, item: Dict[str, Any], user_id: str) -> None:
-    """Back to the standard recipe: her version of the dish is dropped and
-    this entry's ingredients are rebuilt from the shared one."""
-    food_id = item.get("food_id")
-    if food_id is None or not item.get("grams"):
-        raise EditError("This dish has no standard recipe yet.")
-    food = repo.get_foods([food_id]).get(food_id)
-    if not food or not food["recipe"]:
-        raise EditError("This dish has no standard recipe yet.")
-    repo.delete_user_recipe(user_id, food_id)
-    repo.clear_item_ingredients(item["id"])
-    repo.set_item_ingredients(item["id"], [
-        {**line, "default_grams": line["grams"], "edited": False}
-        for line in scale_recipe(food["recipe"], float(item["grams"]))
-    ])
-    repo.update_item(item["id"], {"used_own_recipe": False})
+def reset_item(repo: DietRepository, item: Dict[str, Any]) -> None:
+    """Back to the estimate: every ingredient to the amount first worked
+    out for this portion."""
+    rows = _rows(item)
+    if not rows:
+        raise EditError("This dish has no ingredients to reset.")
+    rows = [{**row, "grams": float(row["default_grams"]), "edited": False} for row in rows]
+    _save(repo, item, rows, {})

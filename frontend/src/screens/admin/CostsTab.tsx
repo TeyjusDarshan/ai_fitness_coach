@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from 'react'
-import { fetchCosts, type CostSummary, type FeatureCost, type FoodUsage, type ModelCost } from '../../adminApi'
+import { fetchCosts, type CostSummary, type FeatureCost, type ModelCost } from '../../adminApi'
 import { ApiError } from '../../api'
 
 const RANGES = [7, 30, 90] as const
@@ -18,6 +18,7 @@ const FEATURE_LABELS: Record<string, string> = {
   meal_stt: 'Food recordings → text',
   meal_parsing: 'Food: what she ate',
   recipe_estimation: 'Food: new dish recipes',
+  ingredient_nutrients: 'Food: new ingredient nutrients',
 }
 
 const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam' } as const
@@ -31,8 +32,8 @@ const MODEL_LABELS: Record<string, string> = {
 
 // What each model does in diet tracking.
 const MODEL_ROLES: Record<string, string> = {
-  'claude-opus-5-5': 'Recipes for new dishes',
-  'claude-sonnet-5-5': 'Working out what she ate',
+  'claude-opus-5-5': 'Nutrients of new ingredients',
+  'claude-sonnet-5-5': 'Working out what she ate; recipes for new dishes',
   'saaras:v4': 'Recordings → text',
 }
 
@@ -242,14 +243,8 @@ function FeatureTable({ features }: { features: FeatureCost[] }) {
   )
 }
 
-// The share of dishes she mentioned that were already in the table.
-function reuseRate(usage: FoodUsage): string {
-  const mentioned = usage.reused_foods + usage.new_foods
-  return mentioned ? `${Math.round((usage.reused_foods / mentioned) * 100)}%` : '—'
-}
-
 // Diet tracking on its own: its cost by model, and per client the food
-// recordings processed and what they added to or reused from the food tables.
+// recordings processed and how many failed.
 function FoodSection({ food, days }: { food: CostSummary['food']; days: number }) {
   const [open, setOpen] = useState<string | null>(null)
   return (
@@ -263,9 +258,6 @@ function FoodSection({ food, days }: { food: CostSummary['food']; days: number }
             <Stat label="Food tracking cost" value={inr(food.total_inr)} strong />
             <Stat label="Recordings processed" value={`${food.voice_notes}${food.failed ? ` (${food.failed} failed)` : ''}`} />
             <Stat label="Per recording" value={inr(food.per_voice_note_inr)} />
-            <Stat label="New dishes added" value={String(food.new_foods)} />
-            <Stat label="New ingredients added" value={String(food.new_ingredients)} />
-            <Stat label="Dishes reused from table" value={`${food.reused_foods} (${reuseRate(food)})`} />
           </div>
 
           <h3 className="costs__subtitle">By model</h3>
@@ -279,9 +271,6 @@ function FoodSection({ food, days }: { food: CostSummary['food']; days: number }
                   <th>Client</th>
                   <th className="costs__num">Recordings</th>
                   <th className="costs__num">Failed</th>
-                  <th className="costs__num">New dishes</th>
-                  <th className="costs__num">New ingredients</th>
-                  <th className="costs__num">Reused dishes</th>
                   <th className="costs__num">Cost</th>
                   <th className="costs__num">Per recording</th>
                 </tr>
@@ -308,15 +297,12 @@ function FoodSection({ food, days }: { food: CostSummary['food']; days: number }
                         </td>
                         <td className="costs__num">{client.voice_notes}</td>
                         <td className="costs__num">{client.failed}</td>
-                        <td className="costs__num">{client.new_foods}</td>
-                        <td className="costs__num">{client.new_ingredients}</td>
-                        <td className="costs__num">{client.reused_foods}</td>
                         <td className="costs__num costs__total">{inr(client.total_inr)}</td>
                         <td className="costs__num">{inr(client.per_voice_note_inr)}</td>
                       </tr>
                       {expanded && (
                         <tr className="costs__detail">
-                          <td colSpan={8}>
+                          <td colSpan={5}>
                             <ModelTable models={client.by_model} />
                           </td>
                         </tr>
@@ -328,8 +314,7 @@ function FoodSection({ food, days }: { food: CostSummary['food']; days: number }
             </table>
           </div>
           <p className="admin__muted costs__note">
-            A new dish is paid for once, by the client who first mentions it; everyone after reuses it. Discarded
-            recordings still count. Dishes are counted per mention.
+            Every recording is worked out by Claude on its own. Discarded recordings still count.
           </p>
         </>
       )}

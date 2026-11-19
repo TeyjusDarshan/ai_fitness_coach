@@ -181,8 +181,7 @@ export function deleteMealItem(itemId: number): Promise<unknown> {
   return request(`/meal-log-items/${itemId}`, { method: 'DELETE' })
 }
 
-// How much of one ingredient is in this dish (0 removes it). Also becomes
-// her own version of the dish for future logs.
+// How much of one ingredient is in this dish (0 removes it), on this entry only.
 export function setMealItemIngredient(itemId: number, ingredientId: number, grams: number): Promise<MealItemDetail> {
   return request(`/meal-log-items/${itemId}/ingredients/${ingredientId}`, {
     method: 'PATCH',
@@ -190,8 +189,9 @@ export function setMealItemIngredient(itemId: number, ingredientId: number, gram
   })
 }
 
-export function resetMealItemRecipe(itemId: number): Promise<MealItemDetail> {
-  return request(`/meal-log-items/${itemId}/reset-recipe`, { method: 'POST' })
+// Every ingredient of this entry back to the estimated amount.
+export function resetMealItem(itemId: number): Promise<MealItemDetail> {
+  return request(`/meal-log-items/${itemId}/reset`, { method: 'POST' })
 }
 
 export { ApiError }

@@ -109,7 +109,6 @@ export function FoodScreen() {
         <span className="food-item-row__portion">
           {item.assumed ? 'about ' : ''}
           {portionLabel(item)}
-          {item.own_recipe ? ' · your recipe' : ''}
         </span>
       </span>
       <span className="food-item-row__protein">

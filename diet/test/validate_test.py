@@ -1,36 +1,62 @@
-from diet.nutrition import name_key, nutrients_of, portion_grams, recipe_from_amounts, scale_recipe
-from diet.test.fakes import new_dish, new_ingredient, parsed
-from diet.validate import quote_in_text, validate_dish, validate_ingredient, validate_items
+from diet.nutrition import display_unit, name_key, nutrients_of
+from diet.test.fakes import OIL, RICE, URAD, dish
+from diet.validate import quote_in_text, validate_meal
 
-TRANSCRIPT = "kaalaila moonu idli, oru karandi sambar saapten"
-
-
-def test_items_must_quote_what_she_said():
-    items = validate_items(parsed(
-        ("moonu idli", 1, "Idli", 3, "piece"),
-        ("rendu vadai", None, "Vadai", 2, "piece"),          # never said
-    ).items, TRANSCRIPT, {1})
-
-    assert [(i["food_id"], i["food_name"], i["quantity"], i["unit"]) for i in items] == [(1, "Idli", 3, "piece")]
+TRANSCRIPT = "kaalaila moonu idli, oru karandi sadam saapten"
+BY_KEY = {name_key(row["name"]): row for row in (RICE, OIL, URAD)}
+IDLI = [("Raw white rice", 45), ("Urad dal", 15)]
 
 
-def test_unknown_food_id_becomes_a_new_dish_and_no_amount_is_left_open():
-    items = validate_items(parsed(
-        ("oru karandi sambar", 99, "Sambar", 1, "karandi"),
-        ("Moonu IDLI,", None, "Idli", 1, "piece", False),
-    ).items, TRANSCRIPT, {1})
-
-    assert items[0]["food_id"] is None
-    assert (items[1]["quantity"], items[1]["unit"]) == (None, None)
+def _validate(*dishes):
+    return validate_meal(list(dishes), TRANSCRIPT, BY_KEY)
 
 
-def test_quantities_are_kept_in_range():
-    items = validate_items(parsed(
-        ("moonu idli", 1, "Idli", 300, "piece"),
-        ("oru karandi sambar", None, "Sambar", 5000, "grams"),
-    ).items, TRANSCRIPT, {1})
+def test_a_dish_keeps_its_ingredient_lines_with_their_reference_rows():
+    [kept] = _validate(dish("moonu idli", "Idli", 3, "piece", 120, IDLI, meal="breakfast"))
 
-    assert [i["quantity"] for i in items] == [20, 2000]
+    assert (kept["dish_name"], kept["quantity"], kept["unit"], kept["meal"]) == ("Idli", 3, "piece", "breakfast")
+    assert (kept["portion_grams"], kept["assumed"], kept["needs_review"]) == (120, False, False)
+    assert [(line["reference"]["id"], line["grams"]) for line in kept["ingredients"]] == [(1, 45), (3, 15)]
+
+
+def test_dishes_must_quote_what_she_said():
+    kept = _validate(
+        dish("moonu idli", "Idli", 3, "piece", 120, IDLI),
+        dish("rendu vadai", "Vadai", 2, "piece", 80, [("Urad dal", 40)]),     # never said
+        dish("oru karandi sadam", "", 1, "karandi", 60, [("Raw white rice", 21)]),  # no name
+    )
+
+    assert [d["dish_name"] for d in kept] == ["Idli"]
+
+
+def test_duplicate_ingredients_are_merged_and_names_match_loosely():
+    [kept] = _validate(dish("oru karandi sadam", "Rice", 1, "karandi", 60, [
+        ("Raw white rice", 15), ("raw  WHITE rice", 6), ("Sesame (gingelly) oil", 1),
+    ]))
+
+    assert [(line["reference"]["id"], line["grams"]) for line in kept["ingredients"]] == [(1, 21), (2, 1)]
+
+
+def test_an_implausible_estimate_is_kept_for_review_without_ingredients():
+    kept = _validate(
+        dish("moonu idli", "Idli", 3, "piece", 120, [("Raw white rice", 900)]),         # far too much raw food
+        dish("moonu idli", "Idli", 3, "piece", 120, [("Unicorn", 30), ("Urad dal", 10)]),  # unknown name
+        dish("moonu idli", "Idli", 3, "piece", 0, IDLI),                                # no weight
+        dish("moonu idli", "Idli", 3, "piece", 120, []),                                # no ingredients
+    )
+
+    assert [(d["needs_review"], d["ingredients"]) for d in kept] == [(True, [])] * 4
+
+
+def test_quantities_are_kept_in_range_and_a_missing_amount_is_assumed():
+    kept = _validate(
+        dish("moonu idli", "Idli", 300, "piece", 120, IDLI),
+        dish("oru karandi sadam", "Rice", 5000, "grams", 60, [("Raw white rice", 21)]),
+        dish("Moonu IDLI,", "Idli", 1, "piece", 40, [("Raw white rice", 15)], stated=False),
+    )
+
+    assert [d["quantity"] for d in kept] == [20, 2000, 1]
+    assert [d["assumed"] for d in kept] == [False, False, True]
 
 
 def test_quote_check_ignores_case_and_punctuation():
@@ -38,55 +64,10 @@ def test_quote_check_ignores_case_and_punctuation():
     assert not quote_in_text("", "anything")
 
 
-def test_ingredient_with_impossible_macros_is_dropped():
-    assert validate_ingredient(new_ingredient("Magic", protein=60, carbs=50, fat=10)) is None
-    assert validate_ingredient(new_ingredient("Odd Fat", fat=5, saturated_fat_g=4, unsaturated_fat_g=4)) is None
-    assert validate_ingredient(new_ingredient("Odd Fibre", carbs=2, fibre_g=9)) is None
-
-
-def test_ingredient_energy_is_recomputed_when_far_off():
-    row = validate_ingredient(new_ingredient("Toor Dal", protein=22, carbs=60, fat=1.5, energy_kcal=900))
-
-    assert row["energy_kcal"] == 4 * 22 + 4 * 60 + 9 * 1.5
-    assert row["name_key"] == "toor dal"
-    assert row["calcium_mg"] is None
-
-
-def test_ingredient_display_unit_needs_a_weight():
-    with_unit = validate_ingredient(new_ingredient("Ghee", protein=0, carbs=0, fat=99, fibre_g=0, display_unit="teaspoon", grams_per_display_unit=5))
-    without = validate_ingredient(new_ingredient("Ghee", protein=0, carbs=0, fat=99, fibre_g=0, display_unit="teaspoon"))
-
-    assert (with_unit["display_unit"], with_unit["grams_per_display_unit"]) == ("teaspoon", 5)
-    assert without["display_unit"] is None
-
-
-def test_dish_recipe_resolves_ingredients_by_id_or_name():
-    dish = validate_dish(new_dish(
-        "Sambar", {"karandi": 50, "cup": 150, "piece": 5000},
-        [(1, "Raw Rice", 10), (None, "Toor Dal", 6), (None, "toor  dal", 2)], default_unit="plate",
-    ), {"raw rice": 1, "toor dal": 7})
-
-    assert dish["portions"] == {"karandi": 50, "cup": 150}        # the absurd weight is left out
-    assert dish["default_unit"] == "karandi"                      # "plate" has no weight
-    assert dish["recipe"] == [{"ingredient_id": 1, "grams_per_100g": 10}, {"ingredient_id": 7, "grams_per_100g": 8}]
-
-
-def test_dish_with_an_unknown_ingredient_or_absurd_total_is_dropped():
-    known = {"raw rice": 1}
-    assert validate_dish(new_dish("X", {"cup": 100}, [(None, "Unicorn", 10), (1, "Raw Rice", 30)]), known) is None
-    assert validate_dish(new_dish("X", {"cup": 100}, [(1, "Raw Rice", 2)]), known) is None
-    assert validate_dish(new_dish("X", {}, [(1, "Raw Rice", 30)]), known) is None
-
-
 def test_nutrition_maths():
     assert name_key(" Curd-Rice ") == "curd rice"
-    assert portion_grams(2, "karandi", {"karandi": 60}) == 120
-    assert portion_grams(150, "ml", {}) == 150
-    assert portion_grams(1, "plate", {"karandi": 60}) is None
-
-    amounts = scale_recipe([{"ingredient_id": 1, "grams_per_100g": 35}], 120)
-    assert amounts == [{"ingredient_id": 1, "grams": 42}]
-    assert recipe_from_amounts(amounts, 120) == [{"ingredient_id": 1, "grams_per_100g": 35}]
-
-    totals = nutrients_of([{"grams": 42, "ingredient": {"protein_g": 7, "calcium_mg": None}}])
+    totals = nutrients_of([{"grams": 42, "reference": {"protein_g": 7, "calcium_mg": None}}])
     assert round(totals["protein_g"], 2) == 2.94 and totals["calcium_mg"] == 0
+    assert display_unit("oil_ghee", "Ghee") == ("teaspoon", 5.0)
+    assert display_unit("spice", "Salt") == ("teaspoon", 6.0)
+    assert display_unit("carb", "Raw white rice") == (None, None)

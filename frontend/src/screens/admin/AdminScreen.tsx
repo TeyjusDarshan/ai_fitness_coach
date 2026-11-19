@@ -13,7 +13,6 @@ import { PlannerStep } from './PlannerStep'
 import { ProfileStep } from './ProfileStep'
 import { MonitorFlow } from './MonitorFlow'
 import { CostsTab } from './CostsTab'
-import { FoodsTab } from './FoodsTab'
 import { PlanSavedCard, ReviewStep } from './ReviewStep'
 
 // Coach-only: onboarding (client notes -> generated profile -> hand-built
@@ -28,7 +27,7 @@ export function AdminScreen() {
   const [options, setOptions] = useState<PlanBuilderOptions | null>(null)
   const [unlocking, setUnlocking] = useState(false)
   const [unlockError, setUnlockError] = useState<string | null>(null)
-  const [section, setSection] = useState<'onboard' | 'monitor' | 'foods' | 'costs'>('onboard')
+  const [section, setSection] = useState<'onboard' | 'monitor' | 'costs'>('onboard')
 
   async function unlock(key: string) {
     setUnlocking(true)
@@ -119,7 +118,6 @@ export function AdminScreen() {
           [
             ['onboard', 'Onboard client'],
             ['monitor', 'Monitor clients'],
-            ['foods', 'Foods'],
             ['costs', 'Costs'],
           ] as const
         ).map(([key, label]) => (
@@ -142,11 +140,6 @@ export function AdminScreen() {
       <div className="admin__panel" hidden={section !== 'monitor'}>
         <MonitorFlow adminKey={adminKey} onUnauthorized={onUnauthorized} />
       </div>
-      {section === 'foods' && (
-        <div className="admin__panel">
-          <FoodsTab adminKey={adminKey} onUnauthorized={onUnauthorized} />
-        </div>
-      )}
       {section === 'costs' && (
         <div className="admin__panel">
           <CostsTab adminKey={adminKey} onUnauthorized={onUnauthorized} />
