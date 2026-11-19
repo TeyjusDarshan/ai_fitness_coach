@@ -71,13 +71,10 @@ def estimate_meal(transcript: str, ingredient_names: List[str], user_id: Optiona
         system=MEAL_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
+            # Not cached: recordings are usually further apart than the cache
+            # lasts, so a cache write (1.25x) would cost more than it saves.
             "content": [
-                # The same list on every call: cached, so only the transcript is new.
-                {
-                    "type": "text",
-                    "text": json.dumps({"ingredients": list(names)}, ensure_ascii=False),
-                    "cache_control": {"type": "ephemeral"},
-                },
+                {"type": "text", "text": json.dumps({"ingredients": list(names)}, ensure_ascii=False)},
                 {"type": "text", "text": json.dumps({"transcript": transcript}, ensure_ascii=False)},
             ],
         }],
