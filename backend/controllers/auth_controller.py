@@ -90,17 +90,20 @@ def _registering_user(body: dict):
 
 
 def _signed_in_user(user_id: str, row: Optional[dict] = None) -> dict:
-    """The {user_id, name, gender, diet_enabled} body sign-in and /me return, from the
+    """The {user_id, name, gender, diet_enabled, diet_setup_done} body sign-in and /me return, from the
     user's user_profiles row (fetched when not already in hand). `name` is
     the coach-entered display name, or None for a user who doesn't have one
     yet (the PWA then shows the user_id); `gender` is male / female / other,
     or None when the coach hasn't set it; `diet_enabled` says whether the
-    coach switched diet tracking on for them (the PWA hides Food otherwise)."""
+    coach switched diet tracking on for them (the PWA hides Food otherwise);
+    `diet_setup_done` whether they finished the one-time diet setup (until
+    then the PWA's Food screens send them to it)."""
     if row is None:
         row = auth_repo.get_user_auth_row(user_id) or {}
     return {
         "user_id": user_id, "name": row.get("name"), "gender": row.get("gender"),
         "diet_enabled": row.get("diet_enabled") is True,
+        "diet_setup_done": row.get("diet_setup") is not None,
     }
 
 

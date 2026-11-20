@@ -1,10 +1,12 @@
 // TEMPORARY mock of the diet screens (not for commit): the real FoodScreen,
 // MealReviewScreen and MealItemScreen against an in-memory fake API.
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
+import { MemoryRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom'
+import type React from 'react'
 import './index.css'
 import './styles/screens.css'
-import { AppStateProvider } from './state/AppStateContext'
+import { AppStateProvider, useAppState } from './state/AppStateContext'
+import { DietSetupScreen } from './screens/DietSetupScreen'
 import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
@@ -65,7 +67,33 @@ function totalsOf(list: Item[]) {
   for (const it of list) for (const r of it.rows) for (const k of KEYS) t[k] += (byId[r.reference_id][k] * r.grams) / 100
   return Object.fromEntries(KEYS.map((k) => [k, Math.round(t[k] * 10) / 10]))
 }
-const TARGETS = { energy_kcal: 1800, protein_g: 50, fibre_g: 25, carbs_g: 225, fat_g: 60 }
+let TARGETS = { energy_kcal: 1800, protein_g: 50, fibre_g: 25, carbs_g: 225, fat_g: 60 }
+// ?setup=1 starts before the one-time setup. Same formula as diet/setup.py.
+let setupDone = new URLSearchParams(location.search).get('setup') !== '1'
+function assessSetup(b: Record<string, number>) {
+  const bmi = Math.round((b.weight_kg / (b.height_cm / 100) ** 2) * 10) / 10
+  const category = bmi < 18.5 ? 'underweight' : bmi >= 25 ? 'overweight' : 'healthy'
+  const bmr = 10 * b.weight_kg + 6.25 * b.height_cm - 5 * b.age - 161
+  return {
+    bmi, bmi_category: category, bmr: Math.round(bmr), tdee: Math.round(bmr * 1.375),
+    recommended_goal: { underweight: 'gain', healthy: 'maintain', overweight: 'lose' }[category],
+    allowed_goals: category === 'underweight' ? ['maintain', 'gain'] : ['lose', 'maintain', 'gain'],
+  }
+}
+function completeSetup(b: Record<string, number>, goal: string) {
+  const a = assessSetup(b)
+  const bmr = 10 * b.weight_kg + 6.25 * b.height_cm - 5 * b.age - 161
+  const tdee = bmr * 1.375
+  let kcal = goal === 'gain' ? tdee + 300 : goal === 'lose' ? Math.max(tdee - Math.min(500, tdee * 0.2), bmr, 1200) : tdee
+  kcal = Math.round(kcal / 10) * 10
+  const protein = Math.round(1.2 * Math.min(b.weight_kg, 24.9 * (b.height_cm / 100) ** 2))
+  const fat = Math.round((kcal * 0.25) / 9)
+  const fibre = Math.round(Math.max(25, (kcal / 1000) * 14))
+  const carbs = Math.round((kcal - protein * 4 - fat * 9) / 4)
+  TARGETS = { energy_kcal: kcal, protein_g: protein, fibre_g: fibre, carbs_g: carbs, fat_g: fat }
+  setupDone = true
+  return { ...a, goal, adjustment_kcal: Math.round(kcal - tdee), targets: TARGETS }
+}
 const shapeItem = (it: Item, detail = false) => {
   const t = totalsOf([it])
   return {
@@ -91,7 +119,9 @@ const counted = (date: string) => logs.filter((l) => l.date === date && ['ready'
 
 function handle(method: string, path: string, body: Record<string, number>): unknown {
   let m
-  if (path === '/api/auth/me') return { user_id: 'u1', name: 'Test client', gender: 'female', diet_enabled: true }
+  if (path === '/api/auth/me') return { user_id: 'u1', name: 'Test client', gender: 'female', diet_enabled: true, diet_setup_done: setupDone }
+  if (method === 'POST' && path === '/api/users/u1/diet/setup/assess') return assessSetup(body)
+  if (method === 'POST' && path === '/api/users/u1/diet/setup') return completeSetup(body, (body as unknown as { goal: string }).goal)
   if ((m = path.match(/^\/api\/users\/u1\/diet\/days/))) {
     const n = Number(new URLSearchParams(path.split('?')[1]).get('days') ?? 10)
     return { targets: TARGETS, days: Array.from({ length: n }, (_, i) => ({ date: iso(i), totals: totalsOf(counted(iso(i))), dishes: counted(iso(i)).length })) }
@@ -136,6 +166,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
+// The same setup redirect as App.tsx's RequireDiet.
+function Gate({ children, setup = false }: { children: React.ReactNode; setup?: boolean }) {
+  const { authStatus, dietSetupDone } = useAppState()
+  if (authStatus !== 'signedIn') return null
+  if (dietSetupDone === setup) return <Navigate to={setup ? '/food' : '/food/setup'} replace />
+  return <>{children}</>
+}
+
 function Home() {
   const navigate = useNavigate()
   return (
@@ -152,9 +190,10 @@ createRoot(document.getElementById('root')!).render(
     <AppStateProvider>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/food" element={<FoodScreen />} />
-        <Route path="/food/log/:logId" element={<MealReviewScreen />} />
-        <Route path="/food/item/:itemId" element={<MealItemScreen />} />
+        <Route path="/food" element={<Gate><FoodScreen /></Gate>} />
+        <Route path="/food/setup" element={<Gate setup><DietSetupScreen /></Gate>} />
+        <Route path="/food/log/:logId" element={<Gate><MealReviewScreen /></Gate>} />
+        <Route path="/food/item/:itemId" element={<Gate><MealItemScreen /></Gate>} />
       </Routes>
       <BottomNav />
     </AppStateProvider>
@@ -162,3 +201,8 @@ createRoot(document.getElementById('root')!).render(
 )
 
 if (new URLSearchParams(location.search).get('tab') === 'past') setTimeout(() => (document.querySelectorAll('[role=tab]')[1] as HTMLElement | undefined)?.click(), 800)
+// ?clicks=N presses the setup's main button N times (for screenshots).
+const clicks = Number(new URLSearchParams(location.search).get('clicks') ?? 0)
+for (let i = 0; i < clicks; i++) {
+  setTimeout(() => (document.querySelector('.diet-setup .btn-primary') as HTMLElement | null)?.click(), 900 + i * 500)
+}

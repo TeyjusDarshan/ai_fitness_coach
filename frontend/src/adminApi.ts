@@ -474,8 +474,25 @@ export interface NutritionTargets {
   fat_g: number
 }
 
+// What she entered in her one-time diet setup and what it worked out.
+export interface DietSetup {
+  height_cm: number
+  weight_kg: number
+  age: number
+  bmi: number
+  bmi_category: 'underweight' | 'healthy' | 'overweight'
+  recommended_goal: 'lose' | 'maintain' | 'gain'
+  goal: 'lose' | 'maintain' | 'gain'
+  goal_confirmed: boolean
+  tdee: number
+  calculated_targets: NutritionTargets
+  completed_at: string
+}
+
 export interface ClientDiet {
   targets: NutritionTargets
+  // Null until she does the setup (the first time she opens Diet).
+  setup: DietSetup | null
   days: { date: string; totals: Nutrients; logs: CoachMealLog[] }[]
 }
 

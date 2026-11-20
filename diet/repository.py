@@ -167,3 +167,24 @@ class DietRepository:
             .eq("user_id", user_id).execute().data
         )
         return bool(rows)
+
+    # --- one-time setup --------------------------------------------------
+
+    def get_profile_basics(self, user_id: str) -> Optional[Dict[str, Any]]:
+        """Her gender and stored setup (None if there's no such user)."""
+        rows = (
+            self.client.table("user_profiles").select("gender, diet_setup")
+            .eq("user_id", user_id).limit(1).execute().data
+        )
+        return rows[0] if rows else None
+
+    def save_setup(self, user_id: str, setup: Dict[str, Any], targets: Dict[str, Any]) -> bool:
+        """Store her setup and the targets it worked out, only if she hasn't
+        done it before (one conditional update, so a double tap can't do it
+        twice). False if it was already done."""
+        rows = (
+            self.client.table("user_profiles")
+            .update({"diet_setup": setup, "nutrition_targets": targets})
+            .eq("user_id", user_id).is_("diet_setup", "null").execute().data
+        )
+        return bool(rows)

@@ -30,6 +30,7 @@ from backend.feedback_storage import (
 )
 from backend.repository.workout_plan_repository import app_today
 from diet import service
+from diet.setup import GOALS, INPUT_RANGES, SetupError, assess, calculate_goals
 from diet.nutrition import DEFAULT_TARGETS, TARGET_RANGES, rounded, targets_for
 from diet.repository import DietRepository
 
@@ -274,6 +275,78 @@ def get_recent_diet_days(user_id):
     }), 200
 
 
+# --- her one-time setup ----------------------------------------------------
+
+def _setup_inputs(body):
+    """(height_cm, weight_kg, age) from the body, or an error response."""
+    values = []
+    for key, (low, high) in INPUT_RANGES.items():
+        value = _number(body.get(key))
+        if value is None or not low <= value <= high:
+            return None, (jsonify({"error": f"'{key}' must be between {low} and {high}."}), 400)
+        values.append(value)
+    return values, None
+
+
+def _setup_profile(user_id):
+    """Her gender, or an error response (another user, or already set up)."""
+    if user_id != g.user_id:
+        return None, (jsonify({"error": "You don't have access to this user's food log."}), 403)
+    basics = diet_repo.get_profile_basics(user_id) or {}
+    if basics.get("diet_setup") is not None:
+        return None, (jsonify({"error": "Diet setup is already done.", "setup_done": True}), 409)
+    return basics.get("gender"), None
+
+
+@diet_bp.post("/api/users/<user_id>/diet/setup/assess")
+@require_diet
+def assess_diet_setup(user_id):
+    """`{height_cm, weight_kg, age}` -> her BMI, its category, the goal we
+    recommend (`lose` / `maintain` / `gain`) and the goals she may pick
+    instead. Stores nothing."""
+    gender, error = _setup_profile(user_id)
+    if error:
+        return error
+    values, error = _setup_inputs(request.get_json(silent=True) or {})
+    if error:
+        return error
+    return jsonify(assess(*values, gender)), 200
+
+
+@diet_bp.post("/api/users/<user_id>/diet/setup")
+@require_diet
+def complete_diet_setup(user_id):
+    """`{height_cm, weight_kg, age, goal}` — her one-time setup: works out her
+    daily targets (BMI + Mifflin-St Jeor, lightly active, for the goal she
+    confirmed or picked) and stores them with the setup. 409 once done."""
+    gender, error = _setup_profile(user_id)
+    if error:
+        return error
+    body = request.get_json(silent=True) or {}
+    values, error = _setup_inputs(body)
+    if error:
+        return error
+    goal = body.get("goal")
+    if goal not in GOALS:
+        return jsonify({"error": f"'goal' must be one of {', '.join(GOALS)}."}), 400
+    try:
+        result = calculate_goals(*values, gender, goal)
+    except SetupError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    height_cm, weight_kg, age = values
+    setup = {
+        "height_cm": height_cm, "weight_kg": weight_kg, "age": age, "gender": gender,
+        **{key: value for key, value in result.items() if key not in ("targets", "allowed_goals")},
+        "goal_confirmed": goal == result["recommended_goal"],
+        "calculated_targets": result["targets"],
+        "completed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if not diet_repo.save_setup(user_id, setup, result["targets"]):
+        return jsonify({"error": "Diet setup is already done.", "setup_done": True}), 409
+    return jsonify({**result, "targets": targets_for(result["targets"])}), 200
+
+
 # --- the coach's endpoints -------------------------------------------------
 
 @diet_bp.get("/api/admin/users/<user_id>/diet")
@@ -297,6 +370,7 @@ def get_diet_for_coach(user_id):
         by_day.setdefault(log["logged_for"], []).append(log)
     return jsonify({
         "targets": targets_for(diet_repo.get_targets(user_id)),
+        "setup": (diet_repo.get_profile_basics(user_id) or {}).get("diet_setup"),
         "days": [
             {
                 "date": day,

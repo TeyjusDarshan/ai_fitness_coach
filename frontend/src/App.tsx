@@ -14,6 +14,7 @@ import { WorkoutDetailScreen } from './screens/WorkoutDetailScreen'
 import { CardioScreen } from './screens/CardioScreen'
 import { CardioRatingScreen } from './screens/CardioRatingScreen'
 import { AdminScreen } from './screens/admin/AdminScreen'
+import { DietSetupScreen } from './screens/DietSetupScreen'
 import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
@@ -52,10 +53,15 @@ function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 // The Food screens exist only for clients the coach switched diet tracking
-// on for; anyone else is sent back to the dashboard.
-function RequireDiet({ children }: { children: ReactNode }) {
-  const { authStatus, dietEnabled } = useAppState()
+// on for; anyone else is sent back to the dashboard. Until she finishes the
+// one-time setup every Food screen sends her to it, and the setup screen
+// sends her on to /food once it's done.
+function RequireDiet({ children, setup = false }: { children: ReactNode; setup?: boolean }) {
+  const { authStatus, dietEnabled, dietSetupDone } = useAppState()
   if (authStatus === 'signedIn' && !dietEnabled) return <Navigate to="/" replace />
+  if (authStatus === 'signedIn' && dietSetupDone === setup) {
+    return <Navigate to={setup ? '/food' : '/food/setup'} replace />
+  }
   return <RequireAuth>{children}</RequireAuth>
 }
 
@@ -173,6 +179,14 @@ function App() {
           element={
             <RequireDiet>
               <FoodScreen />
+            </RequireDiet>
+          }
+        />
+        <Route
+          path="/food/setup"
+          element={
+            <RequireDiet setup>
+              <DietSetupScreen />
             </RequireDiet>
           }
         />

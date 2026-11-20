@@ -29,6 +29,10 @@ interface AppState {
   gender: Gender | null
   // Whether the coach switched diet tracking on for this user.
   dietEnabled: boolean
+  // Whether they finished the one-time diet setup; until then /food sends
+  // them to /food/setup.
+  dietSetupDone: boolean
+  markDietSetupDone: () => void
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
@@ -58,6 +62,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [userName, setUserName] = useState<string | null>(null)
   const [gender, setGender] = useState<Gender | null>(null)
   const [dietEnabled, setDietEnabled] = useState(false)
+  const [dietSetupDone, setDietSetupDone] = useState(false)
+  const markDietSetupDone = useCallback(() => setDietSetupDone(true), [])
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +101,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setUserName(me.name)
         setGender(me.gender)
         setDietEnabled(me.diet_enabled === true)
+        setDietSetupDone(me.diet_setup_done === true)
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
@@ -106,6 +113,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setUserName(me.name)
     setGender(me.gender)
     setDietEnabled(me.diet_enabled === true)
+    setDietSetupDone(me.diet_setup_done === true)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -182,6 +190,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       displayName: userName ?? userId,
       gender,
       dietEnabled,
+      dietSetupDone,
+      markDietSetupDone,
       dashboard,
       loading,
       error,
@@ -203,6 +213,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       userName,
       gender,
       dietEnabled,
+      dietSetupDone,
+      markDietSetupDone,
       dashboard,
       loading,
       error,

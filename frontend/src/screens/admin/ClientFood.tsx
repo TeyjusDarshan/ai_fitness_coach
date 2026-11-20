@@ -8,6 +8,7 @@ import {
   type ClientDiet,
   type CoachMealItem,
   type CoachMealLog,
+  type DietSetup,
   type NutritionTargets,
 } from '../../adminApi'
 import { portionLabel } from '../../food'
@@ -102,6 +103,7 @@ export function ClientFood({
       {!diet && !error && <p className="admin__muted">Loading…</p>}
       {diet && (
         <>
+          <SetupLine setup={diet.setup} />
           <Targets
             adminKey={adminKey}
             userId={userId}
@@ -191,6 +193,25 @@ const TARGET_FIELDS: { key: keyof NutritionTargets; label: string }[] = [
   { key: 'carbs_g', label: 'Carbs (g / day)' },
   { key: 'fat_g', label: 'Fat (g / day)' },
 ]
+
+const GOAL_TEXT = { lose: 'lose weight', maintain: 'maintain weight', gain: 'gain weight' }
+
+// Her one-time setup: what she entered, her BMI and the goal she chose.
+function SetupLine({ setup }: { setup: DietSetup | null }) {
+  if (!setup) {
+    return <p className="admin__muted">Not set up yet — she'll be asked when she opens Diet.</p>
+  }
+  const chose = setup.goal_confirmed
+    ? `agreed to ${GOAL_TEXT[setup.goal]}`
+    : `chose to ${GOAL_TEXT[setup.goal]} (we suggested ${GOAL_TEXT[setup.recommended_goal]})`
+  return (
+    <p className="client-food__setup">
+      Setup {new Date(setup.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}:{' '}
+      {setup.height_cm} cm, {setup.weight_kg} kg, {setup.age} y · BMI {setup.bmi} ({setup.bmi_category}) ·
+      maintenance {setup.tdee} kcal · {chose}, worked out {setup.calculated_targets.energy_kcal} kcal
+    </p>
+  )
+}
 
 function asText(targets: NutritionTargets): Record<keyof NutritionTargets, string> {
   return Object.fromEntries(TARGET_FIELDS.map(({ key }) => [key, String(targets[key])])) as Record<

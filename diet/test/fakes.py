@@ -30,6 +30,22 @@ class FakeRepo:
         (self.enabled.add if enabled else self.enabled.discard)(user_id)
         return True
 
+    # One-time setup: user_id -> {gender, diet_setup}; targets saved with it.
+    profiles: Dict[str, Dict[str, Any]]
+    saved_targets: Dict[str, Any]
+
+    def get_profile_basics(self, user_id):
+        return getattr(self, "profiles", {}).get(user_id, {"gender": None, "diet_setup": None})
+
+    def save_setup(self, user_id, setup, targets):
+        self.profiles = getattr(self, "profiles", {})
+        profile = self.profiles.setdefault(user_id, {"gender": None, "diet_setup": None})
+        if profile["diet_setup"] is not None:
+            return False
+        profile["diet_setup"] = setup
+        self.saved_targets = {**getattr(self, "saved_targets", {}), user_id: targets}
+        return True
+
     # --- set-up helpers ---
     def add_log(self, user_id="usr_1", status="processing", **fields):
         log_id = len(self.logs) + 1

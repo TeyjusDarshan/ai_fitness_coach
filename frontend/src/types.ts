@@ -286,3 +286,32 @@ export interface RecentDiet {
   // Newest first, including days with nothing logged.
   days: DietDaySummary[]
 }
+
+// --- Diet setup (once, when she first opens Diet) ---------------------------
+
+export type DietGoal = 'lose' | 'maintain' | 'gain'
+export type BmiCategory = 'underweight' | 'healthy' | 'overweight'
+
+export interface DietSetupInput {
+  height_cm: number
+  weight_kg: number
+  age: number
+}
+
+// Her BMI and the goal we recommend; `allowed_goals` leaves out losing
+// weight when she is underweight.
+export interface DietSetupAssessment {
+  bmi: number
+  bmi_category: BmiCategory
+  recommended_goal: DietGoal
+  allowed_goals: DietGoal[]
+  bmr: number
+  tdee: number
+}
+
+export interface DietSetupResult extends DietSetupAssessment {
+  goal: DietGoal
+  // Calories above (+) or below (−) maintenance.
+  adjustment_kcal: number
+  targets: DietGoals
+}

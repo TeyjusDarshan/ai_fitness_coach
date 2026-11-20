@@ -3,6 +3,10 @@ import type {
   Dashboard,
   DayCompleteSummary,
   DietDay,
+  DietGoal,
+  DietSetupAssessment,
+  DietSetupInput,
+  DietSetupResult,
   RecentDiet,
   MealItemDetail,
   MealLog,
@@ -151,6 +155,23 @@ export function fetchDietDay(userId: string, date: string): Promise<DietDay> {
 // Her last `days` days, newest first, with each day's totals.
 export function fetchRecentDiet(userId: string, days = 10): Promise<RecentDiet> {
   return request(`/users/${encodeURIComponent(userId)}/diet/days?days=${days}`)
+}
+
+// Her one-time diet setup: what we recommend for her height, weight and
+// age (stores nothing), then her daily goals for the goal she chose (stored;
+// 409 once done).
+export function assessDietSetup(userId: string, body: DietSetupInput): Promise<DietSetupAssessment> {
+  return request(`/users/${encodeURIComponent(userId)}/diet/setup/assess`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function completeDietSetup(
+  userId: string,
+  body: DietSetupInput & { goal: DietGoal },
+): Promise<DietSetupResult> {
+  return request(`/users/${encodeURIComponent(userId)}/diet/setup`, { method: 'POST', body: JSON.stringify(body) })
 }
 
 // A recording of what she ate. Answers straight away; the items arrive by

@@ -16,6 +16,8 @@ export interface Me {
   gender: Gender | null
   // Whether the coach switched diet tracking on for them. Off hides Food.
   diet_enabled: boolean
+  // Whether they finished the one-time diet setup (height, weight, age, goal).
+  diet_setup_done: boolean
 }
 
 export type Gender = 'male' | 'female' | 'other'
