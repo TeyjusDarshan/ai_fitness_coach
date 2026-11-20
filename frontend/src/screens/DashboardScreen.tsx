@@ -11,6 +11,7 @@ import { PeriodPrompt } from '../components/PeriodPrompt'
 import { useStartWorkout } from '../state/useStartWorkout'
 import { appTodayIso, formatDayDate } from '../utils'
 import { levelForPoints } from '../plant3d/levels'
+import { TA } from '../foodText'
 
 export function DashboardScreen() {
   const {
@@ -106,8 +107,12 @@ export function DashboardScreen() {
               <Icon name="bowl" size={24} />
             </span>
             <span className="food-entry__text">
-              <span className="food-entry__title">What did you eat today?</span>
-              <span className="food-entry__hint">Tell us in your own words</span>
+              <span className="food-entry__title" lang="ta">
+                {TA.entryTitle}
+              </span>
+              <span className="food-entry__hint" lang="ta">
+                {TA.entryHint}
+              </span>
             </span>
             <Icon name="chevronRight" size={20} />
           </button>

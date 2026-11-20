@@ -42,6 +42,7 @@ def build_item_rows(dishes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for dish in dishes:
         rows.append({
             "dish_name": dish["dish_name"],
+            "dish_name_ta": dish["dish_name_ta"],
             "meal": dish["meal"],
             "quote": dish["quote"],
             "quantity": dish["quantity"],

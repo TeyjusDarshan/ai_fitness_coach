@@ -6,7 +6,8 @@ from diet import agent, pipeline
 from diet.test.fakes import FakeRepo, dish, estimate
 
 TRANSCRIPT = "kaalaila moonu idli, madhiyam rendu karandi sadam"
-IDLI = dish("moonu idli", "Idli", 3, "piece", 120, [("Raw white rice", 45), ("Urad dal", 15)], meal="breakfast")
+IDLI = dish("moonu idli", "Idli", 3, "piece", 120, [("Raw white rice", 45), ("Urad dal", 15)], meal="breakfast",
+            name_ta="இட்லி")
 RICE = dish("rendu karandi sadam", "Cooked Rice", 2, "karandi", 120,
             [("Raw white rice", 42), ("Sesame (gingelly) oil", 1.2)], meal="lunch")
 
@@ -40,6 +41,7 @@ def test_dishes_are_saved_with_ingredients_and_nutrients(repo, claude):
     assert (log["status"], log["transcript"], log["model"]) == ("ready", TRANSCRIPT, agent.MEAL_MODEL)
     idli, rice = items
     assert (idli["dish_name"], idli["meal"], idli["portion_grams"], idli["needs_review"]) == ("Idli", "breakfast", 120, False)
+    assert (idli["dish_name_ta"], rice["dish_name_ta"]) == ("இட்லி", None)
     assert _amounts(idli) == {1: 45, 3: 15}
     assert _amounts(rice) == {1: 42, 2: 1.2}
     # 45 g rice at 7 g + 15 g urad at 24 g protein per 100 g.

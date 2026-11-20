@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../components/Icon'
 import { createMealLog, deleteMealLog, fetchDietDay, fetchRecentDiet } from '../api'
-import { MEAL_LABELS, MEAL_ORDER, portionLabel } from '../food'
+import { dishName, MEAL_LABELS, MEAL_ORDER, portionLabel } from '../food'
+import { formatTamilDay, TA } from '../foodText'
 import { useAppState } from '../state/AppStateContext'
 import { useVoiceRecorder } from '../state/useVoiceRecorder'
 import type { DietDay, DietDaySummary, DietGoals, MealItem, RecentDiet } from '../types'
-import { appTodayIso, formatClock, formatDayDate } from '../utils'
+import { appTodayIso, formatClock } from '../utils'
 
 const PAST_DAYS = 10
 
@@ -14,10 +15,10 @@ type Tab = 'today' | 'past'
 
 // The four goal nutrients next to the calorie ring, each with its colour.
 const GOAL_BARS: { key: keyof DietGoals; label: string; tone: string }[] = [
-  { key: 'protein_g', label: 'Protein', tone: 'protein' },
-  { key: 'fibre_g', label: 'Fibre', tone: 'fibre' },
-  { key: 'carbs_g', label: 'Carbs', tone: 'carbs' },
-  { key: 'fat_g', label: 'Fats', tone: 'fat' },
+  { key: 'protein_g', label: TA.protein, tone: 'protein' },
+  { key: 'fibre_g', label: TA.fibre, tone: 'fibre' },
+  { key: 'carbs_g', label: TA.carbs, tone: 'carbs' },
+  { key: 'fat_g', label: TA.fat, tone: 'fat' },
 ]
 
 const kcal = new Intl.NumberFormat('en-IN')
@@ -32,16 +33,16 @@ function GoalCard({ totals, targets }: { totals: DietGoals; targets: DietGoals }
   const circumference = 2 * Math.PI * radius
   const filled = Math.min(1, targets.energy_kcal > 0 ? totals.energy_kcal / targets.energy_kcal : 0) * circumference
   return (
-    <section className="card food-goal" aria-label="Daily goal">
+    <section className="card food-goal" aria-label={TA.dailyGoal}>
       <h2 className="food-goal__title">
         <Icon name="target" size={24} />
-        Daily Goal
+        {TA.dailyGoal}
       </h2>
       <div className="food-goal__body">
         <div
           className="food-goal__ring"
           role="progressbar"
-          aria-label="Calories"
+          aria-label={TA.calories}
           aria-valuemin={0}
           aria-valuemax={targets.energy_kcal}
           aria-valuenow={Math.round(totals.energy_kcal)}
@@ -123,15 +124,15 @@ function DayMeals({
       {waiting.map((log) => (
         <button key={log.id} className="food-notice" onClick={() => onOpenLog(log.id)}>
           <span className="spinner spinner--small" aria-hidden />
-          Working out a recording…
+          {TA.workingOutOne}
           <Icon name="chevronRight" size={18} />
         </button>
       ))}
       {failed.map((log) => (
         <div key={log.id} className="food-notice food-notice--failed">
-          We couldn&apos;t understand one recording.
+          {TA.couldNotUnderstandOne}
           <button className="btn-link" onClick={() => onRemoveLog(log.id)}>
-            Remove
+            {TA.remove}
           </button>
         </div>
       ))}
@@ -143,14 +144,14 @@ function DayMeals({
             {group.items.map((item) => (
               <button key={item.id} className="food-item-row" onClick={() => onOpenItem(item)}>
                 <span className="food-item-row__text">
-                  <span className="food-item-row__name">{item.name}</span>
+                  <span className="food-item-row__name">{dishName(item)}</span>
                   <span className="food-item-row__portion">
-                    {item.assumed ? 'about ' : ''}
+                    {item.assumed ? TA.about : ''}
                     {portionLabel(item)}
                   </span>
                 </span>
                 <span className="food-item-row__protein">
-                  {item.needs_review ? 'Being checked' : `${item.protein_g} g protein`}
+                  {item.needs_review ? TA.beingChecked : TA.proteinG(item.protein_g)}
                 </span>
                 <Icon name="chevronRight" size={18} className="food-item-row__chevron" />
               </button>
@@ -169,11 +170,11 @@ const OVERVIEW: {
   unit: string
   icon: IconName
 }[] = [
-  { key: 'energy_kcal', label: 'Calories', unit: 'kcal', icon: 'flame' },
-  { key: 'protein_g', label: 'Protein', unit: 'g', icon: 'dumbbell' },
-  { key: 'carbs_g', label: 'Carbs', unit: 'g', icon: 'wheat' },
-  { key: 'fibre_g', label: 'Fibre', unit: 'g', icon: 'leaf' },
-  { key: 'fat_g', label: 'Fat', unit: 'g', icon: 'drop' },
+  { key: 'energy_kcal', label: TA.calories, unit: 'kcal', icon: 'flame' },
+  { key: 'protein_g', label: TA.protein, unit: 'g', icon: 'dumbbell' },
+  { key: 'carbs_g', label: TA.carbs, unit: 'g', icon: 'wheat' },
+  { key: 'fibre_g', label: TA.fibre, unit: 'g', icon: 'leaf' },
+  { key: 'fat_g', label: TA.fat, unit: 'g', icon: 'drop' },
 ]
 
 function amount(value: number, unit: string): string {
@@ -211,10 +212,10 @@ function NutrientChart({
           <Icon name={icon} size={22} />
           {label}
         </span>
-        <span className="food-chart__avg">{average === null ? 'No logs yet' : `Avg. ${amount(average, unit)}`}</span>
+        <span className="food-chart__avg">{average === null ? TA.noLogsYet : TA.average(amount(average, unit))}</span>
         <span className="food-chart__target">
           <span className="food-chart__dot" aria-hidden />
-          Recommended: {amount(target, unit)}
+          {TA.recommended(amount(target, unit))}
         </span>
       </div>
       <div className="food-chart__plot">
@@ -226,7 +227,7 @@ function NutrientChart({
               key={day.date}
               className="food-chart__col"
               onClick={() => onOpen(day.date)}
-              aria-label={`${formatDayDate(day.date)}: ${day.dishes ? amount(value, unit) : 'nothing logged'}`}
+              aria-label={`${formatTamilDay(day.date)}: ${day.dishes ? amount(value, unit) : TA.nothingLogged}`}
             >
               <span
                 className={`food-chart__bar${day.date === today ? ' food-chart__bar--today' : ''}${day.dishes ? '' : ' food-chart__bar--empty'}`}
@@ -255,10 +256,8 @@ function NutritionOverview({ recent, onOpen }: { recent: RecentDiet; onOpen: (da
   return (
     <>
       <div className="food-overview__head">
-        <h2 className="food-overview__title">Nutrition Overview</h2>
-        <p className="food-overview__sub">
-          Your intake over the last {days.length} days. Tap a day to see what you ate.
-        </p>
+        <h2 className="food-overview__title">{TA.overview}</h2>
+        <p className="food-overview__sub">{TA.overviewSub(days.length)}</p>
       </div>
       {OVERVIEW.map(({ key, label, unit, icon }) => (
         <NutrientChart
@@ -303,7 +302,7 @@ export function FoodScreen() {
         setDay(data)
         setError(null)
       })
-      .catch((e: Error) => setError(e.message))
+      .catch(() => setError(TA.failed))
   }, [userId, shownDate])
 
   useEffect(() => {
@@ -318,7 +317,7 @@ export function FoodScreen() {
         setRecent(data)
         setError(null)
       })
-      .catch((e: Error) => setError(e.message))
+      .catch(() => setError(TA.failed))
   }, [tab, userId])
 
   const send = useCallback(
@@ -363,22 +362,20 @@ export function FoodScreen() {
       onOpenLog={(id) => navigate(`/food/log/${id}`)}
       onRemoveLog={(id) => void removeLog(id)}
       emptyText={
-        tab === 'today'
-          ? 'Nothing logged today yet. Tap the mic and say what you ate, the way you would tell a friend: “moonu idli, oru karandi sambar, oru tumbler coffee”.'
-          : 'Nothing was logged on this day.'
+        tab === 'today' ? TA.emptyToday : TA.emptyDay
       }
     />
   )
 
   return (
-    <div className="screen food-screen food-screen--with-mic">
+    <div className="screen food-screen food-screen--with-mic" lang="ta">
       <button className="back-link" onClick={() => (pastDate ? setPastDate(null) : navigate('/'))}>
         <Icon name="chevronLeft" size={18} />
-        {pastDate ? 'All days' : 'Back'}
+        {pastDate ? TA.allDays : TA.back}
       </button>
-      <h1 className="screen-title food-screen__title">Your Food</h1>
+      <h1 className="screen-title food-screen__title">{TA.title}</h1>
 
-      <div className="food-day-toggle" role="tablist" aria-label="Which days">
+      <div className="food-day-toggle" role="tablist" aria-label={TA.whichDays}>
         <button
           role="tab"
           aria-selected={tab === 'today'}
@@ -386,7 +383,7 @@ export function FoodScreen() {
           disabled={recording || sending}
           onClick={() => chooseTab('today')}
         >
-          Today
+          {TA.today}
         </button>
         <button
           role="tab"
@@ -395,7 +392,7 @@ export function FoodScreen() {
           disabled={recording || sending}
           onClick={() => chooseTab('past')}
         >
-          Past {PAST_DAYS} Day Logs
+          {TA.pastDays(PAST_DAYS)}
         </button>
       </div>
 
@@ -407,7 +404,7 @@ export function FoodScreen() {
 
       {shownDate && (
         <>
-          {pastDate && <p className="food-screen__date">{formatDayDate(pastDate)}</p>}
+          {pastDate && <p className="food-screen__date">{formatTamilDay(pastDate)}</p>}
           {day ? (
             <>
               <GoalCard totals={day.totals} targets={day.targets} />
@@ -424,11 +421,13 @@ export function FoodScreen() {
           <div className="food-mic" aria-live="polite">
             {(recorder.error || (sendFailed && !sending)) && (
               <div className="food-mic__bubble food-mic__bubble--error" role="alert">
-                {recorder.error ?? (
+                {recorder.error ? (
+                  TA.micBlocked
+                ) : (
                   <>
-                    We couldn&apos;t send your recording.{' '}
+                    {TA.sendFailed}{' '}
                     <button className="btn-link" onClick={() => unsent.current && void send(unsent.current)}>
-                      Try again
+                      {TA.tryAgain}
                     </button>
                   </>
                 )}
@@ -438,7 +437,7 @@ export function FoodScreen() {
               className={`food-mic__button${recording ? ' food-mic__button--live' : ''}`}
               onClick={() => (recording ? recorder.stop() : void recorder.start())}
               disabled={sending}
-              aria-label={recording ? 'Stop recording' : 'Record what you ate'}
+              aria-label={recording ? TA.stopRecording : TA.record}
             >
               {sending ? (
                 <span className="spinner spinner--small food-mic__spinner" aria-hidden />
@@ -447,15 +446,11 @@ export function FoodScreen() {
               )}
             </button>
             <span className="food-mic__bubble">
-              {sending
-                ? 'Sending…'
-                : recording
-                  ? `Listening ${formatClock(recorder.seconds)} · tap to stop`
-                  : 'Tap to record'}
+              {sending ? TA.sending : recording ? TA.listening(formatClock(recorder.seconds)) : TA.tapToRecord}
             </span>
           </div>
         ) : (
-          <div className="error-banner">This browser can&apos;t record sound. Open the app in Chrome or Safari.</div>
+          <div className="error-banner">{TA.noMic}</div>
         ))}
     </div>
   )

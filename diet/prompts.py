@@ -21,6 +21,9 @@ short: the dish and its amount. Never write a quote that is not in the transcrip
 - `dish_name`: a short, standard English-letter name for the dish, in Title Case, such as "Idli", "Sambar", \
 "Curd Rice", "Ragi Kali", "Filter Coffee", "Banana". Say how it was made when she said so ("Boiled Egg", \
 "Ghee Dosa"). Do not put the amount in the name.
+- `dish_name_ta`: the same dish's common name in Tamil script, the way a Tamil Nadu home cook writes it, such \
+as "இட்லி", "சாம்பார்", "தயிர் சாதம்", "ராகி களி", "ஃபில்டர் காபி", "வாழைப்பழம்", "நெய் தோசை". Write \
+English-only foods in Tamil letters ("பிஸ்கட்", "ஓட்ஸ்"). Never Latin letters, never the amount.
 - `quantity` and `unit`: the amount she said. Units:
   - `piece`: countable things (idli, dosa, chapati, vadai, egg, banana, biscuit). "moonu idli" is 3 piece.
   - `karandi`: a serving ladle (karandi, kuzhi karandi, ladle, "oru karandi sadam").

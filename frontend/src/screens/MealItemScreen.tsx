@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '../components/Icon'
 import { fetchMealItem, resetMealItem, setMealItemIngredient } from '../api'
 import {
+  dishName,
   formatCount,
   ingredientAmount,
   ingredientGrams,
@@ -11,6 +12,7 @@ import {
   nextIngredientAmount,
   portionLabel,
 } from '../food'
+import { TA } from '../foodText'
 import type { MealIngredient, MealItemDetail } from '../types'
 
 const SAVE_DELAY_MS = 600
@@ -32,7 +34,7 @@ export function MealItemScreen() {
     let stopped = false
     fetchMealItem(itemId)
       .then((data) => !stopped && setItem(data))
-      .catch((e: Error) => !stopped && setError(e.message))
+      .catch(() => !stopped && setError(TA.failed))
     const timers = saveTimers.current
     return () => {
       stopped = true
@@ -63,7 +65,7 @@ export function MealItemScreen() {
             // Other edits still waiting to be sent: keep what she sees.
             if (saveTimers.current.size === 0) setItem((prev) => prev && { ...prev, ...saved })
           })
-          .catch((e: Error) => setError(e.message))
+          .catch(() => setError(TA.failed))
       }, SAVE_DELAY_MS),
     )
   }
@@ -84,18 +86,18 @@ export function MealItemScreen() {
       const saved = await resetMealItem(itemId)
       setItem((prev) => prev && { ...prev, ...saved })
       setError(null)
-    } catch (e) {
-      setError((e as Error).message)
+    } catch {
+      setError(TA.failed)
     }
     setResetting(false)
   }
 
   if (!item) {
     return (
-      <div className="screen food-screen">
+      <div className="screen food-screen" lang="ta">
         <button className="back-link" onClick={() => navigate(-1)}>
           <Icon name="chevronLeft" size={18} />
-          Back
+          {TA.back}
         </button>
         {error ? <div className="error-banner">{error}</div> : <div className="spinner" />}
       </div>
@@ -103,30 +105,26 @@ export function MealItemScreen() {
   }
 
   return (
-    <div className="screen food-screen">
+    <div className="screen food-screen" lang="ta">
       <button className="back-link" onClick={() => navigate(-1)}>
         <Icon name="chevronLeft" size={18} />
-        Back
+        {TA.back}
       </button>
-      <h1 className="screen-title food-screen__title">{item.name}</h1>
+      <h1 className="screen-title food-screen__title">{dishName(item)}</h1>
       <p className="food-screen__date">
-        {item.assumed ? 'about ' : ''}
+        {item.assumed ? TA.about : ''}
         {portionLabel(item)}
-        {item.grams !== null && item.unit !== 'grams' ? ` · about ${Math.round(item.grams)} g` : ''}
+        {item.grams !== null && item.unit !== 'grams' ? TA.aboutGrams(Math.round(item.grams)) : ''}
       </p>
       {error && <div className="error-banner">{error}</div>}
 
       {item.ingredients.length === 0 ? (
         <p className="food-screen__empty">
-          {item.needs_review
-            ? "We couldn't work out the ingredients of this dish. Your coach will check it."
-            : 'No ingredients are listed for this dish.'}
+          {item.needs_review ? TA.couldNotWorkOut : TA.noIngredients}
         </p>
       ) : (
         <>
-          <p className="food-screen__lead">
-            This is what we assumed went into your portion. Change anything that is different in your kitchen.
-          </p>
+          <p className="food-screen__lead">{TA.assumedLead}</p>
           <div className="card food-ingredients">
             {item.ingredients.map((ingredient) => {
               const removed = ingredient.grams === 0
@@ -141,20 +139,20 @@ export function MealItemScreen() {
                     <span className="food-ingredient__name">{ingredient.name}</span>
                     {removed ? (
                       <button className="btn-link" onClick={() => setGrams(ingredient, ingredient.default_grams)}>
-                        Put back
+                        {TA.putBack}
                       </button>
                     ) : (
                       <button
                         className="food-ingredient__remove"
                         onClick={() => setGrams(ingredient, 0)}
-                        aria-label={`Remove ${ingredient.name}`}
+                        aria-label={TA.removeThing(ingredient.name)}
                       >
                         <Icon name="close" size={16} />
                       </button>
                     )}
                   </div>
                   {removed ? (
-                    <span className="food-ingredient__note">Removed</span>
+                    <span className="food-ingredient__note">{TA.removed}</span>
                   ) : (
                     <div className="food-stepper food-stepper--ingredient">
                       <button
@@ -162,7 +160,7 @@ export function MealItemScreen() {
                         onClick={() =>
                           setGrams(ingredient, ingredientGrams(ingredient, nextIngredientAmount(ingredient, -1)))
                         }
-                        aria-label={`Less ${ingredient.name}`}
+                        aria-label={TA.less(ingredient.name)}
                       >
                         <Icon name="minus" size={20} />
                       </button>
@@ -170,7 +168,7 @@ export function MealItemScreen() {
                         <input
                           className="food-stepper__input"
                           inputMode="decimal"
-                          aria-label={`${ingredient.name} amount`}
+                          aria-label={TA.amountOf(ingredient.name)}
                           value={isTyping ? typing.text : formatCount(amount)}
                           onFocus={() => setTyping({ id: ingredient.ingredient_id, text: String(amount) })}
                           onChange={(e) => setTyping({ id: ingredient.ingredient_id, text: e.target.value })}
@@ -184,7 +182,7 @@ export function MealItemScreen() {
                         onClick={() =>
                           setGrams(ingredient, ingredientGrams(ingredient, nextIngredientAmount(ingredient, 1)))
                         }
-                        aria-label={`More ${ingredient.name}`}
+                        aria-label={TA.more(ingredient.name)}
                       >
                         <Icon name="plus" size={20} />
                       </button>
@@ -192,7 +190,7 @@ export function MealItemScreen() {
                   )}
                   {ingredient.edited && !removed && ingredient.grams !== ingredient.default_grams && (
                     <span className="food-ingredient__note">
-                      Changed from {ingredientLabel(ingredient, ingredient.default_grams)}
+                      {TA.changedFrom(ingredientLabel(ingredient, ingredient.default_grams))}
                     </span>
                   )}
                 </div>
@@ -202,9 +200,9 @@ export function MealItemScreen() {
 
           {item.ingredients.some((row) => row.grams !== row.default_grams) && (
             <div className="food-own-recipe">
-              <p>You changed what went into this {item.name}.</p>
+              <p>{TA.youChanged(dishName(item))}</p>
               <button className="btn-secondary" disabled={resetting} onClick={() => void reset()}>
-                {resetting ? 'Resetting…' : 'Back to our estimate'}
+                {resetting ? TA.resetting : TA.backToEstimate}
               </button>
             </div>
           )}

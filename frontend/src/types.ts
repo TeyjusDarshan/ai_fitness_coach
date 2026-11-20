@@ -225,6 +225,8 @@ export interface MealIngredient {
 export interface MealItem {
   id: number
   name: string
+  // The dish name in Tamil script (null on older entries): what she sees.
+  name_ta: string | null
   meal: MealName | null
   quantity: number
   unit: string

@@ -94,10 +94,14 @@ function completeSetup(b: Record<string, number>, goal: string) {
   setupDone = true
   return { ...a, goal, adjustment_kcal: Math.round(kcal - tdee), targets: TARGETS }
 }
+const TAMIL: Record<string, string> = {
+  Idli: 'இட்லி', Sambar: 'சாம்பார்', 'Filter Coffee': 'ஃபில்டர் காபி', 'Cooked Rice': 'சாதம்',
+  'Paneer Bhurji': 'பனீர் புர்ஜி', Curd: 'தயிர்',
+}
 const shapeItem = (it: Item, detail = false) => {
   const t = totalsOf([it])
   return {
-    id: it.id, name: it.name, meal: it.meal, quantity: it.quantity, unit: it.unit, grams: it.grams,
+    id: it.id, name: it.name, name_ta: TAMIL[it.name] ?? null, meal: it.meal, quantity: it.quantity, unit: it.unit, grams: it.grams,
     assumed: it.assumed, needs_review: false, edited: it.edited,
     protein_g: t.protein_g, fibre_g: t.fibre_g, energy_kcal: Math.round(t.energy_kcal),
     ...(detail ? {

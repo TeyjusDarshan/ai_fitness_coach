@@ -24,6 +24,7 @@ def test_item_shape_and_nutrients(repo):
     item = service.shape_item(repo.get_item(1), detail=True, nutrients=True)
 
     assert (item["name"], item["quantity"], item["unit"], item["grams"]) == ("Cooked Rice", 2, "karandi", 120)
+    assert item["name_ta"] is None
     assert item["protein_g"] == 2.9                      # 42 g rice at 7 g / 100 g
     assert item["nutrients"]["fat_g"] == 1.4             # 0.21 from rice + 1.2 from oil
     assert item["nutrients"]["vitamin_b6_mg"] == 0       # every nutrient key, unknown as 0

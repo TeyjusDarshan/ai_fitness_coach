@@ -45,6 +45,8 @@ def shape_item(item: Dict[str, Any], detail: bool = False, nutrients: bool = Fal
     shaped = {
         "id": item["id"],
         "name": item["dish_name"],
+        # Her screens show this, falling back to `name` (older entries).
+        "name_ta": item.get("dish_name_ta"),
         "meal": item.get("meal"),
         "quantity": float(item["quantity"]),
         "unit": item["unit"],

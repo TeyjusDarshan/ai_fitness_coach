@@ -3,17 +3,18 @@
 // shown, and how far one tap on − / + moves them.
 import type { MealIngredient, MealItem, MealLogError, MealName } from './types'
 
+// In Tamil (no plural forms): [one, many].
 const UNIT_LABELS: Record<string, [string, string]> = {
-  piece: ['piece', 'pieces'],
-  karandi: ['karandi', 'karandi'],
-  cup: ['cup', 'cups'],
-  tumbler: ['tumbler', 'tumblers'],
-  tablespoon: ['tablespoon', 'tablespoons'],
-  teaspoon: ['teaspoon', 'teaspoons'],
-  plate: ['plate', 'plates'],
-  bowl: ['bowl', 'bowls'],
-  handful: ['handful', 'handfuls'],
-  slice: ['slice', 'slices'],
+  piece: ['துண்டு', 'துண்டு'],
+  karandi: ['கரண்டி', 'கரண்டி'],
+  cup: ['கப்', 'கப்'],
+  tumbler: ['டம்ளர்', 'டம்ளர்'],
+  tablespoon: ['மேசைக்கரண்டி', 'மேசைக்கரண்டி'],
+  teaspoon: ['தேக்கரண்டி', 'தேக்கரண்டி'],
+  plate: ['தட்டு', 'தட்டு'],
+  bowl: ['கிண்ணம்', 'கிண்ணம்'],
+  handful: ['கைப்பிடி', 'கைப்பிடி'],
+  slice: ['துண்டு', 'துண்டு'],
 }
 
 const FRACTIONS: Record<string, string> = { '0.25': '¼', '0.5': '½', '0.75': '¾' }
@@ -98,16 +99,21 @@ export function nextIngredientAmount(ingredient: MealIngredient, direction: 1 | 
 export const MEAL_ORDER: (MealName | null)[] = ['breakfast', 'lunch', 'dinner', 'snack', null]
 
 export const MEAL_LABELS: Record<string, string> = {
-  breakfast: 'Breakfast',
-  lunch: 'Lunch',
-  dinner: 'Dinner',
-  snack: 'Snacks',
-  other: 'Other',
+  breakfast: 'காலை உணவு',
+  lunch: 'மதிய உணவு',
+  dinner: 'இரவு உணவு',
+  snack: 'சிற்றுண்டி',
+  other: 'மற்றவை',
+}
+
+// The dish's Tamil name, or the English one for older entries.
+export function dishName(item: Pick<MealItem, 'name' | 'name_ta'>): string {
+  return item.name_ta || item.name
 }
 
 export const MEAL_LOG_ERRORS: Record<MealLogError, string> = {
-  no_speech: "We couldn't hear anything in that recording. Hold the phone close and try again.",
-  no_food: "We couldn't find any food in what you said. Tell us what you ate and how much.",
-  failed: 'Something went wrong while working it out. Please record it again.',
-  timeout: 'That took too long to work out. Please record it again.',
+  no_speech: 'அந்தப் பதிவில் எதுவும் கேட்கவில்லை. போனை அருகில் வைத்து மீண்டும் முயலுங்கள்.',
+  no_food: 'நீங்கள் சொன்னதில் உணவு எதுவும் இல்லை. என்ன, எவ்வளவு சாப்பிட்டீர்கள் என்று சொல்லுங்கள்.',
+  failed: 'கணக்கிடும்போது ஏதோ தவறு நடந்தது. மீண்டும் பதிவு செய்யுங்கள்.',
+  timeout: 'கணக்கிட அதிக நேரம் ஆனது. மீண்டும் பதிவு செய்யுங்கள்.',
 }

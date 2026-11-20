@@ -2,12 +2,13 @@ import { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAppState } from '../state/AppStateContext'
 import { Icon, type IconName } from './Icon'
+import { TA } from '../foodText'
 
 // The app's two homes, for clients with diet tracking on: Workouts (the
 // dashboard, where the app opens) and Diet (Your Food).
 const TABS: { path: string; label: string; icon: IconName }[] = [
   { path: '/', label: 'Workouts', icon: 'dumbbell' },
-  { path: '/food', label: 'Diet', icon: 'bowl' },
+  { path: '/food', label: TA.dietTab, icon: 'bowl' },
 ]
 
 // A bar fixed to the bottom of the two home screens, shown only to clients

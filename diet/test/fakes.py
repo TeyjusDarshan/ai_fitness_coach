@@ -131,10 +131,10 @@ class FakeRepo:
         return [self.get_item(i) for i, item in self.items.items() if item["meal_log_id"] == meal_log_id]
 
 
-def dish(quote, name, quantity, unit, portion_grams, ingredients, stated=True, meal=None):
+def dish(quote, name, quantity, unit, portion_grams, ingredients, stated=True, meal=None, name_ta=None):
     """One dish as Claude returns it; `ingredients` is [(name, grams)]."""
     return SimpleNamespace(
-        quote=quote, dish_name=name, quantity=quantity, unit=unit, quantity_stated=stated, meal=meal,
+        quote=quote, dish_name=name, dish_name_ta=name_ta, quantity=quantity, unit=unit, quantity_stated=stated, meal=meal,
         portion_grams=portion_grams,
         ingredients=[SimpleNamespace(name=n, grams=g) for n, g in ingredients],
     )

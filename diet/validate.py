@@ -18,6 +18,8 @@ MAX_INGREDIENTS = 25
 MIN_RAW_RATIO, MAX_RAW_RATIO = 0.15, 2.5
 
 _PUNCTUATION_RE = re.compile(r"[^\w]+", re.UNICODE)
+_TAMIL_RE = re.compile(r"[\u0B80-\u0BFF]")
+MAX_NAME_TA = 80
 
 
 def _normalize(text: str) -> str:
@@ -54,9 +56,16 @@ def _ingredients(entries: Iterable[Any], reference_by_key: Dict[str, Dict[str, A
     return lines if 0 < len(lines) <= MAX_INGREDIENTS else None
 
 
+def tamil_name(value: Optional[str]) -> Optional[str]:
+    """The dish's Tamil-script name, or None when it isn't one (her screens
+    then show the English name)."""
+    value = (value or "").strip()
+    return value if 0 < len(value) <= MAX_NAME_TA and _TAMIL_RE.search(value) else None
+
+
 def validate_meal(dishes: Iterable[Any], transcript: str,
                   reference_by_key: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The proposed dishes worth keeping, as {dish_name, quote, meal,
+    """The proposed dishes worth keeping, as {dish_name, dish_name_ta, quote, meal,
     quantity, unit, assumed, portion_grams, needs_review, ingredients:
     [{reference, grams}]}. A dish must quote what she said and have a name;
     one whose ingredients or weight can't be right is kept for review with
@@ -87,6 +96,7 @@ def validate_meal(dishes: Iterable[Any], transcript: str,
 
         kept.append({
             "dish_name": name[:120],
+            "dish_name_ta": tamil_name(getattr(dish, "dish_name_ta", None)),
             "quote": dish.quote.strip(),
             "meal": dish.meal if dish.meal in MEALS else None,
             "quantity": round(quantity, 2),

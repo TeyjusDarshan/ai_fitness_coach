@@ -40,7 +40,7 @@ def run(repo: DietRepository, transcript: str, user_id: Optional[str]) -> None:
         add_totals(day, row["nutrients"])
         flags = [flag for flag in ("assumed", "needs_review") if row[flag]]
         print(
-            f"- {row['dish_name']}: {row['quantity']:g} {row['unit']} = {row['portion_grams']} g"
+            f"- {row['dish_name']} / {row['dish_name_ta'] or '—'}: {row['quantity']:g} {row['unit']} = {row['portion_grams']} g"
             f" [{row['meal'] or 'no meal'}]{' ' + str(flags) if flags else ''}  “{row['quote']}”"
         )
         print(f"    {_line(totals)}")

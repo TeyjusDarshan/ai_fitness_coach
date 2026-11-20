@@ -50,6 +50,7 @@ def meal_schema(names: Tuple[str, ...]) -> type:
         "Dish",
         quote=(str, ...),
         dish_name=(str, ...),
+        dish_name_ta=(str, ...),
         quantity=(float, ...),
         unit=(Unit, ...),
         quantity_stated=(bool, ...),

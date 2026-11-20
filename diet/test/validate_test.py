@@ -71,3 +71,14 @@ def test_nutrition_maths():
     assert display_unit("oil_ghee", "Ghee") == ("teaspoon", 5.0)
     assert display_unit("spice", "Salt") == ("teaspoon", 6.0)
     assert display_unit("carb", "Raw white rice") == (None, None)
+
+
+def test_the_tamil_dish_name_is_kept_only_when_it_is_tamil_script():
+    kept = _validate(
+        dish("moonu idli", "Idli", 3, "piece", 120, IDLI, name_ta=" இட்லி "),
+        dish("moonu idli", "Idli", 3, "piece", 120, IDLI, name_ta="Idli"),
+        dish("moonu idli", "Idli", 3, "piece", 120, IDLI, name_ta=""),
+        dish("moonu idli", "Idli", 3, "piece", 120, IDLI),
+    )
+
+    assert [d["dish_name_ta"] for d in kept] == ["இட்லி", None, None, None]

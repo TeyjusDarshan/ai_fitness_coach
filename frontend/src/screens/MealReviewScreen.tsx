@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '../components/Icon'
 import { confirmMealLog, deleteMealItem, deleteMealLog, fetchMealLog, setMealItemQuantity } from '../api'
-import { MEAL_LOG_ERRORS, nextQuantity, portionLabel } from '../food'
+import { dishName, MEAL_LOG_ERRORS, nextQuantity, portionLabel } from '../food'
+import { TA } from '../foodText'
 import type { MealItem, MealLog } from '../types'
 
 const POLL_MS = 2000
@@ -30,8 +31,8 @@ export function MealReviewScreen() {
           setLog(data)
           if (data.status === 'processing') timer = window.setTimeout(poll, POLL_MS)
         })
-        .catch((e: Error) => {
-          if (!stopped) setError(e.message)
+        .catch(() => {
+          if (!stopped) setError(TA.failed)
         })
     }
     poll()
@@ -68,7 +69,7 @@ export function MealReviewScreen() {
             // A newer tap is already waiting to be sent: keep what she sees.
             if (!saveTimers.current.has(item.id)) patchItem(item.id, saved)
           })
-          .catch((e: Error) => setError(e.message))
+          .catch(() => setError(TA.failed))
       }, SAVE_DELAY_MS),
     )
   }
@@ -77,7 +78,7 @@ export function MealReviewScreen() {
     window.clearTimeout(saveTimers.current.get(item.id))
     saveTimers.current.delete(item.id)
     setLog((prev) => prev && { ...prev, items: prev.items.filter((other) => other.id !== item.id) })
-    deleteMealItem(item.id).catch((e: Error) => setError(e.message))
+    deleteMealItem(item.id).catch(() => setError(TA.failed))
   }
 
   async function done() {
@@ -85,8 +86,8 @@ export function MealReviewScreen() {
     try {
       await confirmMealLog(logId)
       navigate('/food', { replace: true })
-    } catch (e) {
-      setError((e as Error).message)
+    } catch {
+      setError(TA.failed)
       setBusy(false)
     }
   }
@@ -99,11 +100,11 @@ export function MealReviewScreen() {
 
   if (!log) {
     return (
-      <div className="screen food-screen">
+      <div className="screen food-screen" lang="ta">
         {error ? <div className="error-banner">{error}</div> : <div className="spinner" />}
         {error && (
           <button className="btn-secondary" onClick={() => navigate('/food', { replace: true })}>
-            Back to Food
+            {TA.backToFood}
           </button>
         )}
       </div>
@@ -112,14 +113,12 @@ export function MealReviewScreen() {
 
   if (log.status === 'processing') {
     return (
-      <div className="screen food-screen food-wait">
+      <div className="screen food-screen food-wait" lang="ta">
         <div className="spinner" />
-        <h1 className="food-wait__title">Working out what you ate…</h1>
-        <p className="food-wait__hint">
-          This takes a few seconds. You can go back if you like; it will be saved for you.
-        </p>
+        <h1 className="food-wait__title">{TA.workingOut}</h1>
+        <p className="food-wait__hint">{TA.workingOutHint}</p>
         <button className="btn-secondary" onClick={() => navigate('/food', { replace: true })}>
-          Back to Food
+          {TA.backToFood}
         </button>
       </div>
     )
@@ -127,38 +126,34 @@ export function MealReviewScreen() {
 
   if (log.status === 'failed') {
     return (
-      <div className="screen food-screen food-wait">
-        <h1 className="food-wait__title">Let&apos;s try that again</h1>
+      <div className="screen food-screen food-wait" lang="ta">
+        <h1 className="food-wait__title">{TA.tryThatAgain}</h1>
         <p className="food-wait__hint">{MEAL_LOG_ERRORS[log.error ?? 'failed']}</p>
         <button className="btn-primary" disabled={busy} onClick={() => void recordAgain()}>
-          <Icon name="mic" size={20} /> Record again
+          <Icon name="mic" size={20} /> {TA.recordAgain}
         </button>
       </div>
     )
   }
 
   return (
-    <div className="screen food-screen">
-      <h1 className="screen-title food-screen__title">Here&apos;s what we heard</h1>
-      <p className="food-screen__lead">
-        Check the amounts. Tap a dish to see what went into it.
-      </p>
+    <div className="screen food-screen" lang="ta">
+      <h1 className="screen-title food-screen__title">{TA.heard}</h1>
+      <p className="food-screen__lead">{TA.heardLead}</p>
       {error && <div className="error-banner">{error}</div>}
 
-      {log.items.length === 0 && <p className="food-screen__empty">Nothing left in this recording.</p>}
+      {log.items.length === 0 && <p className="food-screen__empty">{TA.nothingLeft}</p>}
       <div className="food-review">
         {log.items.map((item) => (
           <div key={item.id} className="card food-card">
             <button className="food-card__main" onClick={() => navigate(`/food/item/${item.id}`)}>
-              <span className="food-card__name">{item.name}</span>
+              <span className="food-card__name">{dishName(item)}</span>
               <span className="food-card__meta">
-                {item.needs_review
-                  ? 'New dish. Your coach will check it.'
-                  : `${item.protein_g} g protein`}
+                {item.needs_review ? TA.newDish : TA.proteinG(item.protein_g)}
               </span>
-              {item.assumed && <span className="food-card__guess">We guessed the amount</span>}
+              {item.assumed && <span className="food-card__guess">{TA.guessed}</span>}
             </button>
-            <button className="food-card__remove" onClick={() => remove(item)} aria-label={`Remove ${item.name}`}>
+            <button className="food-card__remove" onClick={() => remove(item)} aria-label={TA.removeThing(dishName(item))}>
               <Icon name="close" size={18} />
             </button>
             <div className="food-stepper">
@@ -166,7 +161,7 @@ export function MealReviewScreen() {
                 className="food-stepper__button"
                 onClick={() => step(item, -1)}
                 disabled={nextQuantity(item, -1) === null}
-                aria-label={`Less ${item.name}`}
+                aria-label={TA.less(dishName(item))}
               >
                 <Icon name="minus" size={22} />
               </button>
@@ -177,7 +172,7 @@ export function MealReviewScreen() {
                 className="food-stepper__button"
                 onClick={() => step(item, 1)}
                 disabled={nextQuantity(item, 1) === null}
-                aria-label={`More ${item.name}`}
+                aria-label={TA.more(dishName(item))}
               >
                 <Icon name="plus" size={22} />
               </button>
@@ -188,10 +183,10 @@ export function MealReviewScreen() {
 
       <div className="food-screen__actions">
         <button className="btn-primary" disabled={busy} onClick={() => void done()}>
-          <Icon name="check" size={20} /> Done
+          <Icon name="check" size={20} /> {TA.done}
         </button>
         <button className="btn-secondary" disabled={busy} onClick={() => void recordAgain()}>
-          Record again
+          {TA.recordAgain}
         </button>
       </div>
     </div>
