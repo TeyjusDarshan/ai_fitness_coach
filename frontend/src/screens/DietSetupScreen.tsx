@@ -48,10 +48,28 @@ const TA = {
   fat: 'கொழுப்பு',
   fibre: 'நார்ச்சத்து',
   start: 'கண்காணிக்கத் தொடங்குங்கள்',
+  targetQuestion: 'உங்கள் இலக்கு எடை என்ன?',
+  suggested: (kg: number) => `நாங்கள் பரிந்துரைப்பது: ${kg} கி.கி`,
+  suggestedWhy: 'ஆரோக்கியமான வேகத்தில் அடையக்கூடிய முதல் இலக்கு. நீங்கள் விரும்பினால் மாற்றலாம்.',
+  target: (kg: number) => `இலக்கு: ${kg} கி.கி`,
+  pace: (kg: number, duration: string, when: string) => `வாரத்திற்கு சுமார் ${kg} கி.கி · ${duration} (${when})`,
+  weeks: (n: number) => `சுமார் ${n} வாரங்கள்`,
+  months: (n: number) => `சுமார் ${n} மாதங்கள்`,
+  slow: 'உங்கள் உடலுக்கு இது மெதுவாகவே நடக்கும். சரியான வேகத்திற்கு உங்கள் பயிற்சியாளரிடம் பேசுங்கள்.',
   failed: 'ஏதோ தவறு நடந்தது. மீண்டும் முயலுங்கள்.',
 }
 
-type Step = 'height' | 'weight' | 'age' | 'confirm' | 'choose' | 'result'
+type Step = 'height' | 'weight' | 'age' | 'confirm' | 'choose' | 'target' | 'result'
+
+const MONTH_YEAR = new Intl.DateTimeFormat('ta-IN', { month: 'long', year: 'numeric' })
+
+// "சுமார் 8 வாரங்கள்" up to 12 weeks, else months; with the month she gets there.
+function timeline(result: DietSetupResult): string | null {
+  if (result.weeks === null || result.target_date === null || result.weekly_change_kg === null) return null
+  const duration = result.weeks <= 12 ? TA.weeks(result.weeks) : TA.months(Math.round(result.weeks / 4.345))
+  const [year, month, day] = result.target_date.split('-').map(Number)
+  return TA.pace(result.weekly_change_kg, duration, MONTH_YEAR.format(new Date(year, month - 1, day)))
+}
 const QUESTION_STEPS: Step[] = ['height', 'weight', 'age']
 
 // The one-time diet setup, shown the first time she opens Diet: height,
@@ -66,6 +84,10 @@ export function DietSetupScreen() {
   const [age, setAge] = useState(35)
   const [assessment, setAssessment] = useState<DietSetupAssessment | null>(null)
   const [result, setResult] = useState<DietSetupResult | null>(null)
+  // Losing or gaining: the goal, where she picked it, and her target weight.
+  const [goal, setGoal] = useState<'lose' | 'gain'>('lose')
+  const [pickedOn, setPickedOn] = useState<'confirm' | 'choose'>('confirm')
+  const [targetWeight, setTargetWeight] = useState(0)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -97,11 +119,22 @@ export function DietSetupScreen() {
       setStep('confirm')
     })
 
-  const save = (goal: DietGoal) =>
+  const save = (chosen: DietGoal, target: number | null) =>
     run(async () => {
-      setResult(await completeDietSetup(userId!, { ...inputs, goal }))
+      setResult(await completeDietSetup(userId!, { ...inputs, goal: chosen, target_weight_kg: target }))
       setStep('result')
     })
+
+  // Maintaining saves straight away; losing or gaining asks her target first.
+  const pick = (chosen: DietGoal) => {
+    const range = chosen === 'maintain' ? undefined : assessment?.target_weights[chosen]
+    if (chosen === 'maintain' || !range) return save(chosen, null)
+    setGoal(chosen)
+    setPickedOn(step === 'choose' ? 'choose' : 'confirm')
+    setTargetWeight(range.suggested)
+    setStep('target')
+  }
+  const targetRange = assessment?.target_weights[goal]
 
   const back = () => {
     setError(null)
@@ -110,6 +143,7 @@ export function DietSetupScreen() {
     else if (step === 'age') setStep('weight')
     else if (step === 'confirm') setStep('age')
     else if (step === 'choose') setStep('confirm')
+    else if (step === 'target') setStep(pickedOn)
   }
 
   const questionIndex = QUESTION_STEPS.indexOf(step)
@@ -172,7 +206,7 @@ export function DietSetupScreen() {
                 <button className="btn-secondary" disabled={busy} onClick={() => setStep('choose')}>
                   {TA.no}
                 </button>
-                <button className="btn-primary" disabled={busy} onClick={() => save(assessment.recommended_goal)}>
+                <button className="btn-primary" disabled={busy} onClick={() => pick(assessment.recommended_goal)}>
                   {busy ? TA.working : TA.yes}
                 </button>
               </div>
@@ -182,7 +216,7 @@ export function DietSetupScreen() {
               <p className="diet-setup__recommend">{TA.choose}</p>
               <div className="diet-setup__choices">
                 {assessment.allowed_goals.map((goal) => (
-                  <button key={goal} className="diet-setup__goal" disabled={busy} onClick={() => save(goal)}>
+                  <button key={goal} className="diet-setup__goal" disabled={busy} onClick={() => pick(goal)}>
                     {TA.goal[goal]}
                     <Icon name="chevronRight" size={18} />
                   </button>
@@ -191,6 +225,27 @@ export function DietSetupScreen() {
             </>
           )}
         </div>
+      )}
+
+      {step === 'target' && targetRange && (
+        <>
+          <h2 className="diet-setup__question">{TA.targetQuestion}</h2>
+          <WheelPicker
+            key={goal}
+            label={TA.targetQuestion}
+            values={range(targetRange.min, targetRange.max)}
+            value={targetWeight}
+            onChange={setTargetWeight}
+            unit={TA.kg}
+          />
+          <p className="diet-setup__suggested">
+            <strong>{TA.suggested(targetRange.suggested)}</strong>
+            <span>{TA.suggestedWhy}</span>
+          </p>
+          <button className="btn-primary diet-setup__action" disabled={busy} onClick={() => save(goal, targetWeight)}>
+            {busy ? TA.working : TA.calculate}
+          </button>
+        </>
       )}
 
       {step === 'result' && result && (
@@ -202,6 +257,12 @@ export function DietSetupScreen() {
               <span>{TA.kcal}</span>
             </p>
             <p className="diet-setup__why">{TA.why[result.goal](Math.abs(result.adjustment_kcal))}</p>
+            {result.target_weight_kg !== null && (
+              <div className="diet-setup__target">
+                <strong>{TA.target(result.target_weight_kg)}</strong>
+                <span>{timeline(result) ?? TA.slow}</span>
+              </div>
+            )}
             <div className="diet-setup__macros">
               {(
                 [

@@ -201,6 +201,12 @@ function SetupLine({ setup }: { setup: DietSetup | null }) {
   if (!setup) {
     return <p className="admin__muted">Not set up yet — she'll be asked when she opens Diet.</p>
   }
+  const target = setup.target_weight_kg
+    ? ` · target ${setup.target_weight_kg} kg` +
+      (setup.target_date
+        ? ` by ${new Date(setup.target_date).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })} (~${setup.weekly_change_kg} kg/week)`
+        : ' (no date: little room under the calorie floor)')
+    : ''
   const chose = setup.goal_confirmed
     ? `agreed to ${GOAL_TEXT[setup.goal]}`
     : `chose to ${GOAL_TEXT[setup.goal]} (we suggested ${GOAL_TEXT[setup.recommended_goal]})`
@@ -209,6 +215,7 @@ function SetupLine({ setup }: { setup: DietSetup | null }) {
       Setup {new Date(setup.completed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}:{' '}
       {setup.height_cm} cm, {setup.weight_kg} kg, {setup.age} y · BMI {setup.bmi} ({setup.bmi_category}) ·
       maintenance {setup.tdee} kcal · {chose}, worked out {setup.calculated_targets.energy_kcal} kcal
+      {target}
     </p>
   )
 }

@@ -233,7 +233,8 @@ def test_setup_assess_recommends_and_stores_nothing(ctl, sign_in):
     body = client.post("/api/users/usr_1/diet/setup/assess", json=SETUP).get_json()
 
     assert (body["bmi"], body["bmi_category"], body["recommended_goal"]) == (28.0, "overweight", "lose")
-    assert body["allowed_goals"] == ["lose", "maintain", "gain"]
+    assert body["allowed_goals"] == ["lose", "maintain"]
+    assert body["target_weights"] == {"lose": {"min": 47, "max": 69, "suggested": 63}}
     assert ctl.repo.profiles["usr_1"]["diet_setup"] is None
     assert client.post("/api/users/usr_2/diet/setup/assess", json=SETUP).status_code == 403
     for bad in ({**SETUP, "age": 10}, {**SETUP, "height_cm": "158"}, {"weight_kg": 70, "age": 50}):
@@ -246,13 +247,18 @@ def test_setup_saves_her_targets_once(ctl, sign_in):
     path = "/api/users/usr_1/diet/setup"
 
     assert client.post(path, json={**SETUP, "goal": "shrink"}).status_code == 400
-    body = client.post(path, json={**SETUP, "goal": "lose"}).get_json()
+    assert client.post(path, json={**SETUP, "goal": "gain", "target_weight_kg": 72}).status_code == 400
+    for target in (None, 40, "63"):
+        assert client.post(path, json={**SETUP, "goal": "lose", "target_weight_kg": target}).status_code == 400
+    body = client.post(path, json={**SETUP, "goal": "lose", "target_weight_kg": 63}).get_json()
 
     targets = {"energy_kcal": 1400, "protein_g": 75, "carbs_g": 187, "fat_g": 39, "fibre_g": 25}
     assert body["targets"] == targets and body["goal"] == "lose"
     stored = ctl.repo.profiles["usr_1"]["diet_setup"]
     assert (stored["height_cm"], stored["weight_kg"], stored["age"], stored["goal_confirmed"]) == (158, 70, 50, True)
     assert stored["calculated_targets"] == targets and ctl.repo.saved_targets["usr_1"] == targets
+    assert (stored["target_weight_kg"], stored["weekly_change_kg"], stored["weeks"]) == (63, 0.3, 22)
+    assert stored["target_date"] and "target_weights" not in stored
 
     again = client.post(path, json={**SETUP, "goal": "maintain"})
     assert again.status_code == 409 and again.get_json()["setup_done"] is True
@@ -261,9 +267,10 @@ def test_setup_saves_her_targets_once(ctl, sign_in):
 
 def test_setup_refuses_losing_weight_when_underweight(ctl, sign_in):
     client = sign_in("usr_1")
-    body = {"height_cm": 165, "weight_kg": 45, "age": 30, "goal": "lose"}
+    body = {"height_cm": 165, "weight_kg": 45, "age": 30, "goal": "lose", "target_weight_kg": 44}
     assert client.post("/api/users/usr_1/diet/setup", json=body).status_code == 400
-    assert client.post("/api/users/usr_1/diet/setup", json={**body, "goal": "gain"}).status_code == 200
+    gain = client.post("/api/users/usr_1/diet/setup", json={**body, "goal": "gain", "target_weight_kg": 50})
+    assert gain.status_code == 200 and gain.get_json()["weeks"]
 
 
 def test_coach_view_includes_her_setup(ctl, app_module):

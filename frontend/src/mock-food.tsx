@@ -70,29 +70,50 @@ function totalsOf(list: Item[]) {
 let TARGETS = { energy_kcal: 1800, protein_g: 50, fibre_g: 25, carbs_g: 225, fat_g: 60 }
 // ?setup=1 starts before the one-time setup. Same formula as diet/setup.py.
 let setupDone = new URLSearchParams(location.search).get('setup') !== '1'
+const wAt = (bmi: number, h: number) => bmi * (h / 100) ** 2
+const within = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)))
 function assessSetup(b: Record<string, number>) {
   const bmi = Math.round((b.weight_kg / (b.height_cm / 100) ** 2) * 10) / 10
   const category = bmi < 18.5 ? 'underweight' : bmi >= 25 ? 'overweight' : 'healthy'
   const bmr = 10 * b.weight_kg + 6.25 * b.height_cm - 5 * b.age - 161
+  const tw: Record<string, { min: number; max: number; suggested: number }> = {}
+  const [lmin, lmax] = [Math.ceil(wAt(18.5, b.height_cm)), Math.ceil(b.weight_kg) - 1]
+  if (lmin <= lmax) {
+    const s = category === 'overweight' ? Math.max(b.weight_kg * 0.9, wAt(24.9, b.height_cm)) : b.weight_kg * 0.9
+    tw.lose = { min: lmin, max: lmax, suggested: within(s, lmin, lmax) }
+  }
+  const [gmin, gmax] = [Math.floor(b.weight_kg) + 1, Math.floor(wAt(24.9, b.height_cm))]
+  if (gmin <= gmax) {
+    const s = category === 'underweight' ? Math.min(Math.ceil(wAt(18.5, b.height_cm)), b.weight_kg + 5) : b.weight_kg + 3
+    tw.gain = { min: gmin, max: gmax, suggested: within(s, gmin, gmax) }
+  }
   return {
     bmi, bmi_category: category, bmr: Math.round(bmr), tdee: Math.round(bmr * 1.375),
     recommended_goal: { underweight: 'gain', healthy: 'maintain', overweight: 'lose' }[category],
-    allowed_goals: category === 'underweight' ? ['maintain', 'gain'] : ['lose', 'maintain', 'gain'],
+    allowed_goals: ['lose', 'maintain', 'gain'].filter((g) => g === 'maintain' || g in tw), target_weights: tw,
   }
 }
-function completeSetup(b: Record<string, number>, goal: string) {
+function completeSetup(b: Record<string, number>, goal: string, target: number | null) {
   const a = assessSetup(b)
   const bmr = 10 * b.weight_kg + 6.25 * b.height_cm - 5 * b.age - 161
   const tdee = bmr * 1.375
-  let kcal = goal === 'gain' ? tdee + 300 : goal === 'lose' ? Math.max(tdee - Math.min(500, tdee * 0.2), bmr, 1200) : tdee
+  const [most, share] = a.bmi_category === 'overweight' ? [500, 0.2] : [250, 0.1]
+  let kcal = goal === 'gain' ? tdee + 300 : goal === 'lose' ? Math.max(tdee - Math.min(most, tdee * share), bmr, 1200) : tdee
   kcal = Math.round(kcal / 10) * 10
-  const protein = Math.round(1.2 * Math.min(b.weight_kg, 24.9 * (b.height_cm / 100) ** 2))
+  const protein = Math.round(1.2 * Math.min(b.weight_kg, wAt(24.9, b.height_cm)))
   const fat = Math.round((kcal * 0.25) / 9)
   const fibre = Math.round(Math.max(25, (kcal / 1000) * 14))
   const carbs = Math.round((kcal - protein * 4 - fat * 9) / 4)
   TARGETS = { energy_kcal: kcal, protein_g: protein, fibre_g: fibre, carbs_g: carbs, fat_g: fat }
   setupDone = true
-  return { ...a, goal, adjustment_kcal: Math.round(kcal - tdee), targets: TARGETS }
+  const change = Math.abs(kcal - tdee)
+  const weekly = target !== null && change >= 100 ? (change * 7) / 7700 : null
+  const weeks = weekly ? Math.ceil(Math.abs(b.weight_kg - target!) / weekly) : null
+  const date = weeks ? new Date(Date.now() + weeks * 7 * 864e5).toISOString().slice(0, 10) : null
+  return {
+    ...a, goal, adjustment_kcal: Math.round(kcal - tdee), targets: TARGETS, target_weight_kg: goal === 'maintain' ? null : target,
+    weekly_change_kg: weekly ? Math.round(weekly * 10) / 10 : null, weeks, target_date: date,
+  }
 }
 const TAMIL: Record<string, string> = {
   Idli: 'இட்லி', Sambar: 'சாம்பார்', 'Filter Coffee': 'ஃபில்டர் காபி', 'Cooked Rice': 'சாதம்',
@@ -125,7 +146,7 @@ function handle(method: string, path: string, body: Record<string, number>): unk
   let m
   if (path === '/api/auth/me') return { user_id: 'u1', name: 'Test client', gender: 'female', diet_enabled: true, diet_setup_done: setupDone }
   if (method === 'POST' && path === '/api/users/u1/diet/setup/assess') return assessSetup(body)
-  if (method === 'POST' && path === '/api/users/u1/diet/setup') return completeSetup(body, (body as unknown as { goal: string }).goal)
+  if (method === 'POST' && path === '/api/users/u1/diet/setup') return completeSetup(body, (body as unknown as { goal: string }).goal, body.target_weight_kg ?? null)
   if ((m = path.match(/^\/api\/users\/u1\/diet\/days/))) {
     const n = Number(new URLSearchParams(path.split('?')[1]).get('days') ?? 10)
     return { targets: TARGETS, days: Array.from({ length: n }, (_, i) => ({ date: iso(i), totals: totalsOf(counted(iso(i))), dishes: counted(iso(i)).length })) }

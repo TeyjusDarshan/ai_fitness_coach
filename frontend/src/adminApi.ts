@@ -486,6 +486,10 @@ export interface DietSetup {
   goal_confirmed: boolean
   tdee: number
   calculated_targets: NutritionTargets
+  // Losing or gaining (setups from before targets existed have none).
+  target_weight_kg?: number | null
+  weekly_change_kg?: number | null
+  target_date?: string | null
   completed_at: string
 }
 

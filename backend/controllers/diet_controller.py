@@ -302,8 +302,9 @@ def _setup_profile(user_id):
 @require_diet
 def assess_diet_setup(user_id):
     """`{height_cm, weight_kg, age}` -> her BMI, its category, the goal we
-    recommend (`lose` / `maintain` / `gain`) and the goals she may pick
-    instead. Stores nothing."""
+    recommend (`lose` / `maintain` / `gain`), the goals she may pick instead
+    and, for losing / gaining, the target weights on offer with the one we
+    suggest. Stores nothing."""
     gender, error = _setup_profile(user_id)
     if error:
         return error
@@ -316,9 +317,11 @@ def assess_diet_setup(user_id):
 @diet_bp.post("/api/users/<user_id>/diet/setup")
 @require_diet
 def complete_diet_setup(user_id):
-    """`{height_cm, weight_kg, age, goal}` — her one-time setup: works out her
-    daily targets (BMI + Mifflin-St Jeor, lightly active, for the goal she
-    confirmed or picked) and stores them with the setup. 409 once done."""
+    """`{height_cm, weight_kg, age, goal, target_weight_kg}` — her one-time
+    setup: works out her daily targets (BMI + Mifflin-St Jeor, lightly
+    active, for the goal she confirmed or picked) and, for losing or gaining,
+    the timeline to her target weight (required then, within the range
+    /assess offered), and stores them with the setup. 409 once done."""
     gender, error = _setup_profile(user_id)
     if error:
         return error
@@ -329,15 +332,19 @@ def complete_diet_setup(user_id):
     goal = body.get("goal")
     if goal not in GOALS:
         return jsonify({"error": f"'goal' must be one of {', '.join(GOALS)}."}), 400
+    target = body.get("target_weight_kg")
+    if target is not None and _number(target) is None:
+        return jsonify({"error": "'target_weight_kg' must be a number."}), 400
     try:
-        result = calculate_goals(*values, gender, goal)
+        result = calculate_goals(*values, gender, goal, _number(target) if target is not None else None,
+                                 today=app_today())
     except SetupError as exc:
         return jsonify({"error": str(exc)}), 400
 
     height_cm, weight_kg, age = values
     setup = {
         "height_cm": height_cm, "weight_kg": weight_kg, "age": age, "gender": gender,
-        **{key: value for key, value in result.items() if key not in ("targets", "allowed_goals")},
+        **{key: value for key, value in result.items() if key not in ("targets", "allowed_goals", "target_weights")},
         "goal_confirmed": goal == result["recommended_goal"],
         "calculated_targets": result["targets"],
         "completed_at": datetime.now(timezone.utc).isoformat(),

@@ -4516,3 +4516,41 @@ body.with-bottom-nav .food-mic {
   line-height: 1.5;
   color: var(--ink-secondary);
 }
+
+.diet-setup__suggested {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.diet-setup__suggested strong {
+  color: var(--accent);
+}
+
+.diet-setup__suggested span {
+  font-size: 0.9rem;
+  color: var(--ink-secondary);
+}
+
+.diet-setup__target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  line-height: 1.5;
+}
+
+.diet-setup__target strong {
+  font-size: 1.1rem;
+  color: var(--heading);
+}
+
+.diet-setup__target span {
+  font-size: 0.9rem;
+  color: var(--ink);
+}

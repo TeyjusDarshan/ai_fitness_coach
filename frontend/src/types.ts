@@ -300,13 +300,21 @@ export interface DietSetupInput {
   age: number
 }
 
+// The target weights she may pick for losing or gaining, and ours.
+export interface TargetWeightRange {
+  min: number
+  max: number
+  suggested: number
+}
+
 // Her BMI and the goal we recommend; `allowed_goals` leaves out losing
-// weight when she is underweight.
+// weight when she is underweight and gaining when she is overweight.
 export interface DietSetupAssessment {
   bmi: number
   bmi_category: BmiCategory
   recommended_goal: DietGoal
   allowed_goals: DietGoal[]
+  target_weights: Partial<Record<'lose' | 'gain', TargetWeightRange>>
   bmr: number
   tdee: number
 }
@@ -315,5 +323,12 @@ export interface DietSetupResult extends DietSetupAssessment {
   goal: DietGoal
   // Calories above (+) or below (−) maintenance.
   adjustment_kcal: number
+  // Losing or gaining: her target and the healthy pace to it. `weeks` and
+  // `target_date` are null when the calorie floors leave too little room
+  // to promise a date.
+  target_weight_kg: number | null
+  weekly_change_kg: number | null
+  weeks: number | null
+  target_date: string | null
   targets: DietGoals
 }

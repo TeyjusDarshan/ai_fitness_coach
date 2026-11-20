@@ -169,7 +169,7 @@ export function assessDietSetup(userId: string, body: DietSetupInput): Promise<D
 
 export function completeDietSetup(
   userId: string,
-  body: DietSetupInput & { goal: DietGoal },
+  body: DietSetupInput & { goal: DietGoal; target_weight_kg: number | null },
 ): Promise<DietSetupResult> {
   return request(`/users/${encodeURIComponent(userId)}/diet/setup`, { method: 'POST', body: JSON.stringify(body) })
 }
