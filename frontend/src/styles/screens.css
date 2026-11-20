@@ -3549,19 +3549,13 @@
 /* Daily goal: calories ring and the four goal nutrients */
 .food-goal {
   margin-bottom: 8px;
-  padding: 16px 16px 18px;
-}
-.food-goal__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  padding: 16px 18px 20px;
 }
 .food-goal__title {
   display: flex;
   align-items: center;
   gap: 10px;
+  margin: 0 0 14px;
   font-size: 18px;
   font-weight: 700;
   color: var(--heading);
@@ -3569,30 +3563,11 @@
 .food-goal__title svg {
   color: var(--success);
 }
-.food-goal__kcal {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 15px;
-  color: var(--ink-secondary);
-  font-variant-numeric: tabular-nums;
-}
-.food-goal__kcal svg {
-  color: var(--accent);
-}
 .food-goal__body {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.3fr);
+  gap: 20px;
   align-items: center;
-}
-.food-goal__ring-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding-right: 12px;
-  border-right: 1px solid var(--hairline);
 }
 .food-goal__ring {
   position: relative;
@@ -3608,13 +3583,13 @@
 .food-goal__ring-track,
 .food-goal__ring-fill {
   fill: none;
-  stroke-width: 12;
+  stroke-width: 11;
 }
 .food-goal__ring-track {
   stroke: var(--accent-soft);
 }
 .food-goal__ring-fill {
-  stroke: var(--success);
+  stroke: #3a7d5c;
   stroke-linecap: round;
   transition: stroke-dasharray 0.5s ease;
 }
@@ -3635,77 +3610,48 @@
   color: var(--heading);
 }
 .food-goal__ring-text span {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ink-secondary);
-}
-.food-goal__percent {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--heading);
-  font-variant-numeric: tabular-nums;
 }
 .food-goal__bars {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
 }
 .food-goal__bar {
-  --tone: var(--success);
-  --tone-soft: #e3f3e8;
-  --tone-ink: #23774a;
+  --tone: var(--accent);
 }
 .food-goal__bar--fibre {
-  --tone: #f07c2b;
-  --tone-soft: #fdebdc;
-  --tone-ink: #c45a12;
+  --tone: #e3823c;
 }
 .food-goal__bar--carbs {
-  --tone: #7b61d1;
-  --tone-soft: #ece7fa;
-  --tone-ink: #5a42b0;
+  --tone: #8d7ad6;
 }
 .food-goal__bar--fat {
-  --tone: #e8b22f;
-  --tone-soft: #fbf1d4;
-  --tone-ink: #a87a0a;
+  --tone: #ddb13f;
 }
 .food-goal__bar-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 6px;
-  margin-bottom: 5px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 .food-goal__bar-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--heading);
 }
-.food-goal__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--tone);
-  flex-shrink: 0;
-}
 .food-goal__bar-value {
-  font-size: 13px;
-  color: var(--ink-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
-.food-goal__bar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 .food-goal__track {
-  flex: 1;
-  height: 8px;
+  height: 7px;
   border-radius: var(--radius-pill);
   background: var(--surface-alt);
   overflow: hidden;
@@ -3715,27 +3661,6 @@
   border-radius: var(--radius-pill);
   background: var(--tone);
   transition: width 0.4s ease;
-}
-.food-goal__pill {
-  min-width: 46px;
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: var(--tone-soft);
-  color: var(--tone-ink);
-  font-size: 13px;
-  font-weight: 700;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-@media (max-width: 360px) {
-  .food-goal__body {
-    grid-template-columns: 1fr;
-  }
-  .food-goal__ring-wrap {
-    padding: 0 0 12px;
-    border-right: none;
-    border-bottom: 1px solid var(--hairline);
-  }
 }
 
 /* Floating mic (Today) */
@@ -4295,7 +4220,7 @@ button.food-notice {
 
 /* Workouts / Diet bar (clients with diet tracking on) */
 :root {
-  --bottom-nav-h: calc(68px + env(safe-area-inset-bottom));
+  --bottom-nav-h: calc(52px + env(safe-area-inset-bottom));
 }
 .bottom-nav {
   position: fixed;
@@ -4308,9 +4233,9 @@ button.food-notice {
   max-width: 480px;
   margin: 0 auto;
   height: var(--bottom-nav-h);
-  padding: 6px 24px env(safe-area-inset-bottom);
+  padding: 4px 24px env(safe-area-inset-bottom);
   border-top: 1px solid var(--hairline);
-  border-radius: 24px 24px 0 0;
+  border-radius: 18px 18px 0 0;
   background: var(--surface);
   box-shadow: 0 -6px 20px rgba(60, 50, 30, 0.08);
 }
@@ -4319,12 +4244,12 @@ button.food-notice {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  gap: 1px;
   border: none;
   background: none;
   color: var(--ink-secondary);
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
 }

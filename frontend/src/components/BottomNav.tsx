@@ -36,7 +36,7 @@ export function BottomNav() {
             aria-current={active ? 'page' : undefined}
             onClick={() => !active && navigate(tab.path)}
           >
-            <Icon name={tab.icon} size={26} />
+            <Icon name={tab.icon} size={22} />
             {tab.label}
           </button>
         )

@@ -28,79 +28,62 @@ function percentOf(value: number, target: number): number {
 
 // Calories as a ring and the four goal nutrients as bars, against her targets.
 function GoalCard({ totals, targets }: { totals: DietGoals; targets: DietGoals }) {
-  const percent = percentOf(totals.energy_kcal, targets.energy_kcal)
   const radius = 52
   const circumference = 2 * Math.PI * radius
-  const filled = (Math.min(100, percent) / 100) * circumference
+  const filled = Math.min(1, targets.energy_kcal > 0 ? totals.energy_kcal / targets.energy_kcal : 0) * circumference
   return (
     <section className="card food-goal" aria-label="Daily goal">
-      <div className="food-goal__head">
-        <span className="food-goal__title">
-          <Icon name="target" size={26} />
-          Daily Goal
-        </span>
-        <span className="food-goal__kcal">
-          <Icon name="flame" size={20} />
-          {kcal.format(targets.energy_kcal)} kcal
-        </span>
-      </div>
+      <h2 className="food-goal__title">
+        <Icon name="target" size={24} />
+        Daily Goal
+      </h2>
       <div className="food-goal__body">
-        <div className="food-goal__ring-wrap">
-          <div
-            className="food-goal__ring"
-            role="progressbar"
-            aria-label="Calories"
-            aria-valuemin={0}
-            aria-valuemax={targets.energy_kcal}
-            aria-valuenow={Math.round(totals.energy_kcal)}
-          >
-            <svg viewBox="0 0 120 120" aria-hidden>
-              <circle className="food-goal__ring-track" cx="60" cy="60" r={radius} />
-              {filled > 0 && (
-                <circle
-                  className="food-goal__ring-fill"
-                  cx="60"
-                  cy="60"
-                  r={radius}
-                  strokeDasharray={`${filled} ${circumference}`}
-                />
-              )}
-            </svg>
-            <span className="food-goal__ring-text">
-              <strong>{kcal.format(Math.round(totals.energy_kcal))}</strong>
-              <span>/ {kcal.format(targets.energy_kcal)} kcal</span>
-            </span>
-          </div>
-          <span className="food-goal__percent">{percent}%</span>
+        <div
+          className="food-goal__ring"
+          role="progressbar"
+          aria-label="Calories"
+          aria-valuemin={0}
+          aria-valuemax={targets.energy_kcal}
+          aria-valuenow={Math.round(totals.energy_kcal)}
+        >
+          <svg viewBox="0 0 120 120" aria-hidden>
+            <circle className="food-goal__ring-track" cx="60" cy="60" r={radius} />
+            {filled > 0 && (
+              <circle
+                className="food-goal__ring-fill"
+                cx="60"
+                cy="60"
+                r={radius}
+                strokeDasharray={`${filled} ${circumference}`}
+              />
+            )}
+          </svg>
+          <span className="food-goal__ring-text">
+            <strong>{kcal.format(Math.round(totals.energy_kcal))}</strong>
+            <span>/ {kcal.format(targets.energy_kcal)} kcal</span>
+          </span>
         </div>
         <div className="food-goal__bars">
           {GOAL_BARS.map(({ key, label, tone }) => {
             const value = totals[key]
             const target = targets[key]
-            const share = percentOf(value, target)
             return (
               <div key={key} className={`food-goal__bar food-goal__bar--${tone}`}>
                 <div className="food-goal__bar-head">
-                  <span className="food-goal__bar-label">
-                    <span className="food-goal__dot" aria-hidden />
-                    {label}
-                  </span>
+                  <span className="food-goal__bar-label">{label}</span>
                   <span className="food-goal__bar-value">
-                    {Math.round(value)} g / {target} g
+                    {Math.round(value)} / {target} g
                   </span>
                 </div>
-                <div className="food-goal__bar-row">
-                  <div
-                    className="food-goal__track"
-                    role="progressbar"
-                    aria-label={label}
-                    aria-valuemin={0}
-                    aria-valuemax={target}
-                    aria-valuenow={Math.round(value)}
-                  >
-                    <div className="food-goal__fill" style={{ width: `${Math.min(100, share)}%` }} />
-                  </div>
-                  <span className="food-goal__pill">{share}%</span>
+                <div
+                  className="food-goal__track"
+                  role="progressbar"
+                  aria-label={label}
+                  aria-valuemin={0}
+                  aria-valuemax={target}
+                  aria-valuenow={Math.round(value)}
+                >
+                  <div className="food-goal__fill" style={{ width: `${Math.min(100, percentOf(value, target))}%` }} />
                 </div>
               </div>
             )
@@ -412,7 +395,6 @@ export function FoodScreen() {
           disabled={recording || sending}
           onClick={() => chooseTab('past')}
         >
-          <Icon name="calendar" size={20} />
           Past {PAST_DAYS} Day Logs
         </button>
       </div>
