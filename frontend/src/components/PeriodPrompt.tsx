@@ -1,5 +1,8 @@
+import { createPortal } from 'react-dom'
+
 // Asked of women before a fresh workout starts; a yes lowers that session's
-// reps. See useStartWorkout.
+// reps. See useStartWorkout. Rendered straight into <body>, so no screen's
+// stacking context (or the bottom nav bar) can cover it.
 export function PeriodPrompt({
   open,
   adjusting,
@@ -12,9 +15,9 @@ export function PeriodPrompt({
   onAnswer: (isPeriod: boolean) => void
   onCancel: () => void
 }) {
-  if (adjusting) return <AdjustingPopup />
+  if (adjusting) return createPortal(<AdjustingPopup />, document.body)
   if (!open) return null
-  return (
+  return createPortal(
     <div className="period-prompt" role="dialog" aria-modal="true" aria-labelledby="period-prompt-title" onClick={onCancel}>
       <div className="period-prompt__card" onClick={(e) => e.stopPropagation()}>
         <div className="period-prompt__head">
@@ -49,7 +52,8 @@ export function PeriodPrompt({
           No
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -57,7 +61,7 @@ export function PeriodPrompt({
 // the change doesn't happen silently.
 function AdjustingPopup() {
   return (
-    <div className="period-prompt period-prompt--center" role="alertdialog" aria-live="polite" aria-labelledby="adjusting-title">
+    <div className="period-prompt" role="alertdialog" aria-live="polite" aria-labelledby="adjusting-title">
       <div className="adjusting">
         <div className="adjusting__art" aria-hidden="true">
           <svg className="adjusting__ring" viewBox="0 0 100 100">
