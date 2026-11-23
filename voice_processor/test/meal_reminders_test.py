@@ -75,6 +75,17 @@ def test_the_text_names_only_the_missing_meals():
     assert "காலை" not in text
 
 
+def test_a_skipped_meal_counts_as_answered():
+    skipped_breakfast = [{"id": 2, "created_at": "2026-11-23T03:30:00+00:00", "skipped_meals": ["breakfast"],
+                          "meal_log_items": []}]
+
+    logged = mr.logged_meals(skipped_breakfast)
+
+    assert logged == {"breakfast"}
+    assert mr.missing_meals("breakfast", logged) == []
+    assert mr.missing_meals("lunch", logged) == ["lunch"]
+
+
 # --- which slot is due ---------------------------------------------------------
 
 @pytest.mark.parametrize("hour, minute, slot", [

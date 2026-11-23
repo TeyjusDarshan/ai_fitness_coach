@@ -7,6 +7,10 @@ against the output, not asserted, since the calls are real.
 """
 
 UTTERANCES = [
+    # Skipped meals: no dish, but the meal is recorded as skipped.
+    {"text": "inniku breakfast skip pannitten, onnum saapdala", "expect": [], "skipped": ["breakfast"]},
+    {"text": "kaalaila onnum saapdala, lunch ku rendu chapati", "expect": [("Chapati", 2, "piece")],
+     "skipped": ["breakfast"]},
     {"text": "kaalaila moonu idli, oru karandi sambar, konjam thengai chutney saapten",
      "expect": [("Idli", 3, "piece"), ("Sambar", 1, "karandi"), ("Coconut Chutney", 0.5, None)]},
     {"text": "morning rendu dosai with sambar, apram oru tumbler filter coffee sugar pottu",

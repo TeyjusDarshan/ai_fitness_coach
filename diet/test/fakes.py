@@ -140,5 +140,5 @@ def dish(quote, name, quantity, unit, portion_grams, ingredients, stated=True, m
     )
 
 
-def estimate(*dishes):
-    return SimpleNamespace(dishes=list(dishes))
+def estimate(*dishes, skipped=()):
+    return SimpleNamespace(dishes=list(dishes), skipped_meals=list(skipped))

@@ -84,6 +84,30 @@ def test_nothing_usable_fails_the_log(repo, claude, transcript, proposed, error)
     assert (log["status"], log["error"], saved) == ("failed", error, [])
 
 
+def test_a_skipped_meal_alone_is_a_ready_log_with_no_dishes(repo, claude):
+    claude.return_value = estimate(skipped=["breakfast"])
+
+    log, items = _run(repo, repo.add_log(), "inniku breakfast skip pannitten")
+
+    assert (log["status"], log["error"], log["skipped_meals"], items) == ("ready", None, ["breakfast"], [])
+
+
+def test_dishes_and_a_skipped_meal_are_both_kept(repo, claude):
+    claude.return_value = estimate(RICE, skipped=["breakfast"])
+
+    log, [item] = _run(repo, repo.add_log())
+
+    assert (log["status"], log["skipped_meals"], item["dish_name"]) == ("ready", ["breakfast"], "Cooked Rice")
+
+
+def test_skipped_meals_are_cleaned_up(repo, claude):
+    claude.return_value = estimate(skipped=["dinner", "brunch", "breakfast", "dinner"])
+
+    log, _ = _run(repo, repo.add_log(), "skip")
+
+    assert log["skipped_meals"] == ["breakfast", "dinner"]
+
+
 def test_a_crash_fails_the_log_and_a_processed_log_is_left_alone(repo, claude):
     claude.side_effect = RuntimeError("refused")
     log, _ = _run(repo, repo.add_log())
@@ -112,3 +136,9 @@ def test_the_output_schema_only_allows_the_given_names():
 
     ingredient = next(d for name, d in schema["$defs"].items() if name.startswith("DishIngredient"))
     assert sorted(ingredient["properties"]["name"]["enum"]) == ["Raw white rice", "Urad dal"]
+
+
+def test_the_output_schema_has_skipped_meals():
+    schema = agent.meal_schema(("Raw white rice",)).model_json_schema()
+
+    assert schema["properties"]["skipped_meals"]["items"]["enum"] == ["breakfast", "lunch", "dinner", "snack"]

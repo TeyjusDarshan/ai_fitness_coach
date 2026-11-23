@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Icon } from '../components/Icon'
 import { confirmMealLog, deleteMealItem, deleteMealLog, fetchMealLog, setMealItemQuantity } from '../api'
-import { dishName, MEAL_LOG_ERRORS, nextQuantity, portionLabel } from '../food'
+import { dishName, MEAL_LABELS, MEAL_LOG_ERRORS, nextQuantity, portionLabel } from '../food'
 import { TA } from '../foodText'
 import type { MealItem, MealLog } from '../types'
 
@@ -142,7 +142,14 @@ export function MealReviewScreen() {
       <p className="food-screen__lead">{TA.heardLead}</p>
       {error && <div className="error-banner">{error}</div>}
 
-      {log.items.length === 0 && <p className="food-screen__empty">{TA.nothingLeft}</p>}
+      {log.items.length === 0 &&
+        (log.skipped_meals?.length ? (
+          <p className="food-screen__empty">
+            {TA.skippedMeals(log.skipped_meals.map((meal) => MEAL_LABELS[meal]).join(', '))}
+          </p>
+        ) : (
+          <p className="food-screen__empty">{TA.nothingLeft}</p>
+        ))}
       <div className="food-review">
         {log.items.map((item) => (
           <div key={item.id} className="card food-card">

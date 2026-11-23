@@ -58,13 +58,16 @@ def meal_schema(names: Tuple[str, ...]) -> type:
         portion_grams=(float, ...),
         ingredients=(List[ingredient], ...),
     )
-    return create_model("MealEstimate", dishes=(List[dish], ...), __base__=BaseModel)
+    return create_model(
+        "MealEstimate", dishes=(List[dish], ...), skipped_meals=(List[Meal], ...), __base__=BaseModel,
+    )
 
 
 def estimate_meal(transcript: str, ingredient_names: List[str], user_id: Optional[str] = None,
                   feature: str = FEATURE) -> Any:
     """The dishes in her transcript, each with its portion and ingredient
-    grams. `ingredient_names` are the only names Claude may use."""
+    grams, and the meals she says she skipped. `ingredient_names` are the
+    only names Claude may use."""
     names = tuple(sorted(set(ingredient_names)))
     response = client.beta.messages.parse(
         model=MEAL_MODEL,

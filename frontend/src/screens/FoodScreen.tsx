@@ -114,10 +114,13 @@ function DayMeals({
   const waiting = day.logs.filter((log) => log.status === 'processing')
   const failed = day.logs.filter((log) => log.status === 'failed')
   const items = counted.flatMap((log) => log.items)
+  // Meals she said she didn't eat; shown only while that meal has no dishes.
+  const skipped = new Set(counted.flatMap((log) => log.skipped_meals ?? []))
   const groups = MEAL_ORDER.map((meal) => ({
     meal,
     items: items.filter((item) => item.meal === meal),
-  })).filter((group) => group.items.length > 0)
+    skipped: meal !== null && skipped.has(meal),
+  })).filter((group) => group.items.length > 0 || group.skipped)
 
   return (
     <>
@@ -141,6 +144,11 @@ function DayMeals({
         <section key={group.meal ?? 'other'} className="food-meal">
           <h2 className="food-meal__title">{MEAL_LABELS[group.meal ?? 'other']}</h2>
           <div className="card food-meal__items">
+            {group.items.length === 0 && (
+              <div className="food-item-row food-item-row--skipped">
+                <span className="food-item-row__name">{TA.skippedMeal}</span>
+              </div>
+            )}
             {group.items.map((item) => (
               <button key={item.id} className="food-item-row" onClick={() => onOpenItem(item)}>
                 <span className="food-item-row__text">

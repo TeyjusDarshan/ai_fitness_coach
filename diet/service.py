@@ -89,6 +89,8 @@ def shape_log(log: Dict[str, Any], detail: bool = False, nutrients: bool = False
         # Why it failed: no_speech, no_food, failed, or timeout (never processed).
         "error": (log.get("error") or "timeout") if status == "failed" else None,
         "created_at": log["created_at"],
+        # Meals she said she didn't eat (no dishes, no nutrients).
+        "skipped_meals": log.get("skipped_meals") or [],
         "items": [shape_item(item, detail, nutrients) for item in items],
     }
     if nutrients:

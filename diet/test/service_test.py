@@ -86,6 +86,13 @@ def test_a_log_stuck_in_processing_shows_as_failed(repo):
     assert (shaped["status"], shaped["error"]) == ("failed", "timeout")
 
 
+def test_a_log_carries_the_meals_she_skipped(repo):
+    skipped = repo.add_log(status="ready", skipped_meals=["breakfast"])
+
+    assert service.shape_log(repo.logs[skipped])["skipped_meals"] == ["breakfast"]
+    assert service.shape_log(repo.logs[1])["skipped_meals"] == []
+
+
 def test_the_coach_sees_where_a_log_came_from(repo):
     whatsapp = repo.add_log(status="ready", source="whatsapp", audio_path=None, transcript="rendu idli")
 

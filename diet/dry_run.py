@@ -28,9 +28,11 @@ def _line(totals) -> str:
 
 def run(repo: DietRepository, transcript: str, user_id: Optional[str]) -> None:
     print(f"\n=== transcript ===\n{transcript}")
-    dishes = estimate(repo, transcript, user_id)
+    dishes, skipped = estimate(repo, transcript, user_id)
+    if skipped:
+        print(f"\n=== skipped ===\n{', '.join(skipped)}")
     if not dishes:
-        print("\nNo food heard.")
+        print("\nNo food heard." if not skipped else "\nNo dishes.")
         return
 
     print("\n=== dishes ===")

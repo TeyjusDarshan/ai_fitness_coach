@@ -36,6 +36,9 @@ export const TA = {
   beingChecked: 'சரிபார்க்கப்படுகிறது',
   workingOutOne: 'ஒரு பதிவைக் கணக்கிடுகிறோம்…',
   couldNotUnderstandOne: 'ஒரு பதிவைப் புரிந்துகொள்ள முடியவில்லை.',
+  // A meal she said she skipped.
+  skippedMeal: 'சாப்பிடவில்லை',
+  skippedMeals: (meals: string) => `சாப்பிடவில்லை: ${meals}`,
   emptyToday:
     'இன்று இன்னும் எதுவும் பதிவு செய்யவில்லை. மைக்கைத் தட்டி, ஒரு தோழியிடம் சொல்வது போல் என்ன சாப்பிட்டீர்கள் என்று சொல்லுங்கள்: “moonu idli, oru karandi sambar, oru tumbler coffee”.',
   emptyDay: 'இந்த நாளில் எதுவும் பதிவு செய்யப்படவில்லை.',

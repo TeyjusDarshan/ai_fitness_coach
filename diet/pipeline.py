@@ -9,12 +9,12 @@ and the dry run (diet/dry_run.py).
 """
 import logging
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from diet import agent
 from diet.nutrition import name_key, nutrients_of, rounded
 from diet.repository import DietRepository
-from diet.validate import validate_meal
+from diet.validate import validate_meal, validate_skipped
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +26,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def estimate(repo: DietRepository, transcript: str, user_id: Optional[str]) -> List[Dict[str, Any]]:
-    """The validated dishes in a transcript (see validate.validate_meal),
-    each ingredient line carrying its reference row."""
+def estimate(
+    repo: DietRepository, transcript: str, user_id: Optional[str],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """(dishes, skipped meals) in a transcript: the validated dishes (see
+    validate.validate_meal, each ingredient line carrying its reference row)
+    and the meals she said she didn't eat (validate.validate_skipped)."""
     reference = repo.reference_ingredients()
     proposed = agent.estimate_meal(transcript, [row["name"] for row in reference], user_id)
     by_key = {name_key(row["name"]): row for row in reference}
-    return validate_meal(proposed.dishes, transcript, by_key)
+    skipped = validate_skipped(getattr(proposed, "skipped_meals", None))
+    return validate_meal(proposed.dishes, transcript, by_key), skipped
 
 
 def build_item_rows(dishes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -79,14 +83,18 @@ def process_meal_log(repo: DietRepository, meal_log_id: int, transcribe: Callabl
             return fail(NO_SPEECH)
         repo.update_meal_log(meal_log_id, {"transcript": transcript})
 
-        dishes = estimate(repo, transcript, log["user_id"])
-        if not dishes:
+        dishes, skipped = estimate(repo, transcript, log["user_id"])
+        # "I skipped breakfast" is an answer too: a log with only skipped
+        # meals is ready (no dishes, no nutrients), so it's acknowledged
+        # and the meal reminders stop asking about that meal.
+        if not dishes and not skipped:
             return fail(NO_FOOD)
+        repo.update_meal_log(meal_log_id, {"skipped_meals": skipped})
         repo.replace_items(meal_log_id, build_item_rows(dishes))
         repo.finish_meal_log(meal_log_id, {
             "status": "ready", "error": None, "processed_at": _now(), "model": agent.MEAL_MODEL,
         })
-        logger.info("Processed meal_log_id=%s: %d dishes", meal_log_id, len(dishes))
+        logger.info("Processed meal_log_id=%s: %d dishes, skipped %s", meal_log_id, len(dishes), skipped)
     except Exception:
         logger.exception("Failed to process meal_log_id=%s", meal_log_id)
         fail(FAILED)

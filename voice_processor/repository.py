@@ -635,10 +635,10 @@ class AnalysisRepository:
 
     def list_counted_meal_logs(self, user_id: str, day: date) -> List[Dict[str, Any]]:
         """Her worked-out (ready / confirmed) meal logs for a day, each with
-        its created_at and its dishes' meal."""
+        its created_at, the meals she said she skipped, and its dishes' meal."""
         return (
             self.client.table("meal_logs")
-            .select("id, created_at, meal_log_items(meal)")
+            .select("id, created_at, skipped_meals, meal_log_items(meal)")
             .eq("user_id", user_id)
             .eq("logged_for", day.isoformat())
             .in_("status", ["ready", "confirmed"])

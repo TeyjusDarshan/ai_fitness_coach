@@ -63,6 +63,13 @@ def tamil_name(value: Optional[str]) -> Optional[str]:
     return value if 0 < len(value) <= MAX_NAME_TA and _TAMIL_RE.search(value) else None
 
 
+def validate_skipped(meals: Optional[Iterable[Any]]) -> List[str]:
+    """The meals she said she skipped: known meal names only, each once, in
+    day order (breakfast, lunch, dinner, snack)."""
+    given = {str(meal) for meal in (meals or [])}
+    return [meal for meal in MEALS if meal in given]
+
+
 def validate_meal(dishes: Iterable[Any], transcript: str,
                   reference_by_key: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The proposed dishes worth keeping, as {dish_name, dish_name_ta, quote, meal,

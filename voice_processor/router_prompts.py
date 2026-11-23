@@ -26,7 +26,8 @@ felt. Answers are often short ("illa", "konjam kashtam", "knee fine") and \
 may not repeat the question.
 - "diet_checkin": she is reporting what she ate or drank so it can be \
 logged - dishes, amounts or meals ("rendu idli sambar saaptaen", "lunch \
-la rice, keerai", "oru coffee"). Food mentioned only to explain how a \
+la rice, keerai", "oru coffee"), or that she skipped or didn't eat a meal \
+("breakfast skip pannitten", "lunch saapdala"). Food mentioned only to explain how a \
 workout felt ("saaptutu workout pannaen, heavy-a irundhuchu") is NOT a \
 diet check-in.
 - "other": anything else - greetings, thanks, "ok", questions to the coach \

@@ -3915,6 +3915,10 @@ button.food-notice {
   font-size: 14px;
   color: var(--ink-secondary);
 }
+.food-item-row--skipped {
+  color: var(--ink-secondary);
+  font-style: italic;
+}
 .food-item-row__protein {
   flex-shrink: 0;
   font-size: 14px;

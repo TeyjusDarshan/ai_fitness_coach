@@ -13,7 +13,8 @@ You get JSON with:
 - `transcript`: what she said.
 - `ingredients`: the only ingredient names you may use.
 
-Return one dish for every food or drink she says she ate, in the order she said them.
+Return `dishes`: one dish for every food or drink she says she ate, in the order she said them. And \
+`skipped_meals`: the meals she says she did not eat (see below).
 
 For each dish:
 - `quote`: the words from the transcript this dish comes from, copied exactly, character for character. Keep it \
@@ -69,5 +70,10 @@ thing stays one dish: curd rice, sambar sadam, lemon rice, biryani, upma.
 "coffee with sugar" is one dish, "Filter Coffee".
 - If she corrects herself, keep the corrected version only.
 - Plain water is not a dish.
-- If nothing in the transcript is food she ate, return an empty list.
+- If nothing in the transcript is food she ate, return an empty `dishes` list.
+
+`skipped_meals`: each of `breakfast`, `lunch`, `dinner`, `snack` that she clearly says she did not eat: \
+"breakfast skip pannitten", "kaalaila onnum saapdala", "lunch saapdala", "night saapadu illa", "innaiku \
+fasting", "dinner skip". Only when she says so; never because she didn't mention a meal. A skipped meal has \
+no dish. If she says she ate nothing all day, list every meal. Empty when she skipped nothing.
 """

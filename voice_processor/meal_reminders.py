@@ -95,9 +95,12 @@ def meal_by_time(created_at: str, timezone_name: Optional[str] = None) -> str:
 
 
 def logged_meals(logs: Iterable[Dict[str, Any]], timezone_name: Optional[str] = None) -> Set[str]:
-    """The meals covered by her worked-out logs for the day."""
+    """The meals covered by her worked-out logs for the day: each dish's
+    meal, and every meal she said she skipped ("breakfast skip pannitten"
+    answers the breakfast question too)."""
     meals: Set[str] = set()
     for log in logs:
+        meals.update(log.get("skipped_meals") or [])
         for item in log.get("meal_log_items") or []:
             meals.add(item.get("meal") or meal_by_time(log["created_at"], timezone_name))
     return meals

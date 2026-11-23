@@ -482,6 +482,8 @@ export interface CoachMealLog {
   has_audio: boolean
   // Where she logged it: the app's mic, or a WhatsApp diet check-in.
   source: 'app' | 'whatsapp'
+  // Meals she said she didn't eat (no dishes).
+  skipped_meals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[]
   items: CoachMealItem[]
 }
 

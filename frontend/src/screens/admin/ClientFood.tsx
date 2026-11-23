@@ -326,6 +326,9 @@ function LogBlock({
           {LOG_STATUS[log.status]}
         </span>
         {log.source === 'whatsapp' && <span className="monitor__chip">WhatsApp</span>}
+        {log.skipped_meals?.length > 0 && (
+          <span className="monitor__chip">Skipped: {log.skipped_meals.join(', ')}</span>
+        )}
         <span className="admin__muted">
           {log.source === 'whatsapp' ? 'Sent' : 'Recorded'}{' '}
           {new Date(log.created_at).toLocaleString('en-GB', {

@@ -255,6 +255,8 @@ export interface MealLog {
   status: 'processing' | 'ready' | 'confirmed' | 'failed'
   error: MealLogError | null
   created_at: string
+  // Meals she said she didn't eat ("breakfast skip pannitten"): no dishes.
+  skipped_meals?: MealName[]
   items: MealItem[]
 }
 
