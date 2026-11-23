@@ -15,8 +15,9 @@ import type { Dashboard, DashboardWorkout, PastWorkoutsPage } from '../types'
 
 type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
 
-// The dashboard's Past Workouts list loads this many at a time.
-const PAST_PAGE_SIZE = 2
+// The Your Workouts page's Past tab loads this many at a time (the
+// backend allows up to 20).
+const PAST_PAGE_SIZE = 10
 
 export type PastTotals = Omit<PastWorkoutsPage, 'workouts'>
 export type AuthStatus = 'checking' | 'signedIn' | 'signedOut'

@@ -1,34 +1,14 @@
 import { useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { CollapsibleSection } from '../components/CollapsibleSection'
-import { LevelCard } from '../components/LevelCard'
-import { PlantHero } from '../components/PlantHero'
+import { Link, useNavigate } from 'react-router-dom'
+import { CornerLeaves } from '../components/Garden'
+import { GardenCard, TodayCard, WorkoutRow } from '../components/DashboardCards'
 import { Icon } from '../components/Icon'
-import { WorkoutPanel } from '../components/WorkoutPanel'
-import { useAppState } from '../state/AppStateContext'
-import { BUILD_LABEL } from '../buildInfo'
 import { PeriodPrompt } from '../components/PeriodPrompt'
+import { useAppState } from '../state/AppStateContext'
 import { useStartWorkout } from '../state/useStartWorkout'
-import { appTodayIso, formatDayDate } from '../utils'
-import { levelForPoints } from '../plant3d/levels'
-import { TA } from '../foodText'
 
 export function DashboardScreen() {
-  const {
-    userId,
-    displayName,
-    dietEnabled,
-    dashboard,
-    loading,
-    error,
-    refreshDashboard,
-    logout,
-    pastWorkouts,
-    pastTotals,
-    pastLoading,
-    pastError,
-    loadMorePast,
-  } = useAppState()
+  const { userId, displayName, dashboard, loading, error, refreshDashboard, logout } = useAppState()
   const { start, error: startError, periodPrompt } = useStartWorkout()
   const navigate = useNavigate()
 
@@ -60,112 +40,54 @@ export function DashboardScreen() {
 
   if (!dashboard) return null
 
-  const timerLabel = dashboard.session_duration_minutes
-    ? `${dashboard.session_duration_minutes} min`
-    : null
-
-  // The Today card: today's workout (scheduled, in progress or completed),
+  // The hero card: today's workout (scheduled, in progress or completed),
   // or on a rest day the next scheduled one.
   const today = dashboard.workouts.find((w) => w.is_today)
   const featured = today ?? dashboard.workouts.find((w) => w.is_next)
-  const upcoming = dashboard.workouts.filter((w) => w.status === 'scheduled' && w !== featured)
-  // Today's completed workout is already the Today card, so the Past list
-  // and its count leave it out.
-  const past = pastWorkouts.filter((w) => !w.is_today)
-  const todayIsPast = today?.status === 'completed' ? 1 : 0
-  const pastCompleted = (pastTotals?.completed ?? 0) - todayIsPast
-  const pastMissed = pastTotals?.missed ?? 0
-  const hasMorePast = pastTotals !== null && pastWorkouts.length < pastTotals.total
+  const nextUpcoming = dashboard.workouts.find((w) => w.status === 'scheduled' && w !== featured)
+  const sessionMinutes = dashboard.session_duration_minutes
 
   const subtitle = !today
-    ? 'No workout today. Check below for upcoming and past sessions.'
+    ? 'Rest day today — enjoy the break.'
     : today.status === 'completed'
-      ? 'Great job today! Check below for upcoming and past sessions.'
-      : "Today's workout is ready. Check below for upcoming and past sessions."
-
-  const plantLevel = levelForPoints(dashboard.points ?? 0)
-
-  const panel = (workout: (typeof dashboard.workouts)[number]) => (
-    <WorkoutPanel
-      key={workout.session_id}
-      workout={workout}
-      timerLabel={timerLabel}
-      onStart={() => void start(workout)}
-    />
-  )
+      ? 'Great job today!'
+      : "Ready for today's workout?"
 
   return (
-    <div className="screen dashboard-screen">
-      <PlantHero name={displayName ?? ''} userId={userId ?? ''} step={plantLevel.level} />
-      <LevelCard points={dashboard.points ?? 0} plantLevel={plantLevel} />
+    <div className="screen home-screen">
+      <header className="home-header">
+        <h1 className="home-header__greeting">
+          Hi {displayName ?? ''} <span aria-hidden>👋</span>
+        </h1>
+        <p className="home-header__subtitle">{subtitle}</p>
+      </header>
 
-      {/* Only this part scrolls; the plant and level card stay put. */}
-      <div className="dashboard__scroll">
-        {dietEnabled && (
-          <button className="food-entry" onClick={() => navigate('/food')}>
-            <span className="food-entry__icon">
-              <Icon name="bowl" size={24} />
-            </span>
-            <span className="food-entry__text">
-              <span className="food-entry__title" lang="ta">
-                {TA.entryTitle}
-              </span>
-              <span className="food-entry__hint" lang="ta">
-                {TA.entryHint}
-              </span>
-            </span>
-            <Icon name="chevronRight" size={20} />
-          </button>
-        )}
+      {startError && <div className="error-banner">{startError}</div>}
 
-        <h2 className="screen-title">Your Workouts</h2>
-        <p className="dashboard__subtitle">{subtitle}</p>
-        {startError && <div className="error-banner">{startError}</div>}
+      <TodayCard
+        workout={featured}
+        isToday={!!today}
+        weekNumber={dashboard.week_number ?? 1}
+        sessionMinutes={sessionMinutes}
+        coachNotes={dashboard.coach_notes}
+        onStart={() => featured && void start(featured)}
+      />
 
-        <div className="today-row">
-          <span className="today-chip">
-            <Icon name="calendar" size={20} />
-            Today
-          </span>
-          <span className="today-row__date">{formatDayDate(appTodayIso())}</span>
-        </div>
-        {!today && <p className="dashboard__rest">Rest day today — enjoy the break.</p>}
-        {featured && <div className="workout-list">{panel(featured)}</div>}
+      <GardenCard xp={dashboard.points ?? 0} userId={userId ?? ''} onOpen={() => navigate('/garden')} />
 
-        {upcoming.length > 0 && (
-          <CollapsibleSection
-            title="Upcoming Workouts"
-            summary={`${upcoming.length} scheduled`}
-            icon="calendar"
-            variant="upcoming"
-          >
-            <div className="workout-list">{upcoming.map(panel)}</div>
-          </CollapsibleSection>
-        )}
-
-        {(past.length > 0 || hasMorePast || pastError) && (
-          <CollapsibleSection
-            title="Past Workouts"
-            summary={
-              pastTotals
-                ? `${pastCompleted} completed${pastMissed > 0 ? ` · ${pastMissed} missed` : ''}`
-                : 'Could not load'
-            }
-            icon="clock"
-            variant="past"
-          >
-            <div className="workout-list">{past.map(panel)}</div>
-            {pastError && <div className="error-banner">{pastError}</div>}
-            {hasMorePast && (
-              <button className="btn-secondary load-more" disabled={pastLoading} onClick={() => void loadMorePast()}>
-                {pastLoading ? 'Loading…' : 'Load more'}
-              </button>
-            )}
-          </CollapsibleSection>
-        )}
-        {dashboard.coach_notes && <p className="dashboard-coach-notes">{dashboard.coach_notes}</p>}
-        <p className="build-version">{BUILD_LABEL}</p>
+      <div className="home-section">
+        <h2 className="home-section__title">Upcoming Workouts</h2>
+        <Link className="home-section__link" to="/workouts">
+          See All <Icon name="arrowRight" size={18} />
+        </Link>
       </div>
+      {nextUpcoming ? (
+        <WorkoutRow workout={nextUpcoming} sessionMinutes={sessionMinutes} />
+      ) : (
+        <p className="home-section__empty">Nothing else scheduled this week.</p>
+      )}
+
+      <CornerLeaves className="corner-leaves--page" />
       <PeriodPrompt {...periodPrompt} />
     </div>
   )

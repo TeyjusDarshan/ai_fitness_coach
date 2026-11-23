@@ -29,3 +29,38 @@ export function levelForPoints(points: number): PlantLevel {
   while (level < MAX_LEVEL && points >= levelThreshold(level + 1)) level++
   return { level, nextThreshold: level < MAX_LEVEL ? levelThreshold(level + 1) : null }
 }
+
+/** The name of each plant stage (level 0–11), matching what PottedPlant shows at that step. */
+export const STAGE_NAMES = [
+  'Empty Pot',
+  'Seedling',
+  'First Leaf',
+  'Young Plant',
+  'Leafy Plant',
+  'Budding',
+  'First Bloom',
+  'New Buds',
+  'Blooming',
+  'Flowering Bush',
+  'Butterfly Visit',
+  'Fully Grown',
+] as const
+
+export function stageName(level: number): string {
+  return STAGE_NAMES[Math.max(0, Math.min(MAX_LEVEL, level))]
+}
+
+// XP per completed workout (the backend's POINTS_PER_WORKOUT).
+export const XP_PER_WORKOUT = 25
+
+/** Progress towards the next stage: 0–100, and how many workouts it still needs (0 once fully grown). */
+export function stageProgress(xp: number): { percent: number; workoutsLeft: number; next: string | null } {
+  const { level, nextThreshold } = levelForPoints(xp)
+  if (nextThreshold === null) return { percent: 100, workoutsLeft: 0, next: null }
+  const from = levelThreshold(level)
+  return {
+    percent: Math.round(((xp - from) / (nextThreshold - from)) * 100),
+    workoutsLeft: Math.ceil((nextThreshold - xp) / XP_PER_WORKOUT),
+    next: stageName(level + 1),
+  }
+}

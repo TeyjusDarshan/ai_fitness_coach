@@ -304,6 +304,7 @@ def get_dashboard(user_id):
         "days": days,
         "workouts": _dashboard_workouts(user_id, existing, today),
         "points": plan_repo.count_completed_sessions(user_id) * POINTS_PER_WORKOUT,
+        "week_number": plan_repo.week_number(user_id, existing["id"]),
     }), 200
 
 

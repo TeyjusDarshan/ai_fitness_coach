@@ -56,6 +56,7 @@ const PATHS = {
   ),
   send: <path d="M21 3 10.5 13.5M21 3l-6.5 18-4-7.5L3 9.5 21 3Z" />,
   arrowLeft: <path d="M19 12H5M11 6l-6 6 6 6" />,
+  arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
   mic: (
     <>
       <rect x="9" y="3" width="6" height="11" rx="3" />

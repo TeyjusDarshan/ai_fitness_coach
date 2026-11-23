@@ -36,10 +36,19 @@ interface Props {
   puffKey?: number
   // Called once the plant is on screen (or straight away without WebGL).
   onReady?: () => void
+  // Positions the canvas; defaults to filling a plant stage.
+  className?: string
 }
 
 /** The 3D plant. Loaded lazily (it carries three.js); renders nothing without WebGL. */
-export default function PlantCanvas({ step, userId, fromStep, puffKey = 0, onReady }: Props) {
+export default function PlantCanvas({
+  step,
+  userId,
+  fromStep,
+  puffKey = 0,
+  onReady,
+  className = 'plant-canvas',
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const sceneRef = useRef<PlantScene | null>(null)
   // The step it showed last visit, read once (refs survive StrictMode's
@@ -82,5 +91,5 @@ export default function PlantCanvas({ step, userId, fromStep, puffKey = 0, onRea
     if (puffKey) sceneRef.current?.puff()
   }, [puffKey])
 
-  return <div ref={containerRef} className="plant-hero__canvas" aria-hidden />
+  return <div ref={containerRef} className={className} aria-hidden />
 }

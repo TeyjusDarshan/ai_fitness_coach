@@ -4,6 +4,8 @@ import { useAppState } from './state/AppStateContext'
 import { EnrollScreen } from './screens/EnrollScreen'
 import { LoginScreen } from './screens/LoginScreen'
 import { DashboardScreen } from './screens/DashboardScreen'
+import { GardenScreen } from './screens/GardenScreen'
+import { WorkoutsScreen } from './screens/WorkoutsScreen'
 import { ExerciseScreen } from './screens/ExerciseScreen'
 import { ExerciseFeedbackScreen } from './screens/ExerciseFeedbackScreen'
 import { RestTimerScreen } from './screens/RestTimerScreen'
@@ -92,6 +94,22 @@ function App() {
           element={
             <RequireAuth>
               <DashboardScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/workouts"
+          element={
+            <RequireAuth>
+              <WorkoutsScreen />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/garden"
+          element={
+            <RequireAuth>
+              <GardenScreen />
             </RequireAuth>
           }
         />

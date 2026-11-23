@@ -1,8 +1,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { LevelCard } from '../components/LevelCard'
-import { LazyPlantCanvas, PlantBackdrop } from '../components/PlantHero'
-import { levelForPoints } from '../plant3d/levels'
+import { GardenBackdrop, GardenPill, LazyPlantCanvas, StageProgress } from '../components/Garden'
+import { levelForPoints, stageName } from '../plant3d/levels'
 import { useAppState } from '../state/AppStateContext'
 import { useCompleteSession } from '../state/useCompleteSession'
 
@@ -19,8 +18,9 @@ const PLANT_WAIT_MS = 4000
 
 /**
  * Between the finished workout and its summary: completes the workout, then
- * shows the plant full screen earning the workout's grow points — growing a
- * stage if they unlock a new level — and a button on to the summary, which
+ * shows the plant full screen (in the Garden page's look) earning the
+ * workout's XP — growing a stage if it unlocks a new one — and a button on
+ * to the summary, which
  * gets this screen's result instead of completing again.
  */
 export function GrowScreen() {
@@ -112,13 +112,14 @@ export function GrowScreen() {
 
   return (
     <div className="grow-screen">
-      <PlantBackdrop />
+      <GardenBackdrop />
       <header className="grow-screen__head">
-        <h1 className="grow-screen__title">{levelUp ? 'Level up!' : 'Workout complete!'}</h1>
+        <h1 className="grow-screen__title">{levelUp ? 'New stage!' : 'Workout complete!'}</h1>
         <p className={`grow-screen__subtitle${levelUp ? ' grow-screen__subtitle--level' : ''}`}>
-          {levelUp ? `Your plant reached Level ${levelAfter}` : 'Your plant is growing'}
+          {levelUp ? `You reached ${stageName(levelAfter)}!` : 'Your garden is growing'}
         </p>
       </header>
+      <GardenPill level={levelForPoints(shownPoints).level} xp={shownPoints} />
 
       <div className="grow-screen__stage">
         <Suspense fallback={null}>
@@ -132,13 +133,13 @@ export function GrowScreen() {
         </Suspense>
         {popped && (
           <span className="grow-screen__points" aria-live="polite">
-            +{earned} points
+            +{earned} XP
           </span>
         )}
       </div>
 
       <div className="grow-screen__foot">
-        <LevelCard points={shownPoints} plantLevel={levelForPoints(shownPoints)} instant />
+        <StageProgress xp={shownPoints} instant />
         <button
           className={`btn-primary grow-screen__continue${canContinue ? ' grow-screen__continue--shown' : ''}`}
           disabled={!canContinue}

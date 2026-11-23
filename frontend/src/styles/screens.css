@@ -39,170 +39,6 @@
   box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
 }
 
-/* ---------- Dashboard ---------- */
-
-/* The dashboard fills the screen without scrolling: the plant and level card
-   stay put and only .dashboard__scroll (Your Workouts) scrolls. */
-.dashboard-screen {
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
-  padding-bottom: 0;
-}
-
-.dashboard__scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  margin: 0 -20px;
-  padding: 4px 20px calc(24px + env(safe-area-inset-bottom));
-}
-
-.plant-hero {
-  position: relative;
-  flex-shrink: 0;
-  /* About half the screen, so the plant is the centrepiece. */
-  height: clamp(280px, 50dvh, 640px);
-  margin: -24px -20px 0;
-  padding-top: env(safe-area-inset-top);
-  /* Sunlit backdrop that fades into the page at the bottom, under the level card. */
-  background:
-    linear-gradient(180deg, rgba(246, 241, 231, 0) 78%, var(--bg) 100%),
-    radial-gradient(110% 45% at 50% 82%, #f3e3c3 0%, rgba(243, 227, 195, 0) 70%),
-    linear-gradient(180deg, #f7f0e1 0%, #f8efdc 100%);
-  overflow: hidden;
-}
-
-.plant-hero__greeting {
-  position: absolute;
-  z-index: 2;
-  top: calc(20px + env(safe-area-inset-top));
-  left: 20px;
-  right: 90px;
-  margin: 0;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -0.015em;
-  color: var(--heading);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.plant-hero__sun {
-  position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
-  right: 24px;
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: #f9d98a;
-  box-shadow: 0 0 40px 12px rgba(249, 217, 138, 0.45);
-}
-
-.plant-hero__foliage {
-  position: absolute;
-  bottom: 16%;
-  width: 26%;
-  max-width: 120px;
-  color: #7fb069;
-  opacity: 0.75;
-}
-
-.plant-hero__foliage--left {
-  left: -4%;
-}
-
-.plant-hero__foliage--right {
-  right: -4%;
-  width: 20%;
-  color: #8fbf73;
-}
-
-.plant-hero__canvas {
-  position: absolute;
-  z-index: 1;
-  /* Below the greeting, so butterflies never fly over it, and above the
-     level card's overlap, so it never covers the pot. */
-  inset: calc(58px + env(safe-area-inset-top)) 0 56px;
-}
-
-.plant-hero__canvas canvas {
-  display: block;
-  /* Touches and swipes on the plant blow it about (PlantScene), not the page. */
-  touch-action: none;
-}
-
-.level-card {
-  position: relative;
-  z-index: 2;
-  flex-shrink: 0;
-  /* Overlaps the backdrop's fade instead of meeting it at an edge. */
-  margin: -56px 0 18px;
-  padding: 12px 18px 14px;
-  border: 1px solid #cfe3cd;
-  border-radius: var(--radius-lg);
-  background: #e6f1e3;
-}
-
-.level-card__head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.level-card__icon {
-  color: #3f8f45;
-}
-
-.level-card__level {
-  flex: 1;
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--heading);
-}
-
-.level-card__points {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ink-secondary);
-}
-
-.level-card__bar {
-  height: 12px;
-  border-radius: 999px;
-  background: #d9e2d6;
-  overflow: hidden;
-}
-
-.level-card__tip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0 0;
-  font-size: 12.5px;
-  color: var(--ink-secondary);
-}
-
-.level-card__tip svg {
-  flex-shrink: 0;
-  color: #3f8f45;
-}
-
-.level-card__fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: #4caf50;
-  transition: width 0.8s ease;
-}
-
-.level-card--instant .level-card__fill {
-  transition: none;
-}
-
 /* ---------- Grow screen (between the workout and its summary) ---------- */
 
 .grow-screen {
@@ -253,7 +89,7 @@
   margin: 0 -20px;
 }
 
-.grow-screen__stage .plant-hero__canvas {
+.grow-screen__stage .plant-canvas {
   inset: 0;
 }
 
@@ -280,7 +116,7 @@
   flex-direction: column;
 }
 
-.grow-screen__foot .level-card {
+.grow-screen__foot .stage-progress {
   margin: 0 0 16px;
 }
 
@@ -322,69 +158,6 @@
   }
 }
 
-.workout-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.workout-panel {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  padding: 18px 16px;
-  border: 1.5px solid transparent;
-}
-
-.workout-panel--next {
-  background: var(--info-soft);
-  border-color: var(--info);
-}
-
-.workout-panel__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: 50%;
-}
-.workout-panel__icon--completed {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.workout-panel__icon--missed {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.workout-panel__icon--scheduled {
-  background: var(--info);
-  color: #fff;
-}
-
-.workout-panel__body {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.workout-panel__header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.workout-panel__name {
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--heading);
-}
-
 .workout-panel__status {
   display: inline-flex;
   align-items: center;
@@ -407,71 +180,6 @@
 .workout-panel__status--scheduled {
   background: #d6e6f7;
   color: var(--info);
-}
-
-.workout-panel__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  font-size: 14px;
-  color: var(--ink-secondary);
-}
-.workout-panel__meta span + span::before {
-  content: '·';
-  margin-right: 12px;
-}
-
-.workout-panel__actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 8px;
-}
-
-.workout-panel__view,
-.workout-panel__start {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: var(--radius-pill);
-  padding: 7px 14px 7px 18px;
-  font-size: 15px;
-  font-weight: 600;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.workout-panel__view {
-  color: var(--heading);
-  text-decoration: none;
-  background: var(--surface);
-  border: 1.5px solid var(--accent);
-}
-
-.workout-panel__start {
-  color: #fff;
-  background: var(--accent);
-  border: 1.5px solid var(--accent);
-}
-
-.workout-panel__opens {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--heading);
-  background: var(--surface);
-  border-radius: var(--radius-pill);
-  padding: 7px 12px;
-  white-space: nowrap;
-}
-
-.dashboard-coach-notes {
-  margin-top: 20px;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--ink-secondary);
 }
 
 /* ---------- Workout detail ---------- */
@@ -1854,7 +1562,6 @@
   padding: 12px 16px;
 }
 
-
 .period-prompt {
   --rose: #c8234a;
   --rose-dark: #a10f3a;
@@ -2752,118 +2459,6 @@
   gap: 4px;
 }
 
-/* ---- dashboard: Today card + collapsible Upcoming / Past ---- */
-
-.dashboard__subtitle {
-  margin: -6px 0 18px;
-  font-size: 16px;
-  line-height: 1.4;
-  color: var(--ink-secondary);
-}
-
-.today-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-.today-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 18px 8px 14px;
-  border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--heading);
-  font-size: 18px;
-  font-weight: 700;
-}
-.today-chip svg {
-  color: var(--accent);
-}
-.today-row__date {
-  font-size: 14px;
-  color: var(--ink-secondary);
-}
-
-.dashboard__rest {
-  margin: 0 0 10px;
-  font-size: 15px;
-  color: var(--ink-secondary);
-}
-
-.collapsible {
-  margin-top: 16px;
-  border-radius: var(--radius-lg);
-  border: 1.5px solid var(--hairline);
-  background: var(--surface-alt);
-}
-.collapsible--upcoming {
-  background: var(--info-soft);
-  border-color: #bcd3ec;
-}
-
-.collapsible__head {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  padding: 16px;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-}
-.collapsible__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  flex-shrink: 0;
-  border-radius: 50%;
-  color: #fff;
-  background: #7d8590;
-}
-.collapsible--upcoming .collapsible__icon {
-  background: var(--info);
-}
-.collapsible__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.collapsible__title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--heading);
-}
-.collapsible__summary {
-  font-size: 14px;
-  color: var(--ink-secondary);
-}
-.collapsible__chevron {
-  display: flex;
-  color: var(--heading);
-  transform: rotate(90deg);
-  transition: transform 0.2s ease;
-}
-.collapsible__chevron--open {
-  transform: rotate(-90deg);
-}
-
-.collapsible__body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 0 12px 14px;
-}
-
 .load-more {
   align-self: center;
 }
@@ -3467,48 +3062,6 @@
   flex-direction: column;
   gap: 12px;
   margin-top: 24px;
-}
-
-/* Dashboard entry */
-.food-entry {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  width: 100%;
-  margin-bottom: 20px;
-  padding: 14px 16px;
-  border: 1.5px solid #a9d3b8;
-  border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-  color: var(--heading);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.food-entry__icon {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fff;
-}
-.food-entry__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.food-entry__title {
-  font-size: 18px;
-  font-weight: 700;
-}
-.food-entry__hint {
-  font-size: 14px;
-  color: var(--ink-secondary);
 }
 
 /* Today / Yesterday */
@@ -4277,12 +3830,6 @@ button.food-notice {
 .bottom-nav__tab--active {
   color: var(--accent);
 }
-body.with-bottom-nav .dashboard-screen {
-  height: calc(100dvh - var(--bottom-nav-h));
-}
-body.with-bottom-nav .dashboard__scroll {
-  padding-bottom: 24px;
-}
 body.with-bottom-nav .food-screen--with-mic {
   padding-bottom: calc(150px + var(--bottom-nav-h));
 }
@@ -4574,4 +4121,662 @@ body.with-bottom-nav .food-mic {
 .diet-setup__target span {
   font-size: 0.9rem;
   color: var(--ink);
+}
+
+/* ---------- Home (Workouts dashboard) ---------- */
+
+.home-screen {
+  position: relative;
+  gap: 18px;
+  isolation: isolate;
+  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+}
+body.with-bottom-nav .home-screen {
+  padding-bottom: calc(110px + var(--bottom-nav-h));
+}
+
+.home-header__greeting {
+  margin: 4px 0 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--heading);
+  overflow-wrap: anywhere;
+}
+.home-header__subtitle {
+  margin: 4px 0 0;
+  font-size: 17px;
+  color: var(--ink-secondary);
+}
+
+/* Today's Workout */
+.today-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 18px 18px;
+  border-radius: 26px;
+  background:
+    radial-gradient(90% 70% at 100% 0%, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0) 60%),
+    radial-gradient(120% 60% at 0% 100%, #cfe5c6 0%, rgba(207, 229, 198, 0) 70%),
+    linear-gradient(160deg, #f4f6e9 0%, #e3efd9 100%);
+  box-shadow: 0 10px 28px rgba(40, 70, 40, 0.13);
+  overflow: hidden;
+}
+.today-hero--rest {
+  background:
+    radial-gradient(120% 60% at 0% 100%, #f0e2c4 0%, rgba(240, 226, 196, 0) 70%),
+    linear-gradient(160deg, #fbf6ea 0%, #f1ead8 100%);
+}
+.today-hero__label {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.65);
+  color: var(--heading);
+  font-size: 15px;
+  font-weight: 600;
+}
+.today-hero__body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 96px;
+}
+.today-hero__text {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.today-hero__title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+  overflow-wrap: break-word;
+}
+.today-hero__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  color: var(--ink);
+}
+.today-hero__meta svg {
+  color: var(--heading);
+  flex-shrink: 0;
+}
+.today-hero__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--heading);
+  font-size: 13px;
+  font-weight: 600;
+}
+.today-hero__art {
+  flex-shrink: 0;
+  width: 30%;
+  max-width: 130px;
+  height: auto;
+  margin-right: -6px;
+  pointer-events: none;
+  user-select: none;
+}
+.today-hero__note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+.today-hero__note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--heading);
+}
+.today-hero__note span {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.today-hero__note--open span {
+  display: block;
+}
+.today-hero__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 56px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: #1f4d36;
+  color: #fff;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(31, 77, 54, 0.3);
+}
+.today-hero__action:active {
+  transform: scale(0.98);
+}
+.today-hero__action--secondary {
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--heading);
+  box-shadow: none;
+}
+
+/* The round workout icons: green heart (cardio), purple dumbbell (strength). */
+.workout-badge {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: #fff;
+}
+.workout-badge--lg {
+  width: 64px;
+  height: 64px;
+}
+.workout-badge--sm {
+  width: 56px;
+  height: 56px;
+}
+.workout-badge--cardio {
+  background: #6aaa72;
+}
+.workout-badge--strength {
+  background: #6b4fd8;
+}
+.workout-badge--done {
+  background: var(--success);
+}
+.workout-badge--rest {
+  background: #c8a96a;
+}
+
+/* Your Garden */
+.garden-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  grid-template-areas:
+    'plant info'
+    'plant view';
+  column-gap: 12px;
+  row-gap: 10px;
+  padding: 14px 16px 16px 8px;
+  border-radius: 26px;
+  background:
+    radial-gradient(120% 70% at 100% 100%, #d8e9cc 0%, rgba(216, 233, 204, 0) 65%),
+    linear-gradient(160deg, #fbf5e3 0%, #f1efd9 100%);
+  box-shadow: 0 10px 28px rgba(40, 70, 40, 0.12);
+  overflow: hidden;
+}
+.garden-card__plant {
+  grid-area: plant;
+  position: relative;
+  min-height: 150px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.plant-canvas {
+  position: absolute;
+  inset: 0;
+}
+.plant-canvas canvas {
+  display: block;
+  /* Touches and swipes on the plant blow it about (PlantScene), not the page. */
+  touch-action: none;
+}
+/* In the card the plant is just a picture: scrolling past it still scrolls. */
+.plant-canvas--card {
+  pointer-events: none;
+}
+.garden-card__info {
+  grid-area: info;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.garden-card__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--heading);
+}
+.garden-card__stage {
+  font-size: 23px;
+  font-weight: 800;
+  color: var(--heading);
+}
+.garden-card__xp {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.garden-card__xp svg {
+  color: #d99a1e;
+}
+.garden-card__tip {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.garden-card__view {
+  grid-area: view;
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: rgba(214, 232, 205, 0.9);
+  color: var(--heading);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stage-progress__bar {
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: rgba(31, 77, 54, 0.12);
+  overflow: hidden;
+}
+.stage-progress__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #4caf50;
+  transition: width 0.8s ease;
+}
+.stage-progress--instant .stage-progress__fill {
+  transition: none;
+}
+.stage-progress__text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+/* Upcoming Workouts */
+.home-section {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+.home-section__title {
+  margin: 0;
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+}
+.home-section__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  color: var(--heading);
+  font-size: 17px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.home-section__empty {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-size: 15px;
+}
+
+.workout-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 22px;
+}
+.workout-row__when {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--ink-secondary);
+}
+.workout-row__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+}
+.workout-row__status--completed {
+  background: var(--accent-soft);
+  color: var(--success);
+}
+.workout-row__status--missed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.workout-row__body {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.workout-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.workout-row__name {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--heading);
+  overflow-wrap: anywhere;
+}
+.workout-row__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  color: var(--ink-secondary);
+}
+.workout-row__view {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--heading);
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.workout-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Foliage in the bottom corners. */
+.corner-leaves {
+  position: absolute;
+  bottom: 0;
+  width: 26%;
+  max-width: 120px;
+  color: #7fb069;
+  opacity: 0.7;
+  pointer-events: none;
+}
+.corner-leaves--left {
+  left: -4%;
+}
+.corner-leaves--right {
+  right: -4%;
+  width: 20%;
+  color: #8fbf73;
+}
+.corner-leaves--page {
+  position: fixed;
+  bottom: env(safe-area-inset-bottom);
+  z-index: -1;
+  max-width: 90px;
+  opacity: 0.5;
+}
+body.with-bottom-nav .corner-leaves--page {
+  bottom: var(--bottom-nav-h);
+}
+
+/* ---------- Your Workouts (See All) ---------- */
+
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.page-header__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--heading);
+}
+.page-header__back {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(214, 232, 205, 0.85);
+  color: var(--heading);
+  cursor: pointer;
+}
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+}
+.segmented__tab {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--ink-secondary);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.segmented__tab--active {
+  background: var(--surface);
+  color: var(--heading);
+  box-shadow: 0 1px 4px rgba(60, 50, 30, 0.1);
+}
+.workouts-screen__counts {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+
+/* ---------- Your Garden (and the grow screen's look) ---------- */
+
+.garden-screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100dvh;
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
+  padding: calc(16px + env(safe-area-inset-top)) 20px calc(24px + env(safe-area-inset-bottom));
+}
+.garden-screen,
+.grow-screen {
+  background:
+    radial-gradient(80% 45% at 50% 30%, rgba(255, 249, 220, 0.9) 0%, rgba(255, 249, 220, 0) 70%),
+    radial-gradient(120% 40% at 50% 100%, #f1e6cc 0%, rgba(241, 230, 204, 0) 70%),
+    linear-gradient(180deg, #f6f3df 0%, #f3efdc 55%, #efe8d6 100%);
+}
+.garden-screen__head {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+}
+.garden-screen__head .page-header__back {
+  position: absolute;
+  left: 0;
+}
+.garden-screen__title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--heading);
+}
+.garden-screen__stage {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+  width: calc(100% + 40px);
+  margin: 0 -20px;
+}
+.garden-screen__foot {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 20px;
+  background: rgba(255, 253, 244, 0.75);
+  text-align: center;
+}
+.garden-screen__hint {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+
+.garden-pill {
+  position: relative;
+  z-index: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  background: rgba(214, 232, 205, 0.75);
+  color: var(--heading);
+  font-size: 17px;
+  font-weight: 700;
+}
+.garden-pill__part {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.garden-pill__divider {
+  width: 1px;
+  height: 22px;
+  background: rgba(31, 77, 54, 0.2);
+}
+
+.garden-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.garden-backdrop__rays {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  width: 160vmax;
+  height: 160vmax;
+  transform: translate(-50%, -50%);
+  background: repeating-conic-gradient(rgba(255, 248, 215, 0.45) 0deg 6deg, rgba(255, 248, 215, 0) 6deg 18deg);
+  mask-image: radial-gradient(circle, #000 0%, transparent 45%);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, transparent 45%);
+}
+.garden-backdrop__petal {
+  position: absolute;
+  top: -20px;
+  border-radius: 60% 0 60% 0;
+  opacity: 0.85;
+  animation-name: garden-petal-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+.garden-backdrop__sparkle {
+  position: absolute;
+  color: #f2c94c;
+  animation: garden-sparkle 2.8s ease-in-out infinite;
+}
+@keyframes garden-petal-fall {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translate(-40px, 105dvh) rotate(320deg);
+    opacity: 0.6;
+  }
+}
+@keyframes garden-sparkle {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scale(0.7);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .garden-backdrop__petal,
+  .garden-backdrop__sparkle {
+    animation: none;
+    opacity: 0;
+  }
 }

@@ -51,6 +51,7 @@ def _session_42(app_module, monkeypatch, owner="usr_1", scheduled_date="2026-10-
 def completed_count(app_module, monkeypatch):
     count = MagicMock(return_value=4)
     monkeypatch.setattr(app_module.plan_repo, "count_completed_sessions", count)
+    monkeypatch.setattr(app_module.plan_repo, "week_number", MagicMock(return_value=1))
     return count
 
 
@@ -302,8 +303,11 @@ def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts, previou
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
     monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=list(previous)))
     monkeypatch.setattr(app_module.plan_repo, "count_completed_sessions", MagicMock(return_value=3))
+    monkeypatch.setattr(app_module.plan_repo, "week_number", MagicMock(return_value=2))
     response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
     assert response.status_code == 200
+    assert response.get_json()["week_number"] == 2
+    app_module.plan_repo.week_number.assert_called_with("usr_1", 7)
     return response.get_json()["workouts"]
 
 

@@ -86,6 +86,4 @@ export const TA = {
 
   // Outside the food screens
   dietTab: 'உணவு',
-  entryTitle: 'இன்று என்ன சாப்பிட்டீர்கள்?',
-  entryHint: 'உங்கள் சொந்த வார்த்தைகளில் சொல்லுங்கள்',
 }

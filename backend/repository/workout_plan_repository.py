@@ -1831,6 +1831,15 @@ class WorkoutPlanRepository:
             .execute()
         )
 
+    def week_number(self, user_id: str, plan_id: int) -> int:
+        """Which week of training this plan is for the user: how many of her
+        plans were created up to and including it (the dashboard's "Week N")."""
+        rows = (
+            self.client.table("plans").select("id", count="exact")
+            .eq("user_id", user_id).lte("id", plan_id).execute()
+        )
+        return max(1, rows.count or 0)
+
     def count_completed_sessions(self, user_id: str) -> int:
         """How many workouts the user has finished, across all of their plans
         (period sessions included, missed ones not). Drives the dashboard's
