@@ -484,6 +484,17 @@ export interface CoachMealLog {
   source: 'app' | 'whatsapp'
   // Meals she said she didn't eat (no dishes).
   skipped_meals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[]
+  // The feedback she got on WhatsApp for this check-in (null if none).
+  feedback: string | null
+  feedback_flags: {
+    verdicts: {
+      meal: 'breakfast' | 'lunch' | 'dinner' | 'snack'
+      status: 'on_track' | 'off' | 'skipped' | 'unknown'
+      flags: Partial<Record<'energy_kcal' | 'protein_g' | 'carbs_g' | 'fat_g' | 'fibre_g', 'short' | 'over' | 'big_over'>>
+    }[]
+    tip: string | null
+  } | null
+  feedback_audio_url: string | null
   items: CoachMealItem[]
 }
 

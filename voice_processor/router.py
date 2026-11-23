@@ -15,8 +15,10 @@ without a "Session ID" line) -> the processor that should handle it.
    failure counts as `other`.
 6. Act on it: `question_reply` -> workout.process_reply (today's reply
    flow); `diet_checkin` -> a meal log (source `whatsapp`) run through the
-   diet pipeline, then "Noted" (or a Tamil "please send it again" when no
-   food could be worked out); `other` -> nothing.
+   diet pipeline, then feedback on today's meals (meal_feedback.py: "on
+   track", or what's off as a voice note with a tip), "Noted" for food from
+   yesterday, or a Tamil "please send it again" when no food could be
+   worked out; `other` -> nothing.
 
 The Sarvam cost is recorded once the route is known, under the feature the
 rest of that flow uses (`meal_stt` / `reply_stt`), or `inbound_stt`.
@@ -30,7 +32,7 @@ from diet.dates import now_in, today_in
 from diet.pipeline import process_meal_log
 from diet.repository import DietRepository
 from diet.transcription import transcribe_audio_unrecorded
-from voice_processor import router_agent, workout
+from voice_processor import meal_feedback, router_agent, workout
 from voice_processor.feedback import audio_extension, store_reply_audio
 from voice_processor.repository import AnalysisRepository
 from voice_processor.router_agent import DIET_CHECKIN, OTHER, QUESTION_REPLY
@@ -135,7 +137,9 @@ def log_meal(
 ) -> int:
     """A WhatsApp diet check-in -> a meal log worked out by the diet
     pipeline (from the router's transcript, no second download), then
-    "Noted", or a request to send it again when no food was found."""
+    feedback on today's meals (falling back to "Noted" if that fails),
+    "Noted" for yesterday's food, or a request to send it again when no
+    food was found."""
     # Her own calendar day (user_profiles.timezone), not India's.
     logged_for = today_in(timezone_name) - timedelta(days=1 if day == "yesterday" else 0)
     log = diet_repo.create_meal_log(user_id, logged_for, source="whatsapp")
@@ -143,7 +147,18 @@ def log_meal(
         diet_repo.update_meal_log(log["id"], {"audio_path": audio_path})
     process_meal_log(diet_repo, log["id"], lambda _log: transcript)
     status = (diet_repo.get_meal_log(log["id"]) or {}).get("status")
-    _send_text(phone_number, NOTED_MESSAGE if status == "ready" else DIET_RETRY_MESSAGE)
+    if status != "ready":
+        _send_text(phone_number, DIET_RETRY_MESSAGE)
+    elif day == "yesterday":
+        _send_text(phone_number, NOTED_MESSAGE)
+    else:
+        try:
+            meal_feedback.send_feedback(
+                diet_repo, workout.whatsapp_client, log["id"], user_id, phone_number, timezone_name,
+            )
+        except Exception:
+            logger.exception("Meal feedback failed for meal_log_id=%s; sending Noted", log["id"])
+            _send_text(phone_number, NOTED_MESSAGE)
     logger.info("WhatsApp diet check-in for user_id=%s -> meal_log_id=%s (%s)", user_id, log["id"], status)
     return log["id"]
 

@@ -4159,6 +4159,16 @@ button.food-notice {
   font-style: italic;
   white-space: normal;
 }
+.client-food__feedback {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+}
+.client-food__feedback audio {
+  height: 32px;
+  max-width: 100%;
+}
 .client-food__item {
   padding: 8px 0 8px 12px;
   border-left: 3px solid var(--accent-soft);

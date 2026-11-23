@@ -349,9 +349,38 @@ function LogBlock({
       </div>
       {audioError && <div className="error-banner">{audioError}</div>}
       {log.transcript && <p className="client-food__transcript">“{log.transcript}”</p>}
+      {log.feedback && <FeedbackBlock log={log} />}
       {log.items.map((item) => (
         <ItemBlock key={item.id} item={item} />
       ))}
+    </div>
+  )
+}
+
+const VERDICT_LABEL = { on_track: 'On track', off: 'Off', skipped: 'Skipped', unknown: 'Not judged' } as const
+const LEVEL_LABEL = { short: 'short', over: 'over', big_over: 'well over' } as const
+
+function FeedbackBlock({ log }: { log: CoachMealLog }) {
+  const verdicts = log.feedback_flags?.verdicts ?? []
+  return (
+    <div className="client-food__feedback">
+      <div className="monitor__row">
+        <span className="admin__muted">Feedback sent{log.feedback_audio_url ? ' (voice note)' : ''}:</span>
+        {verdicts.map((v) => (
+          <span
+            key={v.meal}
+            className={`monitor__chip${v.status === 'off' ? ' monitor__chip--mild' : ''}`}
+          >
+            {v.meal}: {VERDICT_LABEL[v.status]}
+            {v.status === 'off' &&
+              ` (${Object.entries(v.flags)
+                .map(([macro, level]) => `${macro.replace(/_(g|kcal)$/, '')} ${LEVEL_LABEL[level!]}`)
+                .join(', ')})`}
+          </span>
+        ))}
+        {log.feedback_audio_url && <audio src={log.feedback_audio_url} controls preload="none" />}
+      </div>
+      <p className="admin__muted client-food__line">{log.feedback}</p>
     </div>
   )
 }

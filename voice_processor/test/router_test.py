@@ -61,6 +61,7 @@ def mocks(monkeypatch):
         record_stt=MagicMock(),
         process_meal_log=MagicMock(),
         process_reply=MagicMock(),
+        send_feedback=MagicMock(),
     )
     mocks.whatsapp.download_media.return_value = (b"ogg", "audio/ogg; codecs=opus")
     monkeypatch.setattr(workout, "whatsapp_client", mocks.whatsapp)
@@ -70,6 +71,7 @@ def mocks(monkeypatch):
     monkeypatch.setattr(router, "store_reply_audio", mocks.store)
     monkeypatch.setattr(router, "record_stt", mocks.record_stt)
     monkeypatch.setattr(router, "process_meal_log", mocks.process_meal_log)
+    monkeypatch.setattr(router.meal_feedback, "send_feedback", mocks.send_feedback)
     monkeypatch.setattr(router, "today_in", lambda tz=None: TODAY)
     return mocks
 
@@ -146,7 +148,8 @@ def test_a_voice_diet_checkin_is_transcribed_once_logged_and_noted(repo, diet_re
     diet_repo.update_meal_log.assert_called_once_with(600, {"audio_path": "inbound_5.ogg"})
     _, log_id, transcribe = mocks.process_meal_log.call_args.args
     assert log_id == 600 and transcribe({}) == "rendu idli saaptaen"
-    mocks.whatsapp.send_text.assert_called_once_with(PHONE, router.NOTED_MESSAGE)
+    mocks.send_feedback.assert_called_once_with(diet_repo, mocks.whatsapp, 600, USER, PHONE, None)
+    mocks.whatsapp.send_text.assert_not_called()
     mocks.record_stt.assert_called_once_with(b"ogg", "inbound_5.ogg", "saaras:v4", "meal_stt", user_id=USER)
     assert _routed(repo)["route"] == DIET_CHECKIN
     assert _handled(repo)["meal_log_id"] == 600 and "handled_at" in _handled(repo)
@@ -160,6 +163,16 @@ def test_food_from_yesterday_is_logged_for_yesterday(repo, diet_repo, mocks):
 
     diet_repo.create_meal_log.assert_called_once_with(USER, TODAY - timedelta(days=1), source="whatsapp")
     diet_repo.update_meal_log.assert_not_called()  # a text has no audio
+    mocks.send_feedback.assert_not_called()          # no feedback on yesterday's food
+    mocks.whatsapp.send_text.assert_called_once_with(PHONE, router.NOTED_MESSAGE)
+
+
+def test_failed_feedback_falls_back_to_noted(repo, diet_repo, mocks):
+    mocks.send_feedback.side_effect = RuntimeError("supabase down")
+
+    router.handle_inbound(repo, diet_repo, _text("rendu idli"))
+
+    mocks.whatsapp.send_text.assert_called_once_with(PHONE, router.NOTED_MESSAGE)
 
 
 def test_no_food_found_asks_her_to_send_it_again(repo, diet_repo, mocks):
@@ -168,6 +181,7 @@ def test_no_food_found_asks_her_to_send_it_again(repo, diet_repo, mocks):
     router.handle_inbound(repo, diet_repo, _text("saapadu"))
 
     mocks.whatsapp.send_text.assert_called_once_with(PHONE, router.DIET_RETRY_MESSAGE)
+    mocks.send_feedback.assert_not_called()
 
 
 def test_a_reply_goes_to_the_reply_flow_with_the_transcript(repo, diet_repo, mocks):
