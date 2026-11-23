@@ -31,12 +31,14 @@ def ctl(app_module, monkeypatch):
     ]
     repo.create_meal_log = lambda user_id, logged_for: repo.logs[repo.add_log(user_id, logged_for=logged_for.isoformat())]
     repo.get_targets = lambda user_id: None
+    repo.timezones = {}
+    repo.get_timezone = lambda user_id: repo.timezones.get(user_id)
     repo.set_targets = MagicMock(return_value=True)
 
     monkeypatch.setenv("ADMIN_API_KEY", "test-admin-key")
     monkeypatch.setattr(controller, "diet_repo", repo)
     monkeypatch.setattr(controller, "feedback_storage", MagicMock())
-    monkeypatch.setattr(controller.kafka_producer, "send_meal_log_event", MagicMock(return_value=True))
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
     monkeypatch.setattr(controller.plan_repo, "user_exists", MagicMock(return_value=True))
     controller.repo = repo
     return controller
@@ -52,8 +54,10 @@ def test_recording_starts_a_log_and_publishes_it(ctl, sign_in):
     assert response.status_code == 201
     log = ctl.repo.logs[response.get_json()["id"]]
     assert (log["user_id"], log["status"], log["audio_path"]) == ("usr_1", "processing", f"meal_{log['id']}.webm")
-    assert log["logged_for"] < str(ctl.app_today())
-    ctl.kafka_producer.send_meal_log_event.assert_called_once_with(log["id"])
+    assert log["logged_for"] < str(ctl._user_today("usr_1"))
+    ctl.kafka_producer.send_user_conversation_event.assert_called_once_with(
+        "diet", {"meal_log_id": log["id"]}, key=log["user_id"]
+    )
 
 
 def test_recording_is_refused_when_unusable_or_signed_out(ctl, sign_in, app_module):
@@ -65,7 +69,7 @@ def test_recording_is_refused_when_unusable_or_signed_out(ctl, sign_in, app_modu
 
 
 def test_log_fails_when_the_event_cannot_be_published(ctl, sign_in):
-    ctl.kafka_producer.send_meal_log_event.return_value = False
+    ctl.kafka_producer.send_user_conversation_event.return_value = False
 
     response = sign_in("usr_1").post("/api/meal-logs", data=_recording())
 
@@ -168,14 +172,14 @@ def test_coach_sets_targets(ctl, app_module):
 
 
 def test_recent_days_are_her_own_and_include_empty_days(ctl, sign_in):
-    ctl.repo.logs[1]["logged_for"] = str(ctl.app_today())
+    ctl.repo.logs[1]["logged_for"] = str(ctl._user_today("usr_1"))
     client = sign_in("usr_1")
 
     body = client.get("/api/users/usr_1/diet/days").get_json()
 
     assert len(body["days"]) == 10 and body["targets"]["energy_kcal"] == 1800
     today, yesterday = body["days"][:2]
-    assert (today["date"], today["dishes"], today["totals"]["protein_g"]) == (str(ctl.app_today()), 1, 2.9)
+    assert (today["date"], today["dishes"], today["totals"]["protein_g"]) == (str(ctl._user_today("usr_1")), 1, 2.9)
     assert (yesterday["dishes"], yesterday["totals"]["energy_kcal"]) == (0, 0)
     assert len(client.get("/api/users/usr_1/diet/days?days=3").get_json()["days"]) == 3
     assert client.get("/api/users/usr_2/diet/days").status_code == 403
@@ -204,7 +208,7 @@ def test_everything_is_refused_until_the_coach_switches_it_on(ctl, sign_in, meth
 
     assert response.status_code == 403 and response.get_json()["diet_disabled"] is True
     assert 1 in ctl.repo.logs and 1 in ctl.repo.items and len(ctl.repo.logs) == 1
-    ctl.kafka_producer.send_meal_log_event.assert_not_called()
+    ctl.kafka_producer.send_user_conversation_event.assert_not_called()
 
 
 def test_coach_switches_diet_tracking_on_and_off(ctl, sign_in, app_module):
@@ -277,3 +281,25 @@ def test_coach_view_includes_her_setup(ctl, app_module):
     ctl.repo.profiles = {"usr_1": {"gender": "female", "diet_setup": {"bmi": 22.0}}}
     body = app_module.app.test_client().get("/api/admin/users/usr_1/diet", headers=ADMIN).get_json()
     assert body["setup"] == {"bmi": 22.0}
+
+
+def test_a_recording_is_logged_for_her_own_day(ctl, sign_in, monkeypatch):
+    from datetime import date
+    ctl.repo.timezones["usr_1"] = "Europe/London"
+    zones = []
+    monkeypatch.setattr(ctl, "today_in", lambda tz=None: zones.append(tz) or date(2026, 11, 23))
+
+    response = sign_in("usr_1").post("/api/meal-logs", data=_recording())
+
+    assert response.get_json()["logged_for"] == "2026-11-23"
+    assert zones == ["Europe/London"]
+
+
+def test_her_food_screen_today_is_her_own_day(ctl, sign_in, monkeypatch):
+    from datetime import date
+    ctl.repo.timezones["usr_1"] = "Pacific/Auckland"
+    monkeypatch.setattr(ctl, "today_in", lambda tz=None: date(2026, 11, 24) if tz == "Pacific/Auckland" else date(2026, 11, 23))
+
+    response = sign_in("usr_1").get("/api/users/usr_1/diet")
+
+    assert response.get_json()["date"] == "2026-11-24"

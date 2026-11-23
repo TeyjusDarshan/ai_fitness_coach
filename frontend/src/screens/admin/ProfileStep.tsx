@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { ApiError } from '../../api'
 import { generateProfile, type ClientProfile, type ProfileResult } from '../../adminApi'
+import { allTimezones, cleanWhatsAppNumber, isValidWhatsAppNumber, zoneForNumber } from '../../timezones'
 import { humanize } from './planDraft'
 
 const USER_ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
@@ -24,13 +25,30 @@ export function ProfileStep({
   const [userId, setUserId] = useState(result?.user_id ?? '')
   const [name, setName] = useState(result?.name ?? '')
   const [gender, setGender] = useState(result?.gender ?? '')
+  const [whatsappNumber, setWhatsappNumber] = useState(result?.whatsapp_number ?? '')
+  const [timezone, setTimezone] = useState(result?.timezone ?? '')
+  // Until the coach picks a zone herself, it follows the number's country code.
+  const [timezoneTouched, setTimezoneTouched] = useState(Boolean(result?.timezone))
   const [rawText, setRawText] = useState('')
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const userIdValid = USER_ID_PATTERN.test(userId.trim())
   const nameValid = name.trim() !== '' && name.trim().length <= MAX_NAME_LENGTH
-  const canGenerate = userIdValid && nameValid && gender !== '' && rawText.trim() !== '' && !generating
+  const numberValid = isValidWhatsAppNumber(whatsappNumber)
+  const canGenerate =
+    userIdValid && nameValid && gender !== '' && numberValid && timezone !== '' && rawText.trim() !== '' && !generating
+
+  function changeUserId(value: string) {
+    setUserId(value)
+    // An Indian client's user id is usually her 10-digit number.
+    if (!whatsappNumber && /^[0-9]{10}$/.test(value.trim())) changeNumber(`91${value.trim()}`)
+  }
+
+  function changeNumber(value: string) {
+    setWhatsappNumber(value)
+    if (!timezoneTouched) setTimezone(zoneForNumber(value) ?? '')
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -38,7 +56,17 @@ export function ProfileStep({
     setGenerating(true)
     setError(null)
     try {
-      onGenerated(await generateProfile(adminKey, userId.trim(), name.trim(), gender, rawText))
+      onGenerated(
+        await generateProfile(
+          adminKey,
+          userId.trim(),
+          name.trim(),
+          gender,
+          rawText,
+          cleanWhatsAppNumber(whatsappNumber),
+          timezone,
+        ),
+      )
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         onUnauthorized()
@@ -59,7 +87,7 @@ export function ProfileStep({
           <input
             className="login-screen__input"
             value={userId}
-            onChange={(e) => setUserId(e.target.value)}
+            onChange={(e) => changeUserId(e.target.value)}
             placeholder="e.g. usr_10235"
             autoCapitalize="none"
             autoCorrect="off"
@@ -98,6 +126,45 @@ export function ProfileStep({
             <option value="other">Other</option>
           </select>
           <small className="admin__hint">Women are asked if they are on their period before each workout.</small>
+        </label>
+        <label className="admin__field">
+          <span>WhatsApp number</span>
+          <input
+            className="login-screen__input"
+            value={whatsappNumber}
+            onChange={(e) => changeNumber(e.target.value)}
+            placeholder="Country code and number, e.g. 91 98765 43210"
+            inputMode="tel"
+            autoComplete="off"
+            disabled={generating}
+          />
+          {whatsappNumber && !numberValid ? (
+            <small className="admin__hint admin__hint--error">Include the country code, e.g. 91 for India.</small>
+          ) : (
+            <small className="admin__hint">How her WhatsApp messages are matched to her, and where reminders go.</small>
+          )}
+        </label>
+        <label className="admin__field">
+          <span>Time zone</span>
+          <select
+            className="login-screen__input"
+            value={timezone}
+            onChange={(e) => {
+              setTimezone(e.target.value)
+              setTimezoneTouched(true)
+            }}
+            disabled={generating}
+          >
+            <option value="" disabled>
+              Select…
+            </option>
+            {allTimezones().map((zone) => (
+              <option key={zone} value={zone}>
+                {zone.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+          <small className="admin__hint">Meal reminders go out at 11:00, 15:00 and 20:00 her time.</small>
         </label>
         <label className="admin__field">
           <span>About the client</span>

@@ -69,6 +69,16 @@ export function appTodayIso(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
 }
 
+// Today (YYYY-MM-DD) in a client's own time zone — what "today" is on her
+// Food screens (workout dates still use appTodayIso, India time).
+export function todayIsoIn(timeZone: string): string {
+  try {
+    return new Date().toLocaleDateString('en-CA', { timeZone })
+  } catch {
+    return appTodayIso()
+  }
+}
+
 // "0:30" / "1:05" — the compact form of formatClock's "00:30".
 export function formatShortClock(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds))

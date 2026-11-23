@@ -18,6 +18,7 @@ EXERCISES = [
     {"id": 1, "name": "Glute Bridge", "min_reps": 8, "max_reps": 15},
     {"id": 2, "name": "Band Row", "min_reps": None, "max_reps": None},
 ]
+PHONE = "919876543210"
 PROFILE = {"user_id": "usr_new", "health": {"medical_clearance_obtained": True}}
 TODAY = date(2026, 10, 11)
 
@@ -53,6 +54,7 @@ def admin(app_module, monkeypatch):
     monkeypatch.setattr(repo, "user_exists", MagicMock(return_value=False))
     monkeypatch.setattr(repo, "get_profile", MagicMock(return_value=PROFILE))
     monkeypatch.setattr(repo, "upsert_user_profile", MagicMock())
+    monkeypatch.setattr(repo, "whatsapp_number_owner", MagicMock(return_value=None))
     monkeypatch.setattr(repo, "create_plan", MagicMock(return_value={"id": 77}))
     monkeypatch.setattr(controller, "app_today", lambda: TODAY)
     monkeypatch.setattr(
@@ -84,17 +86,20 @@ def test_profile_generates_and_upserts_with_callers_user_id(admin):
 
     response = client.post(
         "/api/admin/users/profile",
-        json={"user_id": "usr_new", "name": "  Asha Raman ", "raw_user_text": "52yo, sore knee"},
+        json={"user_id": "usr_new", "name": "  Asha Raman ", "raw_user_text": "52yo, sore knee", "whatsapp_number": "+91 98765-43210"},
         headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 200
     expected = {"user_id": "usr_new", "goals": {}}
     assert response.get_json() == {
-        "user_id": "usr_new", "name": "Asha Raman", "gender": None, "profile": expected, "user_created": True,
+        "user_id": "usr_new", "name": "Asha Raman", "gender": None, "whatsapp_number": PHONE,
+        "timezone": "Asia/Kolkata", "profile": expected, "user_created": True,
     }
     controller.generate_user_profile.assert_called_once_with("52yo, sore knee", user_id="usr_new")
-    controller.plan_repo.upsert_user_profile.assert_called_once_with("usr_new", expected, "Asha Raman", None)
+    controller.plan_repo.upsert_user_profile.assert_called_once_with(
+        "usr_new", expected, "Asha Raman", None, PHONE, "Asia/Kolkata"
+    )
 
 
 def test_profile_stores_a_valid_gender(admin):
@@ -102,14 +107,14 @@ def test_profile_stores_a_valid_gender(admin):
 
     response = client.post(
         "/api/admin/users/profile",
-        json={"user_id": "usr_new", "name": "Asha", "gender": "female", "raw_user_text": "x"},
+        json={"user_id": "usr_new", "name": "Asha", "gender": "female", "raw_user_text": "x", "whatsapp_number": PHONE},
         headers=ADMIN_HEADERS,
     )
 
     assert response.status_code == 200
     assert response.get_json()["gender"] == "female"
     controller.plan_repo.upsert_user_profile.assert_called_once_with(
-        "usr_new", {"user_id": "usr_new", "goals": {}}, "Asha", "female"
+        "usr_new", {"user_id": "usr_new", "goals": {}}, "Asha", "female", PHONE, "Asia/Kolkata"
     )
 
 
@@ -118,7 +123,7 @@ def test_profile_rejects_an_unknown_gender_before_calling_llm(admin):
 
     response = client.post(
         "/api/admin/users/profile",
-        json={"user_id": "usr_new", "name": "Asha", "gender": "f", "raw_user_text": "x"},
+        json={"user_id": "usr_new", "name": "Asha", "gender": "f", "raw_user_text": "x", "whatsapp_number": PHONE},
         headers=ADMIN_HEADERS,
     )
 
@@ -131,7 +136,7 @@ def test_profile_for_existing_user_reports_not_created(admin):
     controller.plan_repo.user_exists.return_value = True
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 200
@@ -143,7 +148,7 @@ def test_profile_conflicts_with_unfinished_plan_before_calling_llm(admin):
     controller.plan_repo.get_unfinished_plan.return_value = {"id": 5, "completed": False, "plan": {}}
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 409
@@ -157,7 +162,7 @@ def test_profile_preprocessor_failure_returns_502(admin):
     controller.generate_user_profile.side_effect = ValueError("bad json")
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 502
@@ -169,23 +174,23 @@ def test_profile_save_failure_returns_500(admin):
     controller.plan_repo.upsert_user_profile.side_effect = RuntimeError("db unreachable")
 
     response = client.post(
-        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x"}, headers=ADMIN_HEADERS
+        "/api/admin/users/profile", json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE}, headers=ADMIN_HEADERS
     )
 
     assert response.status_code == 500
 
 
 @pytest.mark.parametrize("body", [
-    {"name": "Asha", "raw_user_text": "x"},
-    {"user_id": "", "name": "Asha", "raw_user_text": "x"},
-    {"user_id": "has space", "name": "Asha", "raw_user_text": "x"},
-    {"user_id": "x" * 65, "name": "Asha", "raw_user_text": "x"},
-    {"user_id": 123, "name": "Asha", "raw_user_text": "x"},
-    {"user_id": "usr_new", "raw_user_text": "x"},
-    {"user_id": "usr_new", "name": "   ", "raw_user_text": "x"},
-    {"user_id": "usr_new", "name": "x" * 101, "raw_user_text": "x"},
-    {"user_id": "usr_new", "name": 7, "raw_user_text": "x"},
-    {"user_id": "usr_new", "name": "Asha"},
+    {"name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "has space", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "x" * 65, "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": 123, "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "usr_new", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "usr_new", "name": "   ", "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "usr_new", "name": "x" * 101, "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "usr_new", "name": 7, "raw_user_text": "x", "whatsapp_number": PHONE},
+    {"user_id": "usr_new", "name": "Asha", "whatsapp_number": PHONE},
     {"user_id": "usr_new", "name": "Asha", "raw_user_text": "   "},
 ])
 def test_profile_rejects_invalid_payload(admin, body):
@@ -195,6 +200,49 @@ def test_profile_rejects_invalid_payload(admin, body):
 
     assert response.status_code == 400
     controller.generate_user_profile.assert_not_called()
+
+
+def test_profile_stores_an_international_number_and_time_zone(admin):
+    client, controller = admin
+
+    response = client.post(
+        "/api/admin/users/profile",
+        json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x",
+              "whatsapp_number": "+971 50 123 4567", "timezone": "Asia/Dubai"},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    assert (response.get_json()["whatsapp_number"], response.get_json()["timezone"]) == ("971501234567", "Asia/Dubai")
+    args = controller.plan_repo.upsert_user_profile.call_args.args
+    assert args[4:] == ("971501234567", "Asia/Dubai")
+
+
+def test_profile_refuses_a_number_another_client_has(admin):
+    client, controller = admin
+    controller.plan_repo.whatsapp_number_owner.return_value = "usr_other"
+
+    response = client.post(
+        "/api/admin/users/profile",
+        json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 409
+    controller.generate_user_profile.assert_not_called()
+
+
+def test_profile_regeneration_keeps_her_own_number(admin):
+    client, controller = admin
+    controller.plan_repo.whatsapp_number_owner.return_value = "usr_new"
+
+    response = client.post(
+        "/api/admin/users/profile",
+        json={"user_id": "usr_new", "name": "Asha", "raw_user_text": "x", "whatsapp_number": PHONE},
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
 
 
 # --- GET /api/admin/plan-builder -----------------------------------------------

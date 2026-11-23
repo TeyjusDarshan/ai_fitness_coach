@@ -453,10 +453,13 @@ class WorkoutPlanRepository:
         profile: Dict[str, Any],
         name: Optional[str] = None,
         gender: Optional[str] = None,
+        whatsapp_number: Optional[str] = None,
+        timezone_name: Optional[str] = None,
     ) -> dict:
         """Upsert the user's generated profile. `name` (the client's display
-        name) and `gender` are only written when given, so regenerating a
-        profile without them keeps what's already on file."""
+        name), `gender`, `whatsapp_number` and `timezone_name` are only
+        written when given, so regenerating a profile without them keeps
+        what's already on file."""
         row = {
             "user_id": user_id,
             "profile": profile,
@@ -466,8 +469,33 @@ class WorkoutPlanRepository:
             row["name"] = name
         if gender is not None:
             row["gender"] = gender
+        if whatsapp_number is not None:
+            row["whatsapp_number"] = whatsapp_number
+        if timezone_name is not None:
+            row["timezone"] = timezone_name
+            row["timezone_updated_at"] = row["updated_at"]
+            row["timezone_set_by"] = "coach"
         result = self.client.table("user_profiles").upsert(row, on_conflict="user_id").execute().data
         return result[0]
+
+    def update_contact(self, user_id: str, fields: Dict[str, Any]) -> None:
+        """Set whatsapp_number and/or timezone on a client's profile (the
+        coach's edit, so a time zone change is recorded as set by the coach)."""
+        if "timezone" in fields:
+            fields = {**fields, "timezone_updated_at": datetime.now(timezone.utc).isoformat(), "timezone_set_by": "coach"}
+        self.client.table("user_profiles").update(fields).eq("user_id", user_id).execute()
+
+    def whatsapp_number_owner(self, whatsapp_number: str) -> Optional[str]:
+        """The user_id already using this WhatsApp number, if any."""
+        rows = (
+            self.client.table("user_profiles")
+            .select("user_id")
+            .eq("whatsapp_number", whatsapp_number)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0]["user_id"] if rows else None
 
     def get_profile(self, user_id: str) -> Optional[dict]:
         rows = (
@@ -1694,7 +1722,10 @@ class WorkoutPlanRepository:
     def get_user_profile_row(self, user_id: str) -> Optional[dict]:
         rows = (
             self.client.table("user_profiles")
-            .select("user_id, name, gender, diet_enabled, profile")
+            .select(
+                "user_id, name, gender, diet_enabled, profile, whatsapp_number, timezone, "
+                "timezone_updated_at, timezone_set_by"
+            )
             .eq("user_id", user_id)
             .execute()
             .data

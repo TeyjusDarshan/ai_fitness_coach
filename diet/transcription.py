@@ -1,7 +1,7 @@
 """Speech to text for a meal recording in the private voice-feedback
 bucket (meal_logs.audio_path)."""
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ai_usage import audio_seconds, record_stt
 from blob_storage_manager import SupabaseBlobStorageManager
@@ -24,10 +24,12 @@ def _get_storage() -> SupabaseBlobStorageManager:
     return _storage
 
 
-def transcribe_audio(audio: bytes, file_name: str, user_id: Optional[str] = None) -> str:
-    """Transcript of a recording. A short one goes to Sarvam's synchronous
-    endpoint (a couple of seconds, so she isn't kept waiting); a longer
-    one, or one the fast endpoint fails on, goes through a batch job."""
+def transcribe_audio_unrecorded(audio: bytes, file_name: str) -> Tuple[str, Optional[str]]:
+    """(transcript, model) of a recording, without recording its cost — for
+    a caller that only knows afterwards which feature to bill it to (the
+    WhatsApp router). A short one goes to Sarvam's synchronous endpoint (a
+    couple of seconds, so she isn't kept waiting); a longer one, or one the
+    fast endpoint fails on, goes through a batch job."""
     seconds = audio_seconds(audio)
     client = None
     transcript = None
@@ -41,7 +43,13 @@ def transcribe_audio(audio: bytes, file_name: str, user_id: Optional[str] = None
     if transcript is None:
         client = SarvamBatchSTTClient()
         transcript = client.transcribe(audio, file_name)
-    record_stt(audio, file_name, getattr(client, "_model", None), "meal_stt", user_id=user_id)
+    return transcript, getattr(client, "_model", None)
+
+
+def transcribe_audio(audio: bytes, file_name: str, user_id: Optional[str] = None) -> str:
+    """Transcript of a recording, its cost recorded as `meal_stt`."""
+    transcript, model = transcribe_audio_unrecorded(audio, file_name)
+    record_stt(audio, file_name, model, "meal_stt", user_id=user_id)
     return transcript
 
 

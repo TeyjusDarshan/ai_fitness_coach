@@ -6,18 +6,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Must match backend/kafka_producer/client.py's WORKOUT_COMPLETE_TOPIC — this
-# package is deployed independently of backend, so the topic name is
-# duplicated rather than imported.
-WORKOUT_COMPLETE_TOPIC = "workout-complete-events"
-
-# Must match backend/kafka_producer/client.py's FEEDBACK_REPLY_TOPIC: the
-# client's WhatsApp replies to the clarifying questions.
-FEEDBACK_REPLY_TOPIC = "workout-feedback-replies"
-
-# Must match backend/kafka_producer/client.py's MEAL_LOG_TOPIC: one event
-# per food recording (diet tracking).
-MEAL_LOG_TOPIC = "meal-log-events"
+# Must match backend/kafka_producer/client.py's USER_CONVERSATION_TOPIC and
+# TARGET_* — this package is deployed independently of backend, so the names
+# are duplicated rather than imported. Every event on the topic names the
+# processor that handles it in `target` (see voice_processor/processors.py).
+USER_CONVERSATION_TOPIC = "user-conversation"
+TARGET_SUMMARIZER = "summarizer"
+TARGET_ROUTER = "router"
+TARGET_DIET = "diet"
 
 # Kept from when this package was workout_analysis_consumer: the group's
 # committed offsets live under this id, and a new id (with

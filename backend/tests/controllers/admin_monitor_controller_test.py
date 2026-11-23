@@ -62,6 +62,7 @@ def test_monitor_returns_client_details_and_workouts(monitor):
     body = response.get_json()
     assert body["client"] == {
         "user_id": "usr_1", "name": "Asha", "gender": "female", "diet_enabled": False,
+        "whatsapp_number": None, "timezone": "Asia/Kolkata", "timezone_set_by": None, "timezone_updated_at": None,
         "profile": {"age": 52, "sex": "female", "primary_goal": "strength", "experience_level": "beginner", "days_per_week": 3},
         "joint_pain": [{"joint": "knee", "pain_level": "mild"}],
         "period_days": ["2026-10-12"],
@@ -342,3 +343,67 @@ def test_coach_notes_without_a_current_week_is_a_409(monitor, monkeypatch):
 def test_coach_notes_require_the_admin_key(monitor):
     client, _ = monitor
     assert client.patch("/api/admin/users/usr_1/coach-notes", json={"coach_notes": "hi"}).status_code == 401
+
+
+# --- PATCH /api/admin/users/<user_id>/contact ---------------------------------
+
+@pytest.fixture
+def contact(monitor, monkeypatch):
+    client, controller = monitor
+    repo = controller.plan_repo
+    monkeypatch.setattr(repo, "user_exists", MagicMock(return_value=True))
+    monkeypatch.setattr(repo, "whatsapp_number_owner", MagicMock(return_value=None))
+    monkeypatch.setattr(repo, "update_contact", MagicMock())
+    return client, controller
+
+
+def _contact(client, body, headers=ADMIN_HEADERS):
+    return client.patch("/api/admin/users/usr_1/contact", json=body, headers=headers)
+
+
+def test_contact_saves_a_cleaned_number_and_time_zone(contact):
+    client, controller = contact
+
+    response = _contact(client, {"whatsapp_number": "+44 7700-900123", "timezone": "Europe/London"})
+
+    assert response.status_code == 200
+    controller.plan_repo.update_contact.assert_called_once_with(
+        "usr_1", {"whatsapp_number": "447700900123", "timezone": "Europe/London"}
+    )
+
+
+def test_contact_can_change_just_the_time_zone(contact):
+    client, controller = contact
+
+    assert _contact(client, {"timezone": "Asia/Dubai"}).status_code == 200
+    controller.plan_repo.update_contact.assert_called_once_with("usr_1", {"timezone": "Asia/Dubai"})
+
+
+@pytest.mark.parametrize("body", [
+    {}, {"whatsapp_number": "12"}, {"whatsapp_number": None}, {"timezone": "Nowhere/Land"}, {"timezone": ""},
+])
+def test_contact_rejects_bad_values(contact, body):
+    client, controller = contact
+
+    assert _contact(client, body).status_code == 400
+    controller.plan_repo.update_contact.assert_not_called()
+
+
+def test_contact_refuses_another_clients_number(contact):
+    client, controller = contact
+    controller.plan_repo.whatsapp_number_owner.return_value = "usr_2"
+
+    assert _contact(client, {"whatsapp_number": "919876543210"}).status_code == 409
+    controller.plan_repo.update_contact.assert_not_called()
+
+
+def test_contact_for_an_unknown_client_is_404(contact):
+    client, controller = contact
+    controller.plan_repo.user_exists.return_value = False
+
+    assert _contact(client, {"timezone": "Asia/Dubai"}).status_code == 404
+
+
+def test_contact_requires_the_admin_key(contact):
+    client, _ = contact
+    assert _contact(client, {"timezone": "Asia/Dubai"}, headers={}).status_code == 401

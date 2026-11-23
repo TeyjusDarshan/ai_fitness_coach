@@ -1,7 +1,8 @@
 """Integration test for KafkaProducerClient against the real Aiven cluster.
 
-No mocking: this produces a real message via send_workout_complete_event and
-consumes it back from the real workout-complete-events topic, using the same
+No mocking: this produces a real summarizer event via
+send_user_conversation_event and consumes it back from the real
+user-conversation topic (the voice processor skips it: no such session), using the same
 credentials/CA cert as the app (backend/kafka_producer/client.py, .env).
 Requires network access to the Aiven-hosted broker.
 """
@@ -13,7 +14,7 @@ import uuid
 import pytest
 from confluent_kafka import Consumer
 
-from backend.kafka_producer import KafkaProducerClient, WORKOUT_COMPLETE_TOPIC
+from backend.kafka_producer import TARGET_SUMMARIZER, USER_CONVERSATION_TOPIC, KafkaProducerClient
 from backend.kafka_producer.client import _DEFAULT_CA_CERT_PATH
 
 POLL_TIMEOUT_SECONDS = 20
@@ -36,18 +37,20 @@ def _make_consumer() -> Consumer:
 
 
 @pytest.mark.integration
-def test_send_workout_complete_event_is_consumable():
+def test_send_user_conversation_event_is_consumable():
     # Random sentinel value so this run's message is unambiguously
     # identifiable among whatever else is already on the topic.
     session_id = uuid.uuid4().int % 1_000_000_000
     phone_number = "919876543210"
 
     producer = KafkaProducerClient()
-    producer.send_workout_complete_event(session_id, phone_number)
+    assert producer.send_user_conversation_event(
+        TARGET_SUMMARIZER, {"session_id": session_id, "phone_number": phone_number}, key=phone_number
+    )
 
     consumer = _make_consumer()
     try:
-        consumer.subscribe([WORKOUT_COMPLETE_TOPIC])
+        consumer.subscribe([USER_CONVERSATION_TOPIC])
 
         deadline = time.monotonic() + POLL_TIMEOUT_SECONDS
         found_payload = None
@@ -65,5 +68,5 @@ def test_send_workout_complete_event_is_consumable():
 
 
     assert found_payload == {
-        "session_id": session_id, "phone_number": phone_number,
+        "target": TARGET_SUMMARIZER, "session_id": session_id, "phone_number": phone_number,
     }

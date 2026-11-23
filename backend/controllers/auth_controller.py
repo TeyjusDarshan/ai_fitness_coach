@@ -32,6 +32,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
+from backend.contact import DEFAULT_TIMEZONE, ContactError, clean_timezone
 from backend.auth import (
     CHALLENGE_TTL,
     ENROLLMENT_TTL,
@@ -97,13 +98,16 @@ def _signed_in_user(user_id: str, row: Optional[dict] = None) -> dict:
     or None when the coach hasn't set it; `diet_enabled` says whether the
     coach switched diet tracking on for them (the PWA hides Food otherwise);
     `diet_setup_done` whether they finished the one-time diet setup (until
-    then the PWA's Food screens send them to it)."""
+    then the PWA's Food screens send them to it); `timezone` is their IANA
+    time zone (user_profiles.timezone), which decides what "today" is on
+    the Food screens."""
     if row is None:
         row = auth_repo.get_user_auth_row(user_id) or {}
     return {
         "user_id": user_id, "name": row.get("name"), "gender": row.get("gender"),
         "diet_enabled": row.get("diet_enabled") is True,
         "diet_setup_done": row.get("diet_setup") is not None,
+        "timezone": row.get("timezone") or DEFAULT_TIMEZONE,
     }
 
 
@@ -275,6 +279,21 @@ def authentication_verify():
 @require_auth
 def me():
     auth_repo.touch_session(hash_token(request.cookies[SESSION_COOKIE]))
+    return jsonify(_signed_in_user(g.user_id)), 200
+
+
+@auth_bp.put("/api/auth/me/timezone")
+@require_auth
+def update_my_timezone():
+    """`{"timezone": "Asia/Dubai"}` — the signed-in client confirmed she's
+    now in this time zone (the PWA asks when her phone's zone differs from
+    the one on file). Returns the updated signed-in user."""
+    body = request.get_json(silent=True) or {}
+    try:
+        timezone_name = clean_timezone(body.get("timezone"))
+    except ContactError as error:
+        return jsonify({"error": str(error)}), 400
+    auth_repo.update_timezone(g.user_id, timezone_name)
     return jsonify(_signed_in_user(g.user_id)), 200
 
 

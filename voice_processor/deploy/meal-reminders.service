@@ -1,0 +1,20 @@
+# One meal-reminder pass, started every 15 minutes by meal-reminders.timer.
+# Each client is reminded at 11:00 / 15:00 / 20:00 in her own time zone
+# (user_profiles.timezone); a pass with nobody due does nothing. Runs once
+# and exits.
+#
+# Set WorkingDirectory, EnvironmentFile, User and the python path to the same
+# values as the voice processor's own service (the Kafka consumer) on the VM.
+[Unit]
+Description=WhatsApp meal reminders (clients' local 11:00 / 15:00 / 20:00)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=REPLACE_WITH_SERVICE_USER
+WorkingDirectory=/REPLACE/WITH/REPO/ROOT
+EnvironmentFile=/REPLACE/WITH/REPO/ROOT/.env
+ExecStart=/REPLACE/WITH/REPO/ROOT/.venv/bin/python -m voice_processor.meal_reminders --due
+# Shorter than the timer's interval, so passes never overlap.
+TimeoutStartSec=840

@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -598,6 +598,120 @@ class AnalysisRepository:
 
     def update_reply(self, reply_id: int, fields: Dict[str, Any]) -> None:
         self.client.table("clarification_replies").update(fields).eq("id", reply_id).execute()
+
+    # --- inbound WhatsApp messages (voice_processor/router.py) -------------
+
+    def get_or_create_inbound(self, fields: Dict[str, Any]) -> Dict[str, Any]:
+        """The inbound_messages row for a WhatsApp message id, created from
+        `fields` if new (Meta or Kafka may deliver one message twice)."""
+        existing = (
+            self.client.table("inbound_messages")
+            .select("*")
+            .eq("whatsapp_message_id", fields["whatsapp_message_id"])
+            .execute()
+            .data
+        )
+        if existing:
+            return existing[0]
+        return self.client.table("inbound_messages").insert(fields).execute().data[0]
+
+    def update_inbound(self, inbound_id: int, fields: Dict[str, Any]) -> None:
+        self.client.table("inbound_messages").update(fields).eq("id", inbound_id).execute()
+
+    # --- meal reminders (voice_processor/meal_reminders.py) ----------------
+
+    def list_reminder_recipients(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """{user_id, name} of every client with diet tracking on and the
+        diet setup done (optionally just one)."""
+        query = (
+            self.client.table("user_profiles")
+            .select("user_id, name, whatsapp_number, timezone")
+            .eq("diet_enabled", True)
+            .not_.is_("diet_setup", "null")
+        )
+        if user_id:
+            query = query.eq("user_id", user_id)
+        return query.order("user_id").execute().data
+
+    def list_counted_meal_logs(self, user_id: str, day: date) -> List[Dict[str, Any]]:
+        """Her worked-out (ready / confirmed) meal logs for a day, each with
+        its created_at and its dishes' meal."""
+        return (
+            self.client.table("meal_logs")
+            .select("id, created_at, meal_log_items(meal)")
+            .eq("user_id", user_id)
+            .eq("logged_for", day.isoformat())
+            .in_("status", ["ready", "confirmed"])
+            .execute()
+            .data
+        )
+
+    def reply_window(self, phone_number: str) -> Optional[Dict[str, Any]]:
+        """Her WhatsApp reply window (whatsapp_reply_windows), or None if
+        she has never messaged."""
+        rows = (
+            self.client.table("whatsapp_reply_windows")
+            .select("*")
+            .eq("phone_number", phone_number)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def get_meal_reminder(self, user_id: str, day: date, slot: str) -> Optional[Dict[str, Any]]:
+        rows = (
+            self.client.table("meal_reminders")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("reminder_date", day.isoformat())
+            .eq("slot", slot)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def create_meal_reminder(self, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Insert a reminder row; None when one already exists for that
+        (user, day, slot) — another run got there first."""
+        try:
+            return self.client.table("meal_reminders").insert(row).execute().data[0]
+        except Exception as error:
+            if "duplicate key" in str(error) or "23505" in str(error):
+                return None
+            raise
+
+    def update_meal_reminder(self, reminder_id: int, fields: Dict[str, Any]) -> None:
+        self.client.table("meal_reminders").update(fields).eq("id", reminder_id).execute()
+
+    def recent_meal_reminder(self, user_id: str, since: datetime) -> Optional[Dict[str, Any]]:
+        """Her latest reminder actually sent since `since`, or None."""
+        rows = (
+            self.client.table("meal_reminders")
+            .select("slot, missing_meals, sent_at")
+            .eq("user_id", user_id)
+            .eq("status", "sent")
+            .gte("sent_at", since.isoformat())
+            .order("sent_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
+
+    def get_profile_for_routing(self, whatsapp_number: str) -> Optional[Dict[str, Any]]:
+        """{user_id, name, diet_enabled, timezone} of the client with this
+        WhatsApp number (user_profiles.whatsapp_number), or None if unknown."""
+        rows = (
+            self.client.table("user_profiles")
+            .select("user_id, name, diet_enabled, timezone")
+            .eq("whatsapp_number", whatsapp_number)
+            .limit(1)
+            .execute()
+            .data
+        )
+        return rows[0] if rows else None
 
     def list_processed_reply_texts(self, clarification_id: int) -> List[str]:
         """What she already replied to this round, oldest first."""

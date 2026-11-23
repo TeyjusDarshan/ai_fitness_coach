@@ -8,6 +8,7 @@ const FEATURE_LABELS: Record<string, string> = {
   summary_questions: 'Workout summary + questions',
   feedback_extraction: 'Voice-note notes',
   reply_mapping: 'Reply mapping',
+  message_routing: 'WhatsApp message routing',
   coach_suggestions: 'AI Coach suggestions',
   plan_generation: 'Plan generation',
   profile_generation: 'Profile generation',
@@ -15,7 +16,9 @@ const FEATURE_LABELS: Record<string, string> = {
   reply_stt: 'Voice replies → text',
   summary_tts: 'Summary voice note',
   follow_up_tts: 'Follow-up voice note',
+  inbound_stt: 'Other WhatsApp voice notes → text',
   meal_stt: 'Food recordings → text',
+  meal_reminder_tts: 'Meal reminder voice notes',
   meal_estimation: 'Food: dishes and ingredients',
   // The food engine before the 2026-11-20 rewrite.
   meal_parsing: 'Food (old): what she ate',

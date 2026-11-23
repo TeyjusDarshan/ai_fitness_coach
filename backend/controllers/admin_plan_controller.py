@@ -15,6 +15,7 @@ from flask import Blueprint, jsonify, request
 
 from agents.preprocessor_agent import generate_user_profile
 from agents.prompts_v1 import DAY_TEMPLATES
+from backend.contact import DEFAULT_TIMEZONE, ContactError, clean_timezone, clean_whatsapp_number
 from backend.cardio import CARDIO_DAYS
 from backend.auth import auth_repo, require_admin
 from backend.controllers.auth_controller import mint_enrollment_link
@@ -88,6 +89,14 @@ def create_profile():
         return jsonify({"error": f"'gender' must be one of {', '.join(GENDERS)}."}), 400
     if not isinstance(raw_user_text, str) or not raw_user_text.strip():
         return jsonify({"error": "'raw_user_text' is required."}), 400
+    try:
+        whatsapp_number = clean_whatsapp_number(body.get("whatsapp_number"))
+        timezone_name = clean_timezone(body.get("timezone") or DEFAULT_TIMEZONE)
+    except ContactError as error:
+        return jsonify({"error": str(error)}), 400
+    owner = plan_repo.whatsapp_number_owner(whatsapp_number)
+    if owner is not None and owner != user_id:
+        return jsonify({"error": f"WhatsApp number {whatsapp_number} already belongs to client {owner}."}), 409
 
     # Checked before the (slow, billed) LLM call so a client mid-plan never
     # has their profile overwritten out from under that plan.
@@ -106,13 +115,14 @@ def create_profile():
     profile["user_id"] = user_id
 
     try:
-        plan_repo.upsert_user_profile(user_id, profile, name, gender)
+        plan_repo.upsert_user_profile(user_id, profile, name, gender, whatsapp_number, timezone_name)
     except Exception:
         logger.exception("Failed to upsert profile for user_id=%s", user_id)
         return jsonify({"error": "Failed to save the client profile."}), 500
 
     return jsonify({
-        "user_id": user_id, "name": name, "gender": gender, "profile": profile, "user_created": user_created,
+        "user_id": user_id, "name": name, "gender": gender, "whatsapp_number": whatsapp_number,
+        "timezone": timezone_name, "profile": profile, "user_created": user_created,
     }), 200
 
 

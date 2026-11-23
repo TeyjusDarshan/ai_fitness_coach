@@ -94,6 +94,7 @@ def shape_log(log: Dict[str, Any], detail: bool = False, nutrients: bool = False
     if nutrients:
         shaped["transcript"] = log.get("transcript")
         shaped["has_audio"] = bool(log.get("audio_path"))
+        shaped["source"] = log.get("source") or "app"
     return shaped
 
 

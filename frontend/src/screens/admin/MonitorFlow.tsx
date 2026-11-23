@@ -10,6 +10,7 @@ import {
   regeneratePlan,
   restoreSkippedExercise,
   saveCoachNotes,
+  updateClientContact,
   type AppliedExerciseChange,
   type ClientMonitor,
   type ClientSummary,
@@ -21,6 +22,7 @@ import { CardioLog, LoggedSets, Prescription } from '../../components/ExerciseLo
 import { capitalize, formatDayDate, formatDuration, repUnit, targetRepsForSet, WORKOUT_STATUS_LABELS } from '../../utils'
 import type { CardioPlan, ExerciseEntry } from '../../types'
 import { levelForCardioRating } from '../../components/effortLevels'
+import { allTimezones, cleanWhatsAppNumber, isValidWhatsAppNumber } from '../../timezones'
 import { humanize } from './planDraft'
 import { CoachSuggestions } from './CoachSuggestions'
 import { ClientFood } from './ClientFood'
@@ -171,6 +173,15 @@ function ClientDetail({
             ))
           )}
         </div>
+        <ContactDetails
+          key={client.user_id}
+          adminKey={adminKey}
+          userId={client.user_id}
+          initialNumber={client.whatsapp_number ?? ''}
+          initialTimezone={client.timezone}
+          setByClientAt={client.timezone_set_by === 'client' ? client.timezone_updated_at : null}
+          onUnauthorized={onUnauthorized}
+        />
         {client.gender === 'female' && (
           <div className="monitor__row">
             <span className="monitor__label">Period days</span>
@@ -222,6 +233,130 @@ function ClientDetail({
 
 // The notes shown at the bottom of the client's dashboard. Saved on the
 // current week; progression copies them into each following week.
+// Her WhatsApp number (how her messages are matched to her) and time zone
+// (when meal reminders go out), shown with an inline edit.
+function ContactDetails({
+  adminKey,
+  userId,
+  initialNumber,
+  initialTimezone,
+  setByClientAt,
+  onUnauthorized,
+}: {
+  adminKey: string
+  userId: string
+  initialNumber: string
+  initialTimezone: string
+  // When she last switched it herself in the app (travelling), if she did.
+  setByClientAt: string | null
+  onUnauthorized: () => void
+}) {
+  const [saved, setSaved] = useState({ number: initialNumber, timezone: initialTimezone })
+  const [editing, setEditing] = useState(false)
+  const [number, setNumber] = useState(initialNumber)
+  const [timezone, setTimezone] = useState(initialTimezone)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Cleared once the coach saves her own change.
+  const [clientChangedAt, setClientChangedAt] = useState(setByClientAt)
+
+  const numberValid = isValidWhatsAppNumber(number)
+  const changed = cleanWhatsAppNumber(number) !== saved.number || timezone !== saved.timezone
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      const contact: { whatsapp_number?: string; timezone?: string } = {}
+      if (cleanWhatsAppNumber(number) !== saved.number) contact.whatsapp_number = cleanWhatsAppNumber(number)
+      if (timezone !== saved.timezone) contact.timezone = timezone
+      const result = await updateClientContact(adminKey, userId, contact)
+      const next = {
+        number: result.whatsapp_number ?? saved.number,
+        timezone: result.timezone ?? saved.timezone,
+      }
+      if (next.timezone !== saved.timezone) setClientChangedAt(null)
+      setSaved(next)
+      setNumber(next.number)
+      setTimezone(next.timezone)
+      setEditing(false)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        onUnauthorized()
+        return
+      }
+      setError(err instanceof Error ? err.message : 'Failed to save.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="monitor__row">
+        <span className="monitor__label">WhatsApp</span>
+        <span>{saved.number ? `+${saved.number}` : <span className="admin__muted">No number</span>}</span>
+        <span className="admin__muted">{saved.timezone.replace(/_/g, ' ')}</span>
+        {clientChangedAt && (
+          <span className="monitor__chip">Changed by her in the app · {formatTimestamp(clientChangedAt)}</span>
+        )}
+        <button type="button" className="btn-link" onClick={() => setEditing(true)}>
+          Edit
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="monitor__contact-edit">
+      <label className="admin__field">
+        <span>WhatsApp number</span>
+        <input
+          className="login-screen__input"
+          value={number}
+          onChange={(e) => setNumber(e.target.value)}
+          placeholder="Country code and number, e.g. 91 98765 43210"
+          inputMode="tel"
+          disabled={busy}
+        />
+        {number && !numberValid && (
+          <small className="admin__hint admin__hint--error">Include the country code, e.g. 91 for India.</small>
+        )}
+      </label>
+      <label className="admin__field">
+        <span>Time zone</span>
+        <select className="login-screen__input" value={timezone} onChange={(e) => setTimezone(e.target.value)} disabled={busy}>
+          {allTimezones().map((zone) => (
+            <option key={zone} value={zone}>
+              {zone.replace(/_/g, ' ')}
+            </option>
+          ))}
+        </select>
+        <small className="admin__hint">Meal reminders go out at 11:00, 15:00 and 20:00 her time.</small>
+      </label>
+      {error && <div className="error-banner">{error}</div>}
+      <div className="monitor__row">
+        <button className="btn-secondary" disabled={busy || !numberValid || !changed} onClick={() => void save()}>
+          {busy ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="btn-link"
+          disabled={busy}
+          onClick={() => {
+            setNumber(saved.number)
+            setTimezone(saved.timezone)
+            setError(null)
+            setEditing(false)
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function CoachNotes({
   adminKey,
   userId,

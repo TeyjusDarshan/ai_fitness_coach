@@ -2739,6 +2739,13 @@
   gap: 8px;
 }
 
+.monitor__contact-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .monitor__editor-note {
   display: flex;
   flex-direction: column;

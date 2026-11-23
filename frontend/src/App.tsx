@@ -19,6 +19,7 @@ import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
 import { BottomNav } from './components/BottomNav'
+import { TimezoneCheck } from './components/TimezoneCheck'
 
 function Spinner() {
   return (
@@ -209,6 +210,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <BottomNav />
+      <TimezoneCheck />
     </>
   )
 }

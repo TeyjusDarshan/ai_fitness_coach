@@ -81,8 +81,17 @@ def transcribe_many(paths: Dict[Hashable, str], usage: Usage = None) -> Dict[Has
     return {key: text.strip() for key, text in results.items() if text and text.strip()}
 
 
+# WhatsApp voice notes are audio/ogg (opus); the extension tells Sarvam the format.
+AUDIO_EXTENSIONS = {"audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "audio/amr": "amr"}
+
+
+def audio_extension(mime_type: str) -> str:
+    """File extension for a WhatsApp media mime type (e.g. "audio/ogg; codecs=opus")."""
+    return AUDIO_EXTENSIONS.get(mime_type.split(";")[0].strip(), "ogg")
+
+
 def store_reply_audio(audio: bytes, name: str, content_type: str) -> str:
-    """Keep a WhatsApp voice reply in the voice-feedback bucket; returns its
+    """Keep a WhatsApp voice note in the voice-feedback bucket; returns its
     object path (the bucket is private, so the returned URL isn't useful)."""
     _get_storage().store(audio, name, content_type=content_type)
     return name

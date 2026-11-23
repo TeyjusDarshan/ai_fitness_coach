@@ -1,0 +1,13 @@
+# Starts meal-reminders.service every 15 minutes (:00, :15, :30, :45).
+[Unit]
+Description=WhatsApp meal reminders, every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Unit=meal-reminders.service
+# A pass missed while the VM was off isn't run on boot; the next pass picks
+# up any slot still within its 45-minute window.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

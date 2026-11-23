@@ -84,3 +84,11 @@ def test_a_log_stuck_in_processing_shows_as_failed(repo):
     shaped = service.shape_log(stuck)
 
     assert (shaped["status"], shaped["error"]) == ("failed", "timeout")
+
+
+def test_the_coach_sees_where_a_log_came_from(repo):
+    whatsapp = repo.add_log(status="ready", source="whatsapp", audio_path=None, transcript="rendu idli")
+
+    assert service.shape_log(repo.logs[1], nutrients=True)["source"] == "app"   # older rows have no source
+    shaped = service.shape_log(repo.logs[whatsapp], nutrients=True)
+    assert (shaped["source"], shaped["has_audio"], shaped["transcript"]) == ("whatsapp", False, "rendu idli")

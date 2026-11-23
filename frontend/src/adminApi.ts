@@ -75,6 +75,8 @@ export interface ProfileResult {
   user_id: string
   name: string
   gender?: string | null
+  whatsapp_number?: string | null
+  timezone?: string | null
   profile: ClientProfile
   user_created: boolean
 }
@@ -147,10 +149,19 @@ export function generateProfile(
   name: string,
   gender: string,
   rawUserText: string,
+  whatsappNumber: string,
+  timezone: string,
 ): Promise<ProfileResult> {
   return adminRequest(adminKey, '/admin/users/profile', {
     method: 'POST',
-    body: JSON.stringify({ user_id: userId, name, gender, raw_user_text: rawUserText }),
+    body: JSON.stringify({
+      user_id: userId,
+      name,
+      gender,
+      raw_user_text: rawUserText,
+      whatsapp_number: whatsappNumber,
+      timezone,
+    }),
   })
 }
 
@@ -203,6 +214,13 @@ export interface ClientMonitor {
     gender: string | null
     // Diet tracking is switched on for this client (off by default).
     diet_enabled: boolean
+    // Country code + number; how her WhatsApp messages are matched to her.
+    whatsapp_number: string | null
+    // Her IANA time zone: meal reminders go out at her local 11:00 / 15:00 / 20:00.
+    timezone: string
+    // Who last changed it: the coach, or she confirmed it in the app after travelling.
+    timezone_set_by: 'coach' | 'client' | null
+    timezone_updated_at: string | null
     profile: {
       age: number | null
       sex: string | null
@@ -462,6 +480,8 @@ export interface CoachMealLog {
   created_at: string
   transcript: string | null
   has_audio: boolean
+  // Where she logged it: the app's mic, or a WhatsApp diet check-in.
+  source: 'app' | 'whatsapp'
   items: CoachMealItem[]
 }
 
@@ -498,6 +518,18 @@ export interface ClientDiet {
   // Null until she does the setup (the first time she opens Diet).
   setup: DietSetup | null
   days: { date: string; totals: Nutrients; logs: CoachMealLog[] }[]
+}
+
+// Change a client's WhatsApp number and/or time zone.
+export function updateClientContact(
+  adminKey: string,
+  userId: string,
+  contact: { whatsapp_number?: string; timezone?: string },
+): Promise<{ user_id: string; whatsapp_number?: string; timezone?: string }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/contact`, {
+    method: 'PATCH',
+    body: JSON.stringify(contact),
+  })
 }
 
 // Switch diet tracking on or off for a client. Off hides Food in her app.

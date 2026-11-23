@@ -48,9 +48,11 @@ class DietRepository:
 
     # --- meal logs -------------------------------------------------------
 
-    def create_meal_log(self, user_id: str, logged_for: date) -> Dict[str, Any]:
+    def create_meal_log(self, user_id: str, logged_for: date, source: str = "app") -> Dict[str, Any]:
+        """A new `processing` log. `source`: `app` (the PWA's mic) or
+        `whatsapp` (a WhatsApp diet check-in, voice_processor/router.py)."""
         return self.client.table("meal_logs").insert(
-            {"user_id": user_id, "logged_for": logged_for.isoformat()}
+            {"user_id": user_id, "logged_for": logged_for.isoformat(), "source": source}
         ).execute().data[0]
 
     def update_meal_log(self, meal_log_id: int, fields: Dict[str, Any]) -> None:
@@ -133,6 +135,13 @@ class DietRepository:
             ).execute()
 
     # --- switched on per client ------------------------------------------
+
+    def get_timezone(self, user_id: str) -> Optional[str]:
+        """Her IANA time zone (user_profiles.timezone), or None if unknown."""
+        rows = (
+            self.client.table("user_profiles").select("timezone").eq("user_id", user_id).limit(1).execute().data
+        )
+        return rows[0].get("timezone") if rows else None
 
     def is_enabled(self, user_id: str) -> bool:
         """Whether the coach switched diet tracking on for this client

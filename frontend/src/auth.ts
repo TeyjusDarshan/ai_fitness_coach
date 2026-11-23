@@ -18,6 +18,8 @@ export interface Me {
   diet_enabled: boolean
   // Whether they finished the one-time diet setup (height, weight, age, goal).
   diet_setup_done: boolean
+  // Their IANA time zone (set by the coach): what "today" is on the Food screens.
+  timezone?: string
 }
 
 export type Gender = 'male' | 'female' | 'other'
@@ -27,6 +29,11 @@ export type LoginOptions = PublicKeyCredentialRequestOptionsJSON
 
 export function fetchMe(): Promise<Me> {
   return request<Me>('/auth/me')
+}
+
+// She confirmed she's now in this time zone (her phone's changed after travelling).
+export function updateMyTimezone(timezone: string): Promise<Me> {
+  return request<Me>('/auth/me/timezone', { method: 'PUT', body: JSON.stringify({ timezone }) })
 }
 
 export function logoutRequest(): Promise<void> {

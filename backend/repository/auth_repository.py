@@ -30,10 +30,19 @@ class AuthRepository:
             key = os.environ.get("SUPABASE_KEY")
             self.client = create_client(url, key)
 
+    def update_timezone(self, user_id: str, timezone_name: str) -> None:
+        """The client confirmed she's in a new time zone (the PWA noticed her
+        phone's zone changed)."""
+        self.client.table("user_profiles").update({
+            "timezone": timezone_name,
+            "timezone_updated_at": _now_iso(),
+            "timezone_set_by": "client",
+        }).eq("user_id", user_id).execute()
+
     def get_user_auth_row(self, user_id: str) -> Optional[dict]:
         rows = (
             self.client.table("user_profiles")
-            .select("user_id, name, gender, diet_enabled, diet_setup, webauthn_user_handle")
+            .select("user_id, name, gender, diet_enabled, diet_setup, timezone, webauthn_user_handle")
             .eq("user_id", user_id)
             .execute()
             .data

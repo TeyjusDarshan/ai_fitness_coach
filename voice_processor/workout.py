@@ -1,21 +1,18 @@
-"""The workout topics of the voice processor (voice_processor/main.py):
+"""The workout side of the voice processor (voice_processor/main.py):
 
-- workout-complete-events (handle_workout_complete): a shared workout ->
+- handle_workout_complete (the `summarizer` target): a shared workout ->
   the client's voice notes transcribed, coach notes extracted, and a
   Tanglish summary with clarifying questions sent back as a voice note.
-- workout-feedback-replies (handle_feedback_reply): her WhatsApp answers to
-  those questions, mapped onto them, with follow-ups when needed.
+- process_reply (called by the router, voice_processor/router.py, for a
+  message it classified as `question_reply`): her WhatsApp answer to those
+  questions, mapped onto them, with follow-ups when needed.
 """
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from whatsapp_client import WhatsAppClient
-from voice_processor.feedback import (
-    store_reply_audio,
-    transcribe_audio,
-    transcribe_many,
-)
+from voice_processor.feedback import transcribe_many
 from voice_processor.feedback_agent import (
     VoiceNote,
     exercise_id_map,
@@ -43,9 +40,6 @@ THANK_YOU_MESSAGE = (
     "நன்றி! உங்க பதில்களை note பண்ணிட்டோம். "
     "அடுத்த workout-ல தேவையான மாற்றங்கள் பண்ணிடலாம் 💪"
 )
-
-# WhatsApp voice notes are audio/ogg (opus); the extension tells Sarvam the format.
-_AUDIO_EXTENSIONS = {"audio/ogg": "ogg", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "audio/amr": "amr"}
 
 
 def _now() -> str:
@@ -212,43 +206,32 @@ def _usage(context: Dict[str, Any], feature: str) -> Dict[str, Any]:
     return {"feature": feature, "user_id": context.get("user_id"), "session_id": context.get("session_id")}
 
 
-def _transcribe_voice_reply(
-    reply: Dict[str, Any], clarification: Dict[str, Any], media_id: str
-) -> Dict[str, Any]:
-    """Download a voice reply from WhatsApp, keep it in the voice-feedback
-    bucket and transcribe it. Returns the clarification_replies fields."""
-    audio, mime_type = whatsapp_client.download_media(media_id)
-    content_type = mime_type.split(";")[0].strip()
-    extension = _AUDIO_EXTENSIONS.get(content_type, "ogg")
-    path = store_reply_audio(
-        audio, f"session_{clarification['session_id']}_reply_{reply['id']}.{extension}", content_type
-    )
-    usage = {"feature": "reply_stt", "user_id": clarification["user_id"], "session_id": clarification["session_id"]}
-    return {"audio_path": path, "transcript": (transcribe_audio(audio, path, usage) or "").strip()}
+def process_reply(
+    repo: AnalysisRepository,
+    clarification: Dict[str, Any],
+    phone_number: str,
+    whatsapp_message_id: str,
+    message_type: str,
+    reply_text: str,
+    audio_path: Optional[str] = None,
+) -> None:
+    """Map one WhatsApp reply onto her open round of questions
+    (`clarification`), store what it says, and answer: follow-up questions,
+    a thank-you once everything is answered, or nothing while answers are
+    still coming in.
 
-
-def _process_reply(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
-    """Map one WhatsApp reply onto the open clarifying questions, store what
-    it says, and answer: follow-up questions, a thank-you once everything is
-    answered, or nothing while answers are still coming in."""
-    phone_number = payload["phone_number"]
-    clarification = repo.find_open_clarification(phone_number)
-    if clarification is None:
-        logger.info("No open questions for %s; ignoring reply %s", phone_number, payload.get("whatsapp_message_id"))
-        return
+    The router (voice_processor/router.py) has already found the round,
+    downloaded and stored a voice reply (`audio_path`) and transcribed it,
+    so `reply_text` is the transcript or the typed text."""
     reply = repo.record_reply(
-        clarification["id"], payload["whatsapp_message_id"], payload.get("type", "text"), payload.get("text")
+        clarification["id"], whatsapp_message_id, message_type, reply_text if message_type == "text" else None
     )
     if reply is None:
-        logger.info("Reply %s already processed; skipping", payload["whatsapp_message_id"])
+        logger.info("Reply %s already processed; skipping", whatsapp_message_id)
         return
-
-    if payload.get("type") == "audio":
-        fields = _transcribe_voice_reply(reply, clarification, payload["media_id"])
-        repo.update_reply(reply["id"], fields)
-        reply_text = fields["transcript"]
-    else:
-        reply_text = (payload.get("text") or "").strip()
+    if message_type == "audio":
+        repo.update_reply(reply["id"], {"audio_path": audio_path, "transcript": reply_text})
+    reply_text = (reply_text or "").strip()
     if not reply_text:
         repo.update_reply(reply["id"], {"processed_at": _now()})
         return
@@ -305,7 +288,7 @@ def _process_reply(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
     repo.update_reply(reply["id"], {"processed_at": _now()})
     logger.info(
         "Processed reply %s for session_id=%s: %d answers, %d notes, %d follow-ups",
-        payload["whatsapp_message_id"], session_id, len(mapping["answers"]), len(mapping["notes"]), len(follow_ups),
+        whatsapp_message_id, session_id, len(mapping["answers"]), len(mapping["notes"]), len(follow_ups),
     )
 
 
@@ -325,6 +308,3 @@ def _send_follow_ups(phone_number: str, context: Dict[str, Any], follow_ups: Lis
 def handle_workout_complete(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
     _process_message(repo, payload["session_id"], payload["phone_number"])
 
-
-def handle_feedback_reply(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
-    _process_reply(repo, payload)

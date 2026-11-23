@@ -1,3 +1,4 @@
+import { DEFAULT_TIMEZONE } from '../timezones'
 import {
   createContext,
   useCallback,
@@ -33,6 +34,11 @@ interface AppState {
   // them to /food/setup.
   dietSetupDone: boolean
   markDietSetupDone: () => void
+  // Their time zone (user_profiles.timezone): what "today" is for food.
+  // Workout dates still follow India time.
+  timezone: string
+  // She confirmed a new time zone (see TimezoneCheck).
+  setTimezone: (timezone: string) => void
   dashboard: Dashboard | null
   loading: boolean
   error: string | null
@@ -63,6 +69,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [gender, setGender] = useState<Gender | null>(null)
   const [dietEnabled, setDietEnabled] = useState(false)
   const [dietSetupDone, setDietSetupDone] = useState(false)
+  const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE)
   const markDietSetupDone = useCallback(() => setDietSetupDone(true), [])
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [loading, setLoading] = useState(false)
@@ -102,6 +109,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         setGender(me.gender)
         setDietEnabled(me.diet_enabled === true)
         setDietSetupDone(me.diet_setup_done === true)
+        setTimezone(me.timezone || DEFAULT_TIMEZONE)
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
@@ -114,6 +122,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setGender(me.gender)
     setDietEnabled(me.diet_enabled === true)
     setDietSetupDone(me.diet_setup_done === true)
+    setTimezone(me.timezone || DEFAULT_TIMEZONE)
     setDashboard(null)
     setError(null)
     setDashboardStatus('idle')
@@ -192,6 +201,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dietEnabled,
       dietSetupDone,
       markDietSetupDone,
+      timezone,
+      setTimezone,
       dashboard,
       loading,
       error,
@@ -215,6 +226,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       dietEnabled,
       dietSetupDone,
       markDietSetupDone,
+      timezone,
       dashboard,
       loading,
       error,

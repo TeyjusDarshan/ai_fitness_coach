@@ -36,9 +36,20 @@ def _wrap(message: dict):
     }
 
 
-def test_receive_message_with_session_fields_acks_and_publishes(app_module, controller, monkeypatch):
+@pytest.fixture(autouse=True)
+def window_repo(controller, monkeypatch):
+    repo = MagicMock()
+    monkeypatch.setattr(controller, "whatsapp_repo", repo)
+    return repo
+
+
+def _send(controller):
+    return controller.kafka_producer.send_user_conversation_event
+
+
+def test_receive_message_with_session_fields_acks_and_goes_to_the_summarizer(app_module, controller, monkeypatch):
     monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
-    monkeypatch.setattr(controller.kafka_producer, "send_workout_complete_event", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
 
     client = app_module.app.test_client()
     response = client.post(
@@ -50,28 +61,28 @@ def test_receive_message_with_session_fields_acks_and_publishes(app_module, cont
     controller.whatsapp_client.send_text.assert_called_once_with(
         "919876543210", controller.WORKOUT_RECEIVED_MESSAGE
     )
-    controller.kafka_producer.send_workout_complete_event.assert_called_once_with(12, "919876543210")
+    _send(controller).assert_called_once_with(
+        "summarizer", {"session_id": 12, "phone_number": "919876543210"}, key="919876543210"
+    )
 
 
-def test_receive_message_without_session_fields_is_published_as_a_reply(app_module, controller, monkeypatch):
+def test_text_without_session_fields_goes_to_the_router(app_module, controller, monkeypatch):
     monkeypatch.setattr(controller.whatsapp_client, "send_text", MagicMock())
-    monkeypatch.setattr(controller.kafka_producer, "send_workout_complete_event", MagicMock())
-    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
 
     client = app_module.app.test_client()
     response = client.post("/webhooks/whatsapp", json=_inbound_payload("knee konjam valikkudhu"))
 
     assert response.status_code == 200
     controller.whatsapp_client.send_text.assert_not_called()
-    controller.kafka_producer.send_workout_complete_event.assert_not_called()
-    controller.kafka_producer.send_feedback_reply_event.assert_called_once_with({
+    _send(controller).assert_called_once_with("router", {
         "phone_number": "919876543210", "whatsapp_message_id": "wamid.1",
         "type": "text", "text": "knee konjam valikkudhu",
-    })
+    }, key="919876543210")
 
 
-def test_receive_voice_message_is_published_as_an_audio_reply(app_module, controller, monkeypatch):
-    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
+def test_a_voice_note_goes_to_the_router(app_module, controller, monkeypatch):
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
 
     client = app_module.app.test_client()
     response = client.post("/webhooks/whatsapp", json=_wrap({
@@ -80,14 +91,14 @@ def test_receive_voice_message_is_published_as_an_audio_reply(app_module, contro
     }))
 
     assert response.status_code == 200
-    controller.kafka_producer.send_feedback_reply_event.assert_called_once_with({
+    _send(controller).assert_called_once_with("router", {
         "phone_number": "919876543210", "whatsapp_message_id": "wamid.2",
         "type": "audio", "media_id": "media-9",
-    })
+    }, key="919876543210")
 
 
 def test_receive_message_without_an_id_is_not_published(app_module, controller, monkeypatch):
-    monkeypatch.setattr(controller.kafka_producer, "send_feedback_reply_event", MagicMock())
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
 
     client = app_module.app.test_client()
     response = client.post("/webhooks/whatsapp", json=_wrap(
@@ -95,12 +106,12 @@ def test_receive_message_without_an_id_is_not_published(app_module, controller, 
     ))
 
     assert response.status_code == 200
-    controller.kafka_producer.send_feedback_reply_event.assert_not_called()
+    _send(controller).assert_not_called()
 
 
-def test_a_failed_reply_publish_still_acks(app_module, controller, monkeypatch):
+def test_a_failed_router_publish_still_acks(app_module, controller, monkeypatch):
     monkeypatch.setattr(
-        controller.kafka_producer, "send_feedback_reply_event", MagicMock(side_effect=RuntimeError("down"))
+        controller.kafka_producer, "send_user_conversation_event", MagicMock(side_effect=RuntimeError("down"))
     )
 
     response = app_module.app.test_client().post("/webhooks/whatsapp", json=_inbound_payload("hi"))
@@ -133,3 +144,28 @@ def test_verify_webhook_wrong_token_is_rejected(app_module, controller, monkeypa
     })
 
     assert response.status_code == 403
+
+
+def test_every_inbound_message_records_the_reply_window(app_module, controller, monkeypatch, window_repo):
+    from datetime import datetime, timezone
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
+
+    response = app_module.app.test_client().post("/webhooks/whatsapp", json=_wrap({
+        "from": "919876543210", "id": "wamid.3", "timestamp": "1795420000", "type": "image", "image": {"id": "m"},
+    }))
+
+    assert response.status_code == 200
+    window_repo.record_inbound.assert_called_once_with(
+        "919876543210", datetime.fromtimestamp(1795420000, tz=timezone.utc), "wamid.3", "image"
+    )
+    _send(controller).assert_not_called()  # an image isn't routed, but it still opens the window
+
+
+def test_a_failed_window_write_does_not_stop_routing(app_module, controller, monkeypatch, window_repo):
+    window_repo.record_inbound.side_effect = RuntimeError("db down")
+    monkeypatch.setattr(controller.kafka_producer, "send_user_conversation_event", MagicMock(return_value=True))
+
+    response = app_module.app.test_client().post("/webhooks/whatsapp", json=_inbound_payload("hi"))
+
+    assert response.status_code == 200
+    _send(controller).assert_called_once()

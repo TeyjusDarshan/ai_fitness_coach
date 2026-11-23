@@ -1,37 +1,41 @@
-"""Tests for the voice processor's routing (voice_processor/main.py): each
-topic's messages go to that topic's handler, and a failing message is
-skipped rather than stopping the loop."""
+"""Tests for the voice processor's dispatch (voice_processor/main.py and
+processors.py): each user-conversation event goes to the processor its
+`target` names, and a failing event is skipped rather than stopping the loop."""
 import json
 from unittest.mock import MagicMock
 
-from voice_processor import main
-from voice_processor.consumer import FEEDBACK_REPLY_TOPIC, MEAL_LOG_TOPIC, WORKOUT_COMPLETE_TOPIC
+from voice_processor import main, processors
+from voice_processor.consumer import TARGET_DIET, TARGET_ROUTER, TARGET_SUMMARIZER
 
 
-def test_every_topic_has_its_own_handler(monkeypatch):
+def test_every_target_has_its_own_processor(monkeypatch):
     calls = MagicMock()
-    monkeypatch.setattr(main.workout, "handle_workout_complete", calls.workout_complete)
-    monkeypatch.setattr(main.workout, "handle_feedback_reply", calls.feedback_reply)
-    monkeypatch.setattr(main, "process_meal_log", calls.meal_log)
+    monkeypatch.setattr(processors.workout, "handle_workout_complete", calls.summarizer)
+    monkeypatch.setattr(processors.router, "handle_inbound", calls.router)
+    monkeypatch.setattr(processors, "process_meal_log", calls.diet)
     workout_repo, diet_repo = MagicMock(), MagicMock()
-    handlers = main.build_handlers(workout_repo, diet_repo)
+    registry = processors.build_processors(workout_repo, diet_repo)
 
-    main.handle_message(handlers, WORKOUT_COMPLETE_TOPIC, json.dumps({"session_id": 7, "phone_number": "91"}))
-    main.handle_message(handlers, FEEDBACK_REPLY_TOPIC, json.dumps({"phone_number": "91", "text": "ok"}))
-    main.handle_message(handlers, MEAL_LOG_TOPIC, json.dumps({"meal_log_id": 12}))
+    summarizer = {"target": TARGET_SUMMARIZER, "session_id": 7, "phone_number": "91"}
+    routed = {"target": TARGET_ROUTER, "phone_number": "91", "whatsapp_message_id": "w", "type": "text", "text": "ok"}
+    main.handle_message(registry, json.dumps(summarizer))
+    main.handle_message(registry, json.dumps(routed))
+    main.handle_message(registry, json.dumps({"target": TARGET_DIET, "meal_log_id": 12}))
 
-    calls.workout_complete.assert_called_once_with(workout_repo, {"session_id": 7, "phone_number": "91"})
-    calls.feedback_reply.assert_called_once_with(workout_repo, {"phone_number": "91", "text": "ok"})
-    calls.meal_log.assert_called_once_with(diet_repo, 12, main.transcribe_meal_log)
-    assert set(handlers) == {WORKOUT_COMPLETE_TOPIC, FEEDBACK_REPLY_TOPIC, MEAL_LOG_TOPIC}
+    calls.summarizer.assert_called_once_with(workout_repo, summarizer)
+    calls.router.assert_called_once_with(workout_repo, diet_repo, routed)
+    calls.diet.assert_called_once_with(diet_repo, 12, processors.transcribe_meal_log)
+    assert set(registry) == {TARGET_SUMMARIZER, TARGET_ROUTER, TARGET_DIET}
 
 
-def test_a_bad_message_or_unknown_topic_is_skipped():
-    failing = MagicMock(side_effect=RuntimeError("boom"))
-    handlers = {"t": failing}
+def test_a_bad_event_or_unknown_target_is_skipped():
+    failing = MagicMock()
+    failing.handle.side_effect = RuntimeError("boom")
+    registry = {"t": failing}
 
-    main.handle_message(handlers, "t", b'{"meal_log_id": 1}')   # handler raises
-    main.handle_message(handlers, "t", b"not json")             # never reaches it
-    main.handle_message(handlers, "other", b"{}")               # no handler
+    main.handle_message(registry, b'{"target": "t", "meal_log_id": 1}')  # processor raises
+    main.handle_message(registry, b"not json")                         # never reaches it
+    main.handle_message(registry, b'{"target": "other"}')               # no processor
+    main.handle_message(registry, b'{"meal_log_id": 1}')                # no target
 
-    failing.assert_called_once_with({"meal_log_id": 1})
+    failing.handle.assert_called_once_with({"target": "t", "meal_log_id": 1})

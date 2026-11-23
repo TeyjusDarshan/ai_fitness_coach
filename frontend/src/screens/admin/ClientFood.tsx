@@ -325,8 +325,9 @@ function LogBlock({
         <span className={`monitor__chip${log.status === 'failed' ? ' monitor__chip--severe' : ''}`}>
           {LOG_STATUS[log.status]}
         </span>
+        {log.source === 'whatsapp' && <span className="monitor__chip">WhatsApp</span>}
         <span className="admin__muted">
-          Recorded{' '}
+          {log.source === 'whatsapp' ? 'Sent' : 'Recorded'}{' '}
           {new Date(log.created_at).toLocaleString('en-GB', {
             day: 'numeric',
             month: 'short',

@@ -14,6 +14,7 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from backend.contact import DEFAULT_TIMEZONE, ContactError, clean_timezone, clean_whatsapp_number, is_duplicate_number_error
 from backend.auth import auth_repo, require_admin
 from backend.repository.workout_plan_repository import (
     PlanRegenerationError,
@@ -90,6 +91,12 @@ def client_monitor(user_id):
             "name": row.get("name"),
             "gender": row.get("gender"),
             "diet_enabled": row.get("diet_enabled") is True,
+            "whatsapp_number": row.get("whatsapp_number"),
+            "timezone": row.get("timezone") or DEFAULT_TIMEZONE,
+            # Who last changed it (coach, or she confirmed it in the app
+            # after travelling) and when; null before either happened.
+            "timezone_set_by": row.get("timezone_set_by"),
+            "timezone_updated_at": row.get("timezone_updated_at"),
             "profile": _profile_basics(row.get("profile")),
             "joint_pain": plan_repo.list_joint_pain(user_id),
             "period_days": plan_repo.list_period_days(user_id),
@@ -234,6 +241,40 @@ def regenerate_plan(user_id):
         logger.exception("Failed to regenerate the current plan for user_id=%s", user_id)
         return jsonify({"error": "Failed to rebuild this week. Try again."}), 500
     return jsonify({"plan_id": plan["id"]}), 200
+
+
+@admin_monitor_bp.patch("/api/admin/users/<user_id>/contact")
+@require_admin
+def edit_contact(user_id):
+    """Change a client's WhatsApp number and/or time zone:
+    `{"whatsapp_number": "971501234567", "timezone": "Asia/Dubai"}` (either
+    may be left out). The number is how her WhatsApp messages are matched to
+    her and where meal reminders go; the time zone decides when they're sent."""
+    body = request.get_json(silent=True) or {}
+    fields = {}
+    try:
+        if "whatsapp_number" in body:
+            fields["whatsapp_number"] = clean_whatsapp_number(body["whatsapp_number"])
+        if "timezone" in body:
+            fields["timezone"] = clean_timezone(body["timezone"])
+    except ContactError as error:
+        return jsonify({"error": str(error)}), 400
+    if not fields:
+        return jsonify({"error": "Send 'whatsapp_number' and/or 'timezone'."}), 400
+    if not plan_repo.user_exists(user_id):
+        return jsonify({"error": f"No client with id {user_id}."}), 404
+    if "whatsapp_number" in fields:
+        owner = plan_repo.whatsapp_number_owner(fields["whatsapp_number"])
+        if owner is not None and owner != user_id:
+            return jsonify({"error": f"WhatsApp number {fields['whatsapp_number']} already belongs to client {owner}."}), 409
+    try:
+        plan_repo.update_contact(user_id, fields)
+    except Exception as error:
+        if is_duplicate_number_error(error):
+            return jsonify({"error": "That WhatsApp number already belongs to another client."}), 409
+        logger.exception("Failed to update contact details for user_id=%s", user_id)
+        return jsonify({"error": "Failed to save."}), 500
+    return jsonify({"user_id": user_id, **fields}), 200
 
 
 @admin_monitor_bp.patch("/api/admin/users/<user_id>/coach-notes")

@@ -21,6 +21,7 @@ from flask import Blueprint, g, jsonify, request
 from backend.auth import require_admin, require_auth
 from backend.controllers.admin_monitor_controller import plan_repo
 from backend.controllers.whatsapp_webhook_controller import kafka_producer
+from backend.kafka_producer import TARGET_DIET
 from backend.feedback_storage import (
     SIGNED_URL_TTL_SECONDS,
     UploadError,
@@ -28,8 +29,8 @@ from backend.feedback_storage import (
     meal_audio_path,
     read_audio_upload,
 )
-from backend.repository.workout_plan_repository import app_today
 from diet import service
+from diet.dates import today_in
 from diet.setup import GOALS, INPUT_RANGES, SetupError, assess, calculate_goals
 from diet.nutrition import DEFAULT_TARGETS, TARGET_RANGES, rounded, targets_for
 from diet.repository import DietRepository
@@ -66,6 +67,13 @@ def require_diet(view):
     return wrapper
 
 
+def _user_today(user_id: str) -> date:
+    """Today in the client's own time zone (user_profiles.timezone): the day
+    a recording is logged for and the day her Food screen calls today.
+    Workout dates still follow APP_TIMEZONE."""
+    return today_in(diet_repo.get_timezone(user_id))
+
+
 # --- the client's endpoints ------------------------------------------------
 
 @diet_bp.post("/api/meal-logs")
@@ -82,7 +90,7 @@ def create_meal_log():
     except UploadError as error:
         return jsonify({"error": error.message}), error.status
 
-    logged_for = app_today() - timedelta(days=1 if day == "yesterday" else 0)
+    logged_for = _user_today(g.user_id) - timedelta(days=1 if day == "yesterday" else 0)
     try:
         log = diet_repo.create_meal_log(g.user_id, logged_for)
         path = meal_audio_path(log["id"], content_type)
@@ -94,7 +102,9 @@ def create_meal_log():
 
     delivered = False
     try:
-        delivered = kafka_producer.send_meal_log_event(log["id"])
+        delivered = kafka_producer.send_user_conversation_event(
+            TARGET_DIET, {"meal_log_id": log["id"]}, key=g.user_id
+        )
     except Exception:
         logger.exception("Failed to publish meal_log_id=%s", log["id"])
     if not delivered:
@@ -243,7 +253,7 @@ def get_diet_day(user_id):
     against her targets, and what she logged."""
     if user_id != g.user_id:
         return jsonify({"error": "You don't have access to this user's food log."}), 403
-    today = app_today()
+    today = _user_today(user_id)
     try:
         day = date.fromisoformat(request.args["date"]) if request.args.get("date") else today
     except ValueError:
@@ -267,7 +277,7 @@ def get_recent_diet_days(user_id):
     except ValueError:
         return jsonify({"error": "'days' must be a number."}), 400
     days = max(1, min(MAX_DAYS_BACK + 1, days))
-    today = app_today()
+    today = _user_today(user_id)
     logs = diet_repo.list_meal_logs(user_id, today - timedelta(days=days - 1), today)
     return jsonify({
         "targets": targets_for(diet_repo.get_targets(user_id)),
@@ -337,7 +347,7 @@ def complete_diet_setup(user_id):
         return jsonify({"error": "'target_weight_kg' must be a number."}), 400
     try:
         result = calculate_goals(*values, gender, goal, _number(target) if target is not None else None,
-                                 today=app_today())
+                                 today=_user_today(user_id))
     except SetupError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -370,7 +380,7 @@ def get_diet_for_coach(user_id):
     if not plan_repo.user_exists(user_id):
         return jsonify({"error": f"No client with id {user_id}."}), 404
 
-    today = app_today()
+    today = _user_today(user_id)
     logs = diet_repo.list_meal_logs(user_id, today - timedelta(days=days - 1), today)
     by_day = {}
     for log in logs:

@@ -143,7 +143,8 @@ def test_register_verify_success_stores_passkey_and_signs_in(env, monkeypatch):
     })
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False,
+                                   "timezone": "Asia/Kolkata"}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "registration")
     stored = auth.auth_repo.add_passkey.call_args.args[0]
     assert stored["user_id"] == "usr_1"
@@ -234,7 +235,8 @@ def test_login_verify_success_updates_sign_count_and_signs_in(env, monkeypatch):
     response = client.post("/api/auth/login/verify", json={"credential": _login_credential()})
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False,
+                                   "timezone": "Asia/Kolkata"}
     auth.auth_repo.consume_challenge.assert_called_once_with(CHALLENGE, "authentication")
     auth.auth_repo.update_passkey_usage.assert_called_once_with("cred-1", 0)
     assert _session_cookie(response) is not None
@@ -307,7 +309,8 @@ def test_me_returns_signed_in_user(env):
     response = client.get("/api/auth/me")
 
     assert response.status_code == 200
-    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False}
+    assert response.get_json() == {"user_id": "usr_1", "name": "Asha", "gender": None, "diet_enabled": False, "diet_setup_done": False,
+                                   "timezone": "Asia/Kolkata"}
     auth.auth_repo.get_active_session.assert_called_once_with(auth.hash_token("tok"))
 
 
@@ -366,3 +369,32 @@ def test_outside_a_preview_the_configured_values_are_used(monkeypatch, vercel_en
     assert auth.rp_id() == "prod.example.com"
     assert auth.allowed_origins() == ["https://prod.example.com", "https://www.prod.example.com"]
     assert auth.app_base_url() == "https://prod.example.com"
+
+
+def test_a_client_can_confirm_her_new_time_zone(env, monkeypatch):
+    client, auth, _ = env
+    monkeypatch.setattr(auth.auth_repo, "update_timezone", MagicMock())
+    auth.auth_repo.get_active_session.return_value = {"user_id": "usr_1"}
+    client.set_cookie(auth.SESSION_COOKIE, "tok", path="/api")
+
+    response = client.put("/api/auth/me/timezone", json={"timezone": "Asia/Dubai"})
+
+    assert response.status_code == 200
+    auth.auth_repo.update_timezone.assert_called_once_with("usr_1", "Asia/Dubai")
+
+
+@pytest.mark.parametrize("body", [{}, {"timezone": "Mars/Base"}, {"timezone": 5}, {"timezone": "UTC+4"}])
+def test_an_unknown_time_zone_is_refused(env, body, monkeypatch):
+    client, auth, _ = env
+    monkeypatch.setattr(auth.auth_repo, "update_timezone", MagicMock())
+    auth.auth_repo.get_active_session.return_value = {"user_id": "usr_1"}
+    client.set_cookie(auth.SESSION_COOKIE, "tok", path="/api")
+
+    assert client.put("/api/auth/me/timezone", json=body).status_code == 400
+    auth.auth_repo.update_timezone.assert_not_called()
+
+
+def test_changing_the_time_zone_needs_a_session(env):
+    client, auth, _ = env
+
+    assert client.put("/api/auth/me/timezone", json={"timezone": "Asia/Dubai"}).status_code == 401

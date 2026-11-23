@@ -1,6 +1,7 @@
-"""Wiring tests for _process_reply: the client's WhatsApp replies to the
-clarifying questions. The repository, Claude (map_reply), STT, TTS and
-WhatsApp are all mocked."""
+"""Wiring tests for process_reply: the client's WhatsApp replies to the
+clarifying questions, after the router (voice_processor/router.py) found
+her open round and transcribed a voice reply. The repository, Claude
+(map_reply), TTS and WhatsApp are all mocked."""
 from unittest.mock import MagicMock
 
 import pytest
@@ -19,10 +20,10 @@ PAIN_NOTE = {
 }
 
 
-def _payload(**overrides):
-    payload = {"phone_number": PHONE, "whatsapp_message_id": "wamid.1", "type": "text", "text": "knee valikkudhu"}
-    payload.update(overrides)
-    return payload
+def _reply(repo, text="knee valikkudhu", message_type="text", audio_path=None):
+    workout.process_reply(
+        repo, repo.find_open_clarification.return_value, PHONE, "wamid.1", message_type, text, audio_path
+    )
 
 
 def _clarification(round_number=1, answers=None):
@@ -54,27 +55,16 @@ def mocks(monkeypatch):
         "map_reply": MagicMock(return_value={"answers": {}, "notes": [], "follow_ups": []}),
         "whatsapp_client": MagicMock(),
         "generate_voice_note": MagicMock(return_value="https://audio/followup.ogg"),
-        "transcribe_audio": MagicMock(return_value="voice la sonnadhu"),
-        "store_reply_audio": MagicMock(side_effect=lambda audio, name, content_type: name),
     }
     for name, mock in mocks.items():
         monkeypatch.setattr(workout, name, mock)
     return mocks
 
 
-def test_a_reply_with_no_open_questions_is_ignored(repo, mocks):
-    repo.find_open_clarification.return_value = None
-
-    workout._process_reply(repo, _payload())
-
-    repo.record_reply.assert_not_called()
-    mocks["map_reply"].assert_not_called()
-
-
 def test_an_already_processed_reply_is_skipped(repo, mocks):
     repo.record_reply.return_value = None
 
-    workout._process_reply(repo, _payload())
+    _reply(repo)
 
     mocks["map_reply"].assert_not_called()
 
@@ -82,7 +72,7 @@ def test_an_already_processed_reply_is_skipped(repo, mocks):
 def test_a_partial_answer_is_stored_without_replying(repo, mocks):
     mocks["map_reply"].return_value = {"answers": {"q1": "Knee hurt."}, "notes": [dict(PAIN_NOTE)], "follow_ups": []}
 
-    workout._process_reply(repo, _payload())
+    _reply(repo)
 
     args = mocks["map_reply"].call_args
     assert args.args[:3] == (QUESTIONS, ["earlier reply"], "knee valikkudhu")
@@ -109,7 +99,7 @@ def test_answering_everything_closes_the_round_and_thanks_her(repo, mocks):
     )
     mocks["map_reply"].return_value = {"answers": {"q2": "Nothing else."}, "notes": [], "follow_ups": []}
 
-    workout._process_reply(repo, _payload(text="vera onnum illa"))
+    _reply(repo, text="vera onnum illa")
 
     fields = repo.update_clarification.call_args.args[1]
     assert fields["status"] == "answered"
@@ -123,7 +113,7 @@ def test_follow_ups_open_round_two_and_are_sent_as_a_voice_note(repo, mocks):
                  "topic": "joint_pain", "session_exercise_id": 301, "joint": "knee"}
     mocks["map_reply"].return_value = {"answers": {"q1": "Knee hurt."}, "notes": [], "follow_ups": [follow_up]}
 
-    workout._process_reply(repo, _payload())
+    _reply(repo)
 
     fields = repo.update_clarification.call_args.args[1]
     assert fields["status"] == "superseded"  # q2 never answered
@@ -139,7 +129,7 @@ def test_follow_ups_open_round_two_and_are_sent_as_a_voice_note(repo, mocks):
 def test_round_two_allows_no_more_follow_ups(repo, mocks):
     repo.find_open_clarification.return_value = _clarification(round_number=2)
 
-    workout._process_reply(repo, _payload())
+    _reply(repo)
 
     assert mocks["map_reply"].call_args.kwargs["follow_ups_allowed"] is False
     # No follow-ups can be asked, so the history isn't fetched.
@@ -147,24 +137,17 @@ def test_round_two_allows_no_more_follow_ups(repo, mocks):
     assert mocks["map_reply"].call_args.kwargs["question_history"] == []
 
 
-def test_a_voice_reply_is_downloaded_stored_and_transcribed(repo, mocks):
-    mocks["whatsapp_client"].download_media.return_value = (b"ogg-bytes", "audio/ogg; codecs=opus")
+def test_a_voice_reply_keeps_the_routers_audio_and_transcript(repo, mocks):
+    _reply(repo, text="voice la sonnadhu", message_type="audio", audio_path="inbound_5.ogg")
 
-    workout._process_reply(repo, _payload(type="audio", text=None, media_id="media-1"))
-
-    mocks["whatsapp_client"].download_media.assert_called_once_with("media-1")
-    mocks["store_reply_audio"].assert_called_once_with(b"ogg-bytes", "session_48_reply_900.ogg", "audio/ogg")
-    mocks["transcribe_audio"].assert_called_once_with(
-        b"ogg-bytes", "session_48_reply_900.ogg", {"feature": "reply_stt", "user_id": "usr_1", "session_id": 48}
-    )
-    repo.update_reply.assert_any_call(
-        900, {"audio_path": "session_48_reply_900.ogg", "transcript": "voice la sonnadhu"}
-    )
+    repo.record_reply.assert_called_once_with(70, "wamid.1", "audio", None)
+    repo.update_reply.assert_any_call(900, {"audio_path": "inbound_5.ogg", "transcript": "voice la sonnadhu"})
+    mocks["whatsapp_client"].download_media.assert_not_called()
     assert mocks["map_reply"].call_args.args[2] == "voice la sonnadhu"
 
 
 def test_an_empty_reply_is_marked_processed_without_calling_claude(repo, mocks):
-    workout._process_reply(repo, _payload(text="   "))
+    _reply(repo, text="   ")
 
     mocks["map_reply"].assert_not_called()
     assert "processed_at" in repo.update_reply.call_args.args[1]

@@ -7,7 +7,7 @@ import { formatTamilDay, TA } from '../foodText'
 import { useAppState } from '../state/AppStateContext'
 import { useVoiceRecorder } from '../state/useVoiceRecorder'
 import type { DietDay, DietDaySummary, DietGoals, MealItem, RecentDiet } from '../types'
-import { appTodayIso, formatClock } from '../utils'
+import { formatClock, todayIsoIn } from '../utils'
 
 const PAST_DAYS = 10
 
@@ -201,7 +201,9 @@ function NutrientChart({
   valueOf: (day: DietDaySummary) => number
   onOpen: (date: string) => void
 }) {
-  const today = appTodayIso()
+  const { timezone } = useAppState()
+  // Her own today (her time zone), the darker bar on the right.
+  const today = todayIsoIn(timezone)
   const logged = days.filter((day) => day.dishes > 0)
   const average = logged.length ? logged.reduce((sum, day) => sum + valueOf(day), 0) / logged.length : null
   const scale = Math.max(target, ...days.map(valueOf)) * 1.1 || 1
@@ -280,7 +282,7 @@ function NutritionOverview({ recent, onOpen }: { recent: RecentDiet; onOpen: (da
 // stops, always for today). Past 10 Day Logs: a chart per goal nutrient over
 // her last 10 days; tapping a day opens its goal card and dishes.
 export function FoodScreen() {
-  const { userId } = useAppState()
+  const { userId, timezone } = useAppState()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('today')
   const [day, setDay] = useState<DietDay | null>(null)
@@ -293,7 +295,9 @@ export function FoodScreen() {
   const unsent = useRef<Blob | null>(null)
   const [sendFailed, setSendFailed] = useState(false)
 
-  const shownDate = tab === 'today' ? appTodayIso() : pastDate
+  // "Today" is her own day (user_profiles.timezone), matching the date the
+  // server logs a recording or WhatsApp check-in for.
+  const shownDate = tab === 'today' ? todayIsoIn(timezone) : pastDate
 
   const loadDay = useCallback(() => {
     if (!userId || !shownDate) return
@@ -346,7 +350,7 @@ export function FoodScreen() {
 
   // A day tapped in the overview; today opens on the Today tab.
   function openDay(date: string) {
-    if (date === appTodayIso()) chooseTab('today')
+    if (date === todayIsoIn(timezone)) chooseTab('today')
     else setPastDate(date)
   }
 
