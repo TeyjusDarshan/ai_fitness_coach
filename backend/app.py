@@ -12,13 +12,12 @@ a passkey sign-in session (see backend/auth.py and
 backend/controllers/auth_controller.py).
 """
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from flask import Flask, g, jsonify, request
 
-from agents.preprocessor_agent import generate_user_profile
-from agents.workout_agent import generate_workout_plan_v1
-from backend.auth import require_admin, require_auth
+from backend.auth import SESSION_COOKIE, auth_repo, hash_token, require_admin, require_auth
 from backend.cardio import CARDIO_RATINGS
 from backend.feedback_storage import (
     SIGNED_URL_TTL_SECONDS,
@@ -32,7 +31,7 @@ from backend.controllers.admin_coach_agent_controller import admin_coach_agent_b
 from backend.controllers.admin_cost_controller import admin_cost_bp
 from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
-from backend.controllers.auth_controller import auth_bp
+from backend.controllers.auth_controller import auth_bp, signed_in_user
 from backend.controllers.diet_controller import diet_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
@@ -44,6 +43,19 @@ from backend.repository.workout_plan_repository import (
     workout_duration_seconds,
     workout_status,
 )
+
+
+# The LangChain agents take about a second to import, so they're loaded only
+# when a plan is actually generated — not on every serverless cold start.
+def generate_user_profile(*args, **kwargs):
+    from agents.preprocessor_agent import generate_user_profile as generate
+    return generate(*args, **kwargs)
+
+
+def generate_workout_plan_v1(*args, **kwargs):
+    from agents.workout_agent import generate_workout_plan_v1 as generate
+    return generate(*args, **kwargs)
+
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_webhook_bp)
@@ -82,17 +94,17 @@ def _deny_unless_session_open(session_id):
     return None
 
 
-# How many past (completed or missed) workouts the dashboard shows before the
-# upcoming ones, reaching back into the previous plan if need be.
+# How many of this week's past (completed or missed) workouts the dashboard
+# response includes before the upcoming ones. Her full history is the
+# past-workouts endpoint's job; the dashboard needs only today's.
 DASHBOARD_PAST_WORKOUTS = 2
 
 
-def _dashboard_workout(workout, today, plan_closed=False):
+def _dashboard_workout(workout, today):
     """A _workout_entries entry with its dashboard status and display date.
-    An uncompleted workout of an already-closed plan counts as missed even if
-    its date hadn't arrived (the coach closed the plan early). is_today marks
-    the one the dashboard's Today card shows: completed or scheduled today."""
-    status, shown = workout_status(workout, today, plan_closed)
+    is_today marks the one the dashboard's Today card shows: completed or
+    scheduled today."""
+    status, shown = workout_status(workout, today)
     return {
         **workout,
         "status": status,
@@ -105,20 +117,13 @@ def _dashboard_workout(workout, today, plan_closed=False):
 
 
 def _dashboard_workouts(user_id, existing, today):
-    """The dashboard's workout panels: the last DASHBOARD_PAST_WORKOUTS past
-    workouts (from the previous plan too, early in a new one), then every
+    """The dashboard's workout panels: this plan's last DASHBOARD_PAST_WORKOUTS
+    past workouts (no extra query: earlier weeks aren't shown), then every
     workout still scheduled. The first scheduled one is is_next, and only a
     scheduled workout dated today can_start."""
     current = [_dashboard_workout(w, today) for w in existing["workouts"]]
-    past = [w for w in current if w["status"] != "scheduled"]
+    past = [w for w in current if w["status"] != "scheduled"][-DASHBOARD_PAST_WORKOUTS:]
     upcoming = [w for w in current if w["status"] == "scheduled"]
-    if len(past) < DASHBOARD_PAST_WORKOUTS:
-        previous = [
-            _dashboard_workout(w, today, plan_closed=True)
-            for w in plan_repo.get_previous_plan_workouts(user_id, existing["id"])
-        ]
-        past = previous + past
-    past = past[-DASHBOARD_PAST_WORKOUTS:]
 
     for workout in upcoming:
         workout["can_start"] = workout["scheduled_date"] == today.isoformat()
@@ -247,10 +252,17 @@ POINTS_PER_WORKOUT = 25
 def get_dashboard(user_id):
     if user_id != g.user_id:
         return jsonify({"error": "You don't have access to this user's plan."}), 403
+    body = _dashboard_body(user_id)
+    if body is None:
+        return jsonify({"error": "No plan found for this user."}), 404
+    return jsonify(body), 200
 
+
+def _dashboard_body(user_id):
+    """The dashboard for a user, or None when she has no plan."""
     existing = plan_repo.get_unfinished_plan(user_id)
     if existing is None:
-        return jsonify({"error": "No plan found for this user."}), 404
+        return None
 
     plan = existing["plan"]
     sessions = existing["sessions"]
@@ -293,7 +305,7 @@ def get_dashboard(user_id):
     profile = plan_repo.get_profile(user_id) or {}
     session_duration_minutes = (profile.get("availability") or {}).get("session_duration_minutes")
 
-    return jsonify({
+    return {
         "plan_id": existing["id"],
         "plan_type": plan["plan_type"],
         "plan_selection_reason": plan["plan_selection_reason"],
@@ -305,7 +317,7 @@ def get_dashboard(user_id):
         "workouts": _dashboard_workouts(user_id, existing, today),
         "points": plan_repo.count_completed_sessions(user_id) * POINTS_PER_WORKOUT,
         "week_number": plan_repo.week_number(user_id, existing["id"]),
-    }), 200
+    }
 
 
 # Page size bounds for the dashboard's Past Workouts list.
@@ -340,11 +352,14 @@ def get_past_workouts(user_id):
     limit = max(1, min(PAST_WORKOUTS_MAX_LIMIT, limit))
 
     try:
-        past = plan_repo.get_user_workout_history(user_id)["past"]
+        return jsonify(_past_workouts_page(user_id, offset, limit)), 200
     except Exception:
         app.logger.exception("Failed to load past workouts for user_id=%s", user_id)
         return jsonify({"error": "Failed to load past workouts."}), 500
 
+
+def _past_workouts_page(user_id, offset, limit):
+    past = plan_repo.get_user_workout_history(user_id)["past"]
     today = app_today().isoformat()
     page = [
         {
@@ -355,12 +370,49 @@ def get_past_workouts(user_id):
         }
         for workout in past[offset:offset + limit]
     ]
-    return jsonify({
+    return {
         "workouts": page,
         "total": len(past),
         "completed": sum(1 for w in past if w["status"] == "completed"),
         "missed": sum(1 for w in past if w["status"] == "missed"),
-    }), 200
+    }
+
+
+@app.get("/api/app/start")
+@require_auth
+def app_start():
+    """Everything the PWA needs before it shows the dashboard, in one round
+    trip: who's signed in (as /api/auth/me) and her dashboard (null with
+    `dashboard_error` when she has no plan or it failed), read in parallel.
+    Past workouts aren't included: the Your Workouts page fetches them when
+    its Past tab is opened."""
+    user_id = g.user_id
+    token_hash = hash_token(request.cookies[SESSION_COOKIE])
+
+    def touch():
+        try:
+            auth_repo.touch_session(token_hash)
+        except Exception:
+            app.logger.exception("Failed to touch the session of user_id=%s", user_id)
+
+    def dashboard():
+        try:
+            body = _dashboard_body(user_id)
+            return body, None if body else {"status": 404, "error": "No plan found for this user."}
+        except Exception:
+            app.logger.exception("Failed to load the dashboard for user_id=%s", user_id)
+            return None, {"status": 500, "error": "Failed to load your workouts."}
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        pool.submit(touch)
+        me_future = pool.submit(signed_in_user, user_id)
+        dashboard_future = pool.submit(dashboard)
+        dashboard_body, dashboard_error = dashboard_future.result()
+        return jsonify({
+            "me": me_future.result(),
+            "dashboard": dashboard_body,
+            "dashboard_error": dashboard_error,
+        }), 200
 
 
 @app.post("/api/users/<user_id>/joint-pain")

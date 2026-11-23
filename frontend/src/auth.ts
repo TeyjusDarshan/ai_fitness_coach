@@ -6,6 +6,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
 } from '@simplewebauthn/browser'
 import { request } from './api'
+import type { Dashboard } from './types'
 
 export interface Me {
   user_id: string
@@ -27,8 +28,17 @@ export type Gender = 'male' | 'female' | 'other'
 export type RegistrationOptions = PublicKeyCredentialCreationOptionsJSON
 export type LoginOptions = PublicKeyCredentialRequestOptionsJSON
 
-export function fetchMe(): Promise<Me> {
-  return request<Me>('/auth/me')
+// GET /api/app/start: who's signed in and her dashboard, in one round trip
+// (the app's start-up call).
+export interface AppStart {
+  me: Me
+  dashboard: Dashboard | null
+  // Why there's no dashboard: 404 = she has no plan yet.
+  dashboard_error: { status: number; error: string } | null
+}
+
+export function fetchAppStart(): Promise<AppStart> {
+  return request<AppStart>('/app/start')
 }
 
 // She confirmed she's now in this time zone (her phone's changed after travelling).

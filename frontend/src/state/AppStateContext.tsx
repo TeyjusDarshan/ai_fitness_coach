@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from 'react'
 import { fetchDashboard, fetchPastWorkouts, setUnauthorizedHandler } from '../api'
-import { fetchMe, logoutRequest, type Gender, type Me } from '../auth'
+import { fetchAppStart, logoutRequest, type Gender, type Me } from '../auth'
+import { preloadHomeAssets } from '../preload'
 import type { Dashboard, DashboardWorkout, PastWorkoutsPage } from '../types'
 
 type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
@@ -18,6 +19,8 @@ type DashboardStatus = 'idle' | 'loading' | 'loaded' | 'error'
 // The Your Workouts page's Past tab loads this many at a time (the
 // backend allows up to 20).
 const PAST_PAGE_SIZE = 10
+// A dashboard loaded this recently counts as fresh (refreshDashboard's skipIfFresh).
+const FRESH_MS = 10_000
 
 export type PastTotals = Omit<PastWorkoutsPage, 'workouts'>
 export type AuthStatus = 'checking' | 'signedIn' | 'signedOut'
@@ -46,16 +49,21 @@ interface AppState {
   dashboardStatus: DashboardStatus
   completeSignIn: (me: Me) => void
   logout: () => Promise<void>
-  refreshDashboard: () => Promise<void>
+  // `skipIfFresh`: do nothing when the dashboard was loaded moments ago
+  // (e.g. by the start-up call just before the dashboard opened).
+  refreshDashboard: (options?: { skipIfFresh?: boolean }) => Promise<void>
   setDashboard: (dashboard: Dashboard) => void
   updateDashboard: (updater: (prev: Dashboard) => Dashboard) => void
   // Past workouts loaded so far (newest first) and the totals across all of
-  // them. Kept here, not on the dashboard screen, so a past workout loaded
-  // through "Load more" can still be opened on its detail screen.
+  // them, fetched only when the Your Workouts page's Past tab is opened
+  // (loadPast). Kept here so a past workout can still be opened on its
+  // detail screen.
   pastWorkouts: DashboardWorkout[]
   pastTotals: PastTotals | null
   pastLoading: boolean
   pastError: string | null
+  // Loads the first page, unless it's already loaded (or loading).
+  loadPast: () => Promise<void>
   loadMorePast: () => Promise<void>
 }
 
@@ -84,6 +92,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // Synchronous guard so concurrent/StrictMode-doubled calls collapse into
   // one in-flight request instead of firing duplicate network calls.
   const fetchInFlight = useRef(false)
+  // When the dashboard was last loaded (ms), for refreshDashboard's skipIfFresh.
+  const loadedAt = useRef(0)
   const [pastWorkouts, setPastWorkouts] = useState<DashboardWorkout[]>([])
   const [pastTotals, setPastTotals] = useState<PastTotals | null>(null)
   const [pastLoading, setPastLoading] = useState(false)
@@ -101,16 +111,28 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setAuthStatus('signedOut')
   }, [])
 
+  // Start-up: one call for who's signed in and her dashboard, while the
+  // plant and illustrations load alongside, so the dashboard opens complete
+  // instead of filling in piece by piece.
   useEffect(() => {
     setUnauthorizedHandler(resetToSignedOut)
-    fetchMe()
-      .then((me) => {
+    Promise.all([fetchAppStart(), preloadHomeAssets()])
+      .then(([start]) => {
+        const { me, dashboard: data, dashboard_error: dashboardError } = start
         setUserId(me.user_id)
         setUserName(me.name)
         setGender(me.gender)
         setDietEnabled(me.diet_enabled === true)
         setDietSetupDone(me.diet_setup_done === true)
         setTimezone(me.timezone || DEFAULT_TIMEZONE)
+        if (data) {
+          setDashboard(data)
+          setDashboardStatus('loaded')
+          loadedAt.current = Date.now()
+        } else {
+          setDashboardStatus('error')
+          setError(dashboardError?.error ?? 'Something went wrong.')
+        }
         setAuthStatus('signedIn')
       })
       .catch(resetToSignedOut)
@@ -140,9 +162,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [resetToSignedOut])
 
-  // Past workouts start over from the first page whenever the dashboard is
-  // refreshed. Best-effort: a failure here leaves the rest of the dashboard
-  // working and is shown in the Past section instead.
+  // Past workouts are fetched only for the Past tab. Best-effort: a failure
+  // is shown on that tab.
   const loadPastPage = useCallback(
     async (offset: number) => {
       if (!userId) return
@@ -162,10 +183,18 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   )
 
   const loadMorePast = useCallback(() => loadPastPage(pastWorkouts.length), [loadPastPage, pastWorkouts.length])
+  const loadPast = useCallback(async () => {
+    if (pastTotals === null && !pastLoading) await loadPastPage(0)
+  }, [loadPastPage, pastTotals, pastLoading])
 
-  const refreshDashboard = useCallback(async () => {
+  const refreshDashboard = useCallback(async (options?: { skipIfFresh?: boolean }) => {
     if (!userId || fetchInFlight.current) return
-    void loadPastPage(0)
+    if (options?.skipIfFresh && Date.now() - loadedAt.current < FRESH_MS) return
+    // Her history may have changed too (a workout finished): the Past tab
+    // fetches it again next time it's opened.
+    setPastWorkouts([])
+    setPastTotals(null)
+    setPastError(null)
     fetchInFlight.current = true
     setLoading(true)
     setError(null)
@@ -174,6 +203,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const data = await fetchDashboard(userId)
       setDashboard(data)
       setDashboardStatus('loaded')
+      loadedAt.current = Date.now()
     } catch (e) {
       // Clear stale data rather than leaving an outdated dashboard on
       // screen — e.g. once a plan's last day completes, this 404s (no more
@@ -187,7 +217,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       fetchInFlight.current = false
     }
-  }, [userId, loadPastPage])
+  }, [userId])
 
   const updateDashboard = useCallback((updater: (prev: Dashboard) => Dashboard) => {
     setDashboard((prev) => (prev ? updater(prev) : prev))
@@ -217,6 +247,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pastTotals,
       pastLoading,
       pastError,
+      loadPast,
       loadMorePast,
     }),
     [
@@ -240,6 +271,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       pastTotals,
       pastLoading,
       pastError,
+      loadPast,
       loadMorePast,
     ],
   )

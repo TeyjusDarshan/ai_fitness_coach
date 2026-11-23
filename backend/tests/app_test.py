@@ -219,7 +219,6 @@ def test_dashboard_dates_and_locks_each_day(app_module, sign_in, monkeypatch):
         MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
-    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
 
     response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
 
@@ -259,7 +258,6 @@ def test_dashboard_marks_a_missed_day_and_moves_next_past_it(app_module, sign_in
         MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
-    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
 
     data = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()
 
@@ -286,7 +284,7 @@ def _workout(session_id, plan_id, scheduled_date, completed_at=None, started_at=
     }
 
 
-def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts, previous=()):
+def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts):
     plan = {
         "plan_type": "4_day",
         "plan_selection_reason": None,
@@ -301,7 +299,6 @@ def _dashboard_with_workouts(app_module, sign_in, monkeypatch, workouts, previou
         MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": {}, "workouts": workouts}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
-    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=list(previous)))
     monkeypatch.setattr(app_module.plan_repo, "count_completed_sessions", MagicMock(return_value=3))
     monkeypatch.setattr(app_module.plan_repo, "week_number", MagicMock(return_value=2))
     response = sign_in("usr_1").get("/api/users/usr_1/dashboard")
@@ -332,28 +329,6 @@ def test_dashboard_workouts_show_last_two_past_then_every_scheduled_one(app_modu
         (14, "scheduled", "2026-10-13", True, True),
         (15, "scheduled", "2026-10-15", False, False),
     ]
-    app_module.plan_repo.get_previous_plan_workouts.assert_not_called()
-
-
-def test_dashboard_workouts_reach_back_into_the_previous_plan(app_module, sign_in, monkeypatch):
-    workouts = _dashboard_with_workouts(
-        app_module, sign_in, monkeypatch,
-        [_workout(21, 7, "2026-10-14"), _workout(22, 7, "2026-10-15")],
-        previous=[
-            _workout(1, 6, "2026-10-08", completed_at="2026-10-08T04:00:00+00:00"),
-            _workout(2, 6, "2026-10-09", completed_at="2026-10-09T04:00:00+00:00"),
-            # Never done and dated after today: the coach closed plan 6 early.
-            _workout(3, 6, "2026-10-14"),
-        ],
-    )
-
-    assert _panels(workouts) == [
-        (2, "completed", "2026-10-09", False, False),
-        (3, "missed", "2026-10-14", False, False),
-        (21, "scheduled", "2026-10-14", True, False),
-        (22, "scheduled", "2026-10-15", False, False),
-    ]
-    app_module.plan_repo.get_previous_plan_workouts.assert_called_once_with("usr_1", 7)
 
 
 def test_dashboard_workouts_mark_todays_and_carry_their_duration(app_module, sign_in, monkeypatch):
@@ -723,7 +698,6 @@ def test_dashboard_shows_a_cardio_day_as_a_workout_day(app_module, sign_in, monk
         MagicMock(return_value={"id": 7, "completed": False, "plan": plan, "sessions": sessions, "workouts": []}),
     )
     monkeypatch.setattr(app_module.plan_repo, "get_profile", MagicMock(return_value={}))
-    monkeypatch.setattr(app_module.plan_repo, "get_previous_plan_workouts", MagicMock(return_value=[]))
 
     days = sign_in("usr_1").get("/api/users/usr_1/dashboard").get_json()["days"]
 
@@ -789,3 +763,63 @@ def test_logging_a_cardio_step_follows_the_session_lock(app_module, sign_in, mon
 
     assert response.status_code == status
     app_module.plan_repo.log_cardio_step.assert_not_called()
+
+
+# --- app start (one call before the dashboard) --------------------------------
+
+ME = {"user_id": "usr_1", "name": "Priya", "gender": "female", "diet_enabled": False,
+      "diet_setup_done": False, "timezone": "Asia/Kolkata"}
+
+
+@pytest.fixture
+def start_mocks(app_module, monkeypatch):
+    import backend.auth as auth
+    mocks = {
+        "me": MagicMock(return_value=ME),
+        "dashboard": MagicMock(return_value={"plan_id": 7, "workouts": []}),
+        "touch": MagicMock(),
+    }
+    monkeypatch.setattr(app_module, "signed_in_user", mocks["me"])
+    monkeypatch.setattr(app_module, "_dashboard_body", mocks["dashboard"])
+    monkeypatch.setattr(auth.auth_repo, "touch_session", mocks["touch"])
+    return mocks
+
+
+def test_app_start_returns_me_and_dashboard_in_one_call(app_module, sign_in, start_mocks, monkeypatch):
+    past = MagicMock()
+    monkeypatch.setattr(app_module, "_past_workouts_page", past)
+
+    response = sign_in("usr_1").get("/api/app/start")
+
+    assert response.status_code == 200
+    assert response.get_json() == {
+        "me": ME,
+        "dashboard": {"plan_id": 7, "workouts": []},
+        "dashboard_error": None,
+    }
+    start_mocks["me"].assert_called_once_with("usr_1")
+    start_mocks["dashboard"].assert_called_once_with("usr_1")
+    past.assert_not_called()  # the Past tab fetches its own
+    start_mocks["touch"].assert_called_once()
+
+
+def test_app_start_without_a_plan_still_signs_her_in(app_module, sign_in, start_mocks):
+    start_mocks["dashboard"].return_value = None
+
+    body = sign_in("usr_1").get("/api/app/start").get_json()
+
+    assert body["me"] == ME and body["dashboard"] is None
+    assert body["dashboard_error"] == {"status": 404, "error": "No plan found for this user."}
+
+
+def test_app_start_survives_a_failing_dashboard(app_module, sign_in, start_mocks):
+    start_mocks["dashboard"].side_effect = RuntimeError("supabase down")
+
+    body = sign_in("usr_1").get("/api/app/start").get_json()
+
+    assert body["me"] == ME
+    assert body["dashboard"] is None and body["dashboard_error"]["status"] == 500
+
+
+def test_app_start_needs_a_session(app_module):
+    assert app_module.app.test_client().get("/api/app/start").status_code == 401

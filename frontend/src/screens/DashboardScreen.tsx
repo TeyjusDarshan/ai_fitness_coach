@@ -12,8 +12,10 @@ export function DashboardScreen() {
   const { start, error: startError, periodPrompt } = useStartWorkout()
   const navigate = useNavigate()
 
+  // Coming back to the dashboard (e.g. after a workout) reloads it; right
+  // after start-up it's already fresh, so no second load.
   useEffect(() => {
-    refreshDashboard().catch(() => {
+    refreshDashboard({ skipIfFresh: true }).catch(() => {
       // surfaced via `error`
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps

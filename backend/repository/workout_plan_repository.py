@@ -732,26 +732,6 @@ class WorkoutPlanRepository:
             **_cardio_log(session, rounds * len(circuit)),
         }
 
-    def get_previous_plan_workouts(self, user_id: str, before_plan_id: int) -> List[dict]:
-        """The workouts (see _workout_entries) of the user's most recently
-        completed plan other than before_plan_id, so the dashboard can show
-        last week's workouts early in a new plan. [] if there's no such plan."""
-        plans = (
-            self.client.table("plans")
-            .select("*")
-            .eq("user_id", user_id)
-            .eq("completed", True)
-            .neq("id", before_plan_id)
-            .order("completed_at", desc=True)
-            .limit(1)
-            .execute()
-            .data
-        )
-        if not plans:
-            return []
-        plan = plans[0]
-        return self._workout_entries(plan, self._fetch_plan_sessions(plan["id"], PLAN_SESSIONS_SELECT))
-
     def get_last_completed_plan(self, user_id: str) -> Optional[dict]:
         plans = (
             self.client.table("plans")

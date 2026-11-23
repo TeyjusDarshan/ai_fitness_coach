@@ -7,7 +7,7 @@ import { useAppState } from '../state/AppStateContext'
 
 type Tab = 'upcoming' | 'past'
 
-/** "See All": every upcoming workout of this plan, and her past workouts across all plans (paged). */
+/** "See All": every upcoming workout of this plan, and her past workouts across all plans (fetched when the Past tab is opened, paged). */
 export function WorkoutsScreen() {
   const {
     dashboard,
@@ -18,16 +18,25 @@ export function WorkoutsScreen() {
     pastTotals,
     pastLoading,
     pastError,
+    loadPast,
     loadMorePast,
   } = useAppState()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('upcoming')
 
   useEffect(() => {
-    // Opened directly (reload, link): load the dashboard, which also loads the first past page.
+    // Opened directly (reload, link): load the dashboard.
     if (!dashboard) refreshDashboard().catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Past workouts are fetched only when this tab is opened (again after a
+  // failure, by switching back to it) — not on every change of loadPast,
+  // which a failed fetch would turn into a retry loop.
+  useEffect(() => {
+    if (tab === 'past') void loadPast()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
 
   const sessionMinutes = dashboard?.session_duration_minutes ?? null
   const upcoming = (dashboard?.workouts ?? []).filter((w) => w.status === 'scheduled')
@@ -70,6 +79,7 @@ export function WorkoutsScreen() {
 
       {tab === 'past' && (
         <div className="workout-rows">
+          {pastLoading && pastWorkouts.length === 0 && <div className="spinner" />}
           {pastTotals && (
             <p className="workouts-screen__counts">
               {pastTotals.completed} completed{pastTotals.missed > 0 ? ` · ${pastTotals.missed} missed` : ''}

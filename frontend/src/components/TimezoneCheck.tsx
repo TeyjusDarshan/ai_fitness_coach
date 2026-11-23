@@ -67,7 +67,7 @@ export function TimezoneCheck() {
   const newCity = cityOf(device)
   const oldCity = cityOf(timezone)
   return (
-    <div className="period-prompt period-prompt--center" role="dialog" aria-modal="true" aria-labelledby="tz-check-title">
+    <div className="period-prompt" role="dialog" aria-modal="true" aria-labelledby="tz-check-title">
       <div className="period-prompt__card">
         <div>
           <h2 id="tz-check-title" className="period-prompt__title">

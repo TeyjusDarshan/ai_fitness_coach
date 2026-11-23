@@ -13,12 +13,24 @@ from typing import Any, Dict, List
 from flask import Blueprint, jsonify
 
 from backend.auth import require_admin
-from backend.coach_agent import agent
 from backend.coach_agent.context import build_context
 from backend.coach_agent.repository import CoachAgentRepository
 from backend.coach_agent.validate import validate_suggestions
 from backend.controllers.admin_monitor_controller import _swapped_exercise, exercise_repo, plan_repo
 from backend.repository.workout_plan_repository import app_today, workout_status
+
+
+class _LazyAgent:
+    """backend.coach_agent.agent, imported on first use: it pulls in the
+    Anthropic SDK (~0.5 s), which no request but "Get AI suggestions" needs,
+    so serverless cold starts skip it."""
+
+    def __getattr__(self, name: str) -> Any:
+        from backend.coach_agent import agent as module
+        return getattr(module, name)
+
+
+agent = _LazyAgent()
 
 logger = logging.getLogger(__name__)
 

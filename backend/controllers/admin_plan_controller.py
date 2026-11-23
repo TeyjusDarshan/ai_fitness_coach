@@ -13,7 +13,6 @@ from datetime import date
 
 from flask import Blueprint, jsonify, request
 
-from agents.preprocessor_agent import generate_user_profile
 from agents.prompts_v1 import DAY_TEMPLATES
 from backend.contact import DEFAULT_TIMEZONE, ContactError, clean_timezone, clean_whatsapp_number
 from backend.cardio import CARDIO_DAYS
@@ -25,6 +24,14 @@ from backend.repository.workout_repository import WorkoutRepository
 logger = logging.getLogger(__name__)
 
 GENDERS = ("male", "female", "other")
+
+
+def generate_user_profile(*args, **kwargs):
+    """The preprocessor agent, imported on first use (LangChain is slow to
+    import, and most requests never need it)."""
+    from agents.preprocessor_agent import generate_user_profile as generate
+    return generate(*args, **kwargs)
+
 
 admin_plan_bp = Blueprint("admin_plan", __name__)
 plan_repo = WorkoutPlanRepository()

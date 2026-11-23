@@ -982,16 +982,6 @@ def test_unfinished_plan_lists_its_workouts_in_date_order_with_names_and_exercis
     ]
 
 
-def test_previous_plan_workouts_come_from_the_last_completed_plan_other_than_the_current_one():
-    client = FakeSupabaseClient()
-    _seed_unfinished_plan(client, {1: "2026-10-12T10:30:00+00:00"})
-    client.tables["plans"][0]["completed"] = True
-    repo = _repo(client)
-
-    assert [w["session_id"] for w in repo.get_previous_plan_workouts("usr_1", before_plan_id=8)] == [11]
-    assert repo.get_previous_plan_workouts("usr_1", before_plan_id=7) == []
-
-
 def test_upsert_user_profile_writes_name_only_when_given():
     client = FakeSupabaseClient()
     upserts = []

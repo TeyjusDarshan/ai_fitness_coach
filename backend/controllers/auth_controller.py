@@ -90,7 +90,7 @@ def _registering_user(body: dict):
     return user_id, None
 
 
-def _signed_in_user(user_id: str, row: Optional[dict] = None) -> dict:
+def signed_in_user(user_id: str, row: Optional[dict] = None) -> dict:
     """The {user_id, name, gender, diet_enabled, diet_setup_done} body sign-in and /me return, from the
     user's user_profiles row (fetched when not already in hand). `name` is
     the coach-entered display name, or None for a user who doesn't have one
@@ -146,7 +146,7 @@ def registration_options():
 
     user_handle = auth_repo.get_or_create_user_handle(user_id)
     # Shown in the device's passkey picker; user_name stays the stable id.
-    display_name = _signed_in_user(user_id)["name"] or user_id
+    display_name = signed_in_user(user_id)["name"] or user_id
     options = generate_registration_options(
         rp_id=rp_id(),
         rp_name=rp_name(),
@@ -215,7 +215,7 @@ def registration_verify():
         "backed_up": verified.credential_backed_up,
     })
 
-    response = jsonify(_signed_in_user(user_id))
+    response = jsonify(signed_in_user(user_id))
     start_session(response, user_id)
     return response, 200
 
@@ -270,7 +270,7 @@ def authentication_verify():
 
     auth_repo.update_passkey_usage(passkey["credential_id"], verified.new_sign_count)
 
-    response = jsonify(_signed_in_user(passkey["user_id"], profile))
+    response = jsonify(signed_in_user(passkey["user_id"], profile))
     start_session(response, passkey["user_id"])
     return response, 200
 
@@ -279,7 +279,7 @@ def authentication_verify():
 @require_auth
 def me():
     auth_repo.touch_session(hash_token(request.cookies[SESSION_COOKIE]))
-    return jsonify(_signed_in_user(g.user_id)), 200
+    return jsonify(signed_in_user(g.user_id)), 200
 
 
 @auth_bp.put("/api/auth/me/timezone")
@@ -294,7 +294,7 @@ def update_my_timezone():
     except ContactError as error:
         return jsonify({"error": str(error)}), 400
     auth_repo.update_timezone(g.user_id, timezone_name)
-    return jsonify(_signed_in_user(g.user_id)), 200
+    return jsonify(signed_in_user(g.user_id)), 200
 
 
 @auth_bp.post("/api/auth/logout")
