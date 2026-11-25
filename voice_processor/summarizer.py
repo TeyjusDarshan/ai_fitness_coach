@@ -30,22 +30,18 @@ class SummaryRefusedError(RuntimeError):
 
 
 class WorkoutSummary(BaseModel):
-    """The Tanglish summary plus the clarifying questions spoken after it
-    (see WORKOUT_ANALYSIS_SYSTEM_PROMPT)."""
+    """The Tanglish check-in (greeting, how the workout looked, at most one
+    improvement) plus the clarifying questions spoken after it (see
+    WORKOUT_ANALYSIS_SYSTEM_PROMPT). No intro or closing line: the note ends
+    on the last question."""
     summary: str
-    questions_intro: str
     questions: List[Question]
-    closing: str
 
 
 def spoken_text(summary: WorkoutSummary, questions: List[Dict[str, Any]]) -> str:
-    """The voice note's text: summary, then the (validated) questions, then
-    the goodbye. With no questions the intro is left out."""
+    """The voice note's text: the check-in, then the (validated) questions."""
     parts = [summary.summary.strip()]
-    if questions:
-        parts.append(summary.questions_intro.strip())
-        parts.extend(question["text"] for question in questions)
-    parts.append(summary.closing.strip())
+    parts.extend(question["text"] for question in questions)
     return " ".join(part for part in parts if part)
 
 

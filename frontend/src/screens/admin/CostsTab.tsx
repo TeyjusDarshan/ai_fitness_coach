@@ -26,7 +26,7 @@ const FEATURE_LABELS: Record<string, string> = {
   ingredient_nutrients: 'Food (old): new ingredient nutrients',
 }
 
-const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam' } as const
+const PROVIDER_LABELS = { anthropic: 'Claude', sarvam: 'Sarvam', elevenlabs: 'ElevenLabs' } as const
 
 const MODEL_LABELS: Record<string, string> = {
   'claude-opus-5-5': 'Claude Opus 5.5',
@@ -127,6 +127,7 @@ export function CostsTab({ adminKey, onUnauthorized }: { adminKey: string; onUna
             <Stat label={`Total, last ${data.days} days`} value={inr(data.total_inr)} strong />
             <Stat label="Claude" value={inr(data.claude_inr)} />
             <Stat label="Sarvam (voice)" value={inr(data.sarvam_inr)} />
+            <Stat label="ElevenLabs (workout voice)" value={inr(data.elevenlabs_inr)} />
             <Stat label="Clients with spend" value={String(data.active_clients)} />
             <Stat label="Average per client" value={inr(data.per_client_inr)} />
           </div>
@@ -144,6 +145,7 @@ export function CostsTab({ adminKey, onUnauthorized }: { adminKey: string; onUna
                       <th className="costs__num">Total</th>
                       <th className="costs__num">Claude</th>
                       <th className="costs__num">Sarvam</th>
+                      <th className="costs__num">ElevenLabs</th>
                       <th className="costs__num">Workouts</th>
                       <th className="costs__num">Per workout</th>
                       <th>Last activity</th>
@@ -172,13 +174,14 @@ export function CostsTab({ adminKey, onUnauthorized }: { adminKey: string; onUna
                             <td className="costs__num costs__total">{inr(client.total_inr)}</td>
                             <td className="costs__num">{inr(client.claude_inr)}</td>
                             <td className="costs__num">{inr(client.sarvam_inr)}</td>
+                            <td className="costs__num">{inr(client.elevenlabs_inr)}</td>
                             <td className="costs__num">{client.workouts}</td>
                             <td className="costs__num">{inr(client.per_workout_inr)}</td>
                             <td>{formatWhen(client.last_at)}</td>
                           </tr>
                           {expanded && (
                             <tr className="costs__detail">
-                              <td colSpan={7}>
+                              <td colSpan={8}>
                                 <FeatureTable features={client.by_feature} />
                               </td>
                             </tr>
@@ -202,7 +205,7 @@ export function CostsTab({ adminKey, onUnauthorized }: { adminKey: string; onUna
           )}
 
           <p className="admin__muted costs__note">
-            Claude is converted at ₹{data.usd_inr_rate} per $. Sarvam prices exclude GST. Only calls made since cost
+            Claude and ElevenLabs are converted at ₹{data.usd_inr_rate} per $. Sarvam prices exclude GST. Only calls made since cost
             tracking was added are counted.
           </p>
         </>

@@ -108,6 +108,7 @@ def test_a_cardio_session_carries_its_circuit_level_rating_and_comparison():
         "rounds": 1,
         "seconds_per_exercise": 40,
         "rating": "hard",
+        "previous_rating": "easy",          # last time's rating, for "felt easier"
         "compared_to_last_time": "more",   # 40 s per exercise vs 30 s
         "what_happened": None,              # no step log recorded
     }
@@ -209,3 +210,54 @@ def test_cardio_log_summary_names_what_she_skipped_cut_short_paused_and_never_re
 
 def test_no_cardio_log_means_nothing_to_go_on():
     assert _summarize_cardio_log([], ["March"], rounds=1) is None
+
+
+# ---------- what the short summary calls out ----------
+
+from voice_processor.repository import _loaded_joints, _mark_felt_easier, _mark_progressed  # noqa: E402
+
+
+def test_loaded_joints_leave_out_joints_with_no_load():
+    exercise = {"exercise_loaded_joints": [
+        {"joint_load": "high", "joints": {"name": "knee"}},
+        {"joint_load": "low", "joints": {"name": "hip"}},
+        {"joint_load": "nil", "joints": {"name": "wrist"}},
+        {"joint_load": None, "joints": None},
+    ]}
+
+    assert _loaded_joints(exercise) == ["hip", "knee"]
+
+
+def test_felt_easier_only_when_it_was_too_difficult_last_time_and_rated_otherwise_now():
+    previous = [{"name": "Squat", "effort_flag": "too_difficult"}, {"name": "Row", "effort_flag": None}]
+    exercises = [
+        {"name": "Squat", "rpe": 8, "effort_flag": None},       # 10 -> 8
+        {"name": "Row", "rpe": 6, "effort_flag": "too_easy"},   # was fine already
+    ]
+    still_hard = [{"name": "Squat", "rpe": 10, "effort_flag": "too_difficult"}]
+    unrated = [{"name": "Squat", "rpe": None, "effort_flag": None}]
+
+    _mark_felt_easier(exercises, previous)
+    _mark_felt_easier(still_hard, previous)
+    _mark_felt_easier(unrated, previous)
+
+    assert [e["felt_easier_than_last_time"] for e in exercises] == [True, False]
+    assert still_hard[0]["felt_easier_than_last_time"] is False
+    assert unrated[0]["felt_easier_than_last_time"] is False
+
+
+def test_progressed_from_names_last_weeks_exercise_with_a_progression_edge():
+    previous = [{"exercise_id": 1, "name": "Wall push-up"}, {"exercise_id": 5, "name": "Squat"}]
+    exercises = [
+        {"exercise_id": 2, "name": "Knee push-up", "is_new": True},   # 1 -> 2 progression
+        {"exercise_id": 5, "name": "Squat", "is_new": False},
+        {"exercise_id": 9, "name": "Bird dog", "is_new": True},       # swapped in, no edge
+    ]
+    edges = [
+        {"from_exercise_id": 1, "to_exercise_id": 2, "type": "progression"},
+        {"from_exercise_id": 5, "to_exercise_id": 6, "type": "progression"},  # not done this week
+    ]
+
+    _mark_progressed(exercises, previous, edges)
+
+    assert [e["progressed_from"] for e in exercises] == ["Wall push-up", None, None]

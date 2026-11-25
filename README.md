@@ -49,7 +49,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173
 **Voice processor** — one Kafka consumer for every topic that carries a client's voice: shared workouts and
 her WhatsApp replies (summary and clarifying questions) and food recordings (diet tracking, see "Voice diet
 tracking" in `CLAUDE.md`). Needs the same `.env` (`SUPABASE_*`, `ANTHROPIC_API_KEY`, `SARVAM_API_KEY`,
-`KAFKA_*`, WhatsApp), ffmpeg, and the topics `workout-complete-events`, `workout-feedback-replies` and
+`ELEVENLABS_API_KEY` / `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` for the workout voice notes, `KAFKA_*`, WhatsApp), ffmpeg, and the topics `workout-complete-events`, `workout-feedback-replies` and
 `meal-log-events` to exist:
 ```bash
 python3 -m voice_processor.main

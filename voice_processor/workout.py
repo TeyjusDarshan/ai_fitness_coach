@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 producer = KafkaProducerClient()
 whatsapp_client = WhatsAppClient()
 
-MAX_QUESTIONS = 10
+# The summary asks at most this many questions (most important first).
+MAX_QUESTIONS = 3
 
 # Fixed (not LLM-written) messages for the reply flow.
 FOLLOW_UP_INTRO = "நன்றி! இன்னும் ஒரு சில விஷயம் தெரிஞ்சுக்கணும்."
-FOLLOW_UP_CLOSING = "Voice note-ஆ இல்ல message-ஆ reply பண்ணுங்க."
 THANK_YOU_MESSAGE = (
     "நன்றி! உங்க பதில்களை note பண்ணிட்டோம். "
     "அடுத்த workout-ல தேவையான மாற்றங்கள் பண்ணிடலாம் 💪"
@@ -176,7 +176,7 @@ def _process_message(repo: AnalysisRepository, session_id: int, phone_number: st
             )
     if questions and not sent_audio:
         # The questions still need to reach her, so fall back to text.
-        _send_text(phone_number, _questions_text(summary.questions_intro, questions, summary.closing))
+        _send_text(phone_number, _questions_text(summary.summary, questions))
 
     # Best-effort: the analysis is already durably saved, so a failure to
     # publish this notification shouldn't fail the whole message.
@@ -189,9 +189,9 @@ def _process_message(repo: AnalysisRepository, session_id: int, phone_number: st
         )
 
 
-def _questions_text(intro: str, questions: List[Dict[str, Any]], closing: str) -> str:
+def _questions_text(intro: str, questions: List[Dict[str, Any]]) -> str:
     lines = [intro.strip(), ""] + [f"{i}. {q['text']}" for i, q in enumerate(questions, 1)]
-    return "\n".join(lines + ["", closing.strip()]).strip()
+    return "\n".join(lines).strip()
 
 
 def _send_text(phone_number: str, body: str) -> None:
@@ -293,7 +293,7 @@ def process_reply(
 
 
 def _send_follow_ups(phone_number: str, context: Dict[str, Any], follow_ups: List[Dict[str, Any]]) -> None:
-    text = " ".join([FOLLOW_UP_INTRO] + [q["text"] for q in follow_ups] + [FOLLOW_UP_CLOSING])
+    text = " ".join([FOLLOW_UP_INTRO] + [q["text"] for q in follow_ups])
     try:
         audio_url = generate_voice_note(
             text, context["plan_id"], context["day_number"], suffix="_followup",
@@ -302,7 +302,7 @@ def _send_follow_ups(phone_number: str, context: Dict[str, Any], follow_ups: Lis
         whatsapp_client.send_audio(phone_number, audio_url)
     except Exception:
         logger.exception("Failed to send follow-up voice note to %s; sending text", phone_number)
-        _send_text(phone_number, _questions_text(FOLLOW_UP_INTRO, follow_ups, FOLLOW_UP_CLOSING))
+        _send_text(phone_number, _questions_text(FOLLOW_UP_INTRO, follow_ups))
 
 
 def handle_workout_complete(repo: AnalysisRepository, payload: Dict[str, Any]) -> None:
