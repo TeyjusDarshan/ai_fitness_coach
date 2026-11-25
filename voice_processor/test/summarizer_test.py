@@ -32,10 +32,8 @@ SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 
 def _summary(**overrides) -> WorkoutSummary:
     fields = {
-        "summary": "Semma workout da!",
-        "questions_intro": "Oru sila kelvigal:",
+        "summary": "Hi ma! Workout paathen, ellame super!",
         "questions": [],
-        "closing": "Reply pannunga!",
     }
     fields.update(overrides)
     return WorkoutSummary(**fields)
@@ -118,17 +116,25 @@ def test_generate_workout_summary_raises_on_refusal(monkeypatch):
         generate_workout_summary({"session_id": 1})
 
 
-def test_spoken_text_puts_the_questions_between_summary_and_goodbye():
+def test_spoken_text_ends_on_the_last_question_with_no_intro_or_goodbye():
     summary = _summary()
     questions = [{"text": "Knee eppadi irukku?"}, {"text": "Squat kashtama?"}]
 
     assert spoken_text(summary, questions) == (
-        "Semma workout da! Oru sila kelvigal: Knee eppadi irukku? Squat kashtama? Reply pannunga!"
+        "Hi ma! Workout paathen, ellame super! Knee eppadi irukku? Squat kashtama?"
     )
 
 
-def test_spoken_text_without_questions_leaves_out_the_intro():
-    assert spoken_text(_summary(), []) == "Semma workout da! Reply pannunga!"
+def test_spoken_text_without_questions_is_just_the_check_in():
+    assert spoken_text(_summary(), []) == "Hi ma! Workout paathen, ellame super!"
+
+
+def test_prompt_follows_the_short_check_in_structure():
+    prompt = WORKOUT_ANALYSIS_SYSTEM_PROMPT
+    for rule in ('"Hi ma"', '"Hi pa"', "AT MOST THREE", '"progressed_from"', '"felt_easier_than_last_time"',
+                 '"loaded_joints"', "No closing line"):
+        assert rule in prompt, rule
+    assert "Do NOT add a general" in prompt
 
 
 @pytest.mark.integration

@@ -142,3 +142,14 @@ def test_costs_endpoint_can_include_dry_runs(ctl):
     client, controller = ctl
     client.get("/api/admin/costs?days=7&include_dry_runs=1", headers=ADMIN)
     assert controller._fetch_usage.call_args.args[1] is True
+
+
+def test_elevenlabs_spend_is_split_out_per_client():
+    from backend.controllers.admin_cost_controller import summarize_costs
+
+    rows = ROWS + [_row("usr_1", "elevenlabs", "summary_tts", 1.1, session_id=81)]
+    result = summarize_costs(rows, {}, 30)
+
+    assert result["elevenlabs_inr"] == 1.1
+    usr_1 = next(c for c in result["clients"] if c["user_id"] == "usr_1")
+    assert (usr_1["total_inr"], usr_1["elevenlabs_inr"], usr_1["sarvam_inr"]) == (9.6, 1.1, 2.0)
