@@ -8,10 +8,11 @@ from supabase import Client, create_client
 load_dotenv()
 
 # session_exercises for one session (training day), joined with the
-# exercise's name/movement type, its per-set completion logs, and its RPE.
+# exercise's name/movement type and the joints it loads, its per-set
+# completion logs, and its RPE.
 SESSION_EXERCISE_JOIN = (
     "id, exercise_id, category, slot_label, sets, reps, rep_range, note, feedback_audio_path, skipped, "
-    "exercises(name, is_time_based, movement_types(name)), "
+    "exercises(name, is_time_based, movement_types(name), exercise_loaded_joints(joint_load, joints(name))), "
     "session_exercise_set_logs(set_number, completed_reps), "
     "session_exercise_rpe(rpe)"
 )
@@ -110,9 +111,21 @@ def _shape_exercise_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             ),
             "rpe": (row.get("session_exercise_rpe") or {}).get("rpe"),
             "effort_flag": _effort_flag((row.get("session_exercise_rpe") or {}).get("rpe")),
+            # The joints this exercise puts load on, so the summary only asks
+            # about earlier pain in a joint today's workout actually used.
+            "loaded_joints": _loaded_joints(row["exercises"]),
         }
         for row in rows
     ]
+
+
+def _loaded_joints(exercise: Dict[str, Any]) -> List[str]:
+    """Names of the joints an exercise loads (any load but "nil")."""
+    return sorted({
+        (link.get("joints") or {}).get("name")
+        for link in exercise.get("exercise_loaded_joints") or []
+        if (link.get("joints") or {}).get("name") and (link.get("joint_load") or "").lower() != "nil"
+    })
 
 
 # Mirrors backend/cardio.py: on her period each exercise runs 70% of its
@@ -214,6 +227,47 @@ def _compare_to_last_time(
         )
 
 
+def _mark_felt_easier(exercises: List[Dict[str, Any]], previous_exercises: List[Dict[str, Any]]) -> None:
+    """Set each exercise's "felt_easier_than_last_time": True when the same
+    exercise (matched by name) felt too difficult last time and she rated it
+    this time as anything but too difficult — one of the two improvements the
+    summary calls out. Computed here, not left to the LLM."""
+    too_hard_before = {
+        exercise["name"] for exercise in previous_exercises if exercise.get("effort_flag") == "too_difficult"
+    }
+    for exercise in exercises:
+        exercise["felt_easier_than_last_time"] = (
+            exercise["name"] in too_hard_before
+            and exercise.get("rpe") is not None
+            and exercise.get("effort_flag") != "too_difficult"
+        )
+
+
+def _mark_progressed(
+    exercises: List[Dict[str, Any]], previous_exercises: List[Dict[str, Any]], edges: List[Dict[str, Any]]
+) -> None:
+    """Set each exercise's "progressed_from" to the name of last time's
+    exercise it was moved up from — a `progression` edge in
+    exercise_relationships from an exercise done last time (and not this
+    time) to this one — else None. The other improvement the summary calls
+    out (she moved up to a harder exercise)."""
+    current_ids = {exercise.get("exercise_id") for exercise in exercises}
+    dropped = {
+        exercise["exercise_id"]: exercise["name"]
+        for exercise in previous_exercises
+        if exercise.get("exercise_id") is not None and exercise["exercise_id"] not in current_ids
+    }
+    progressed_to = {
+        edge["to_exercise_id"]: dropped[edge["from_exercise_id"]]
+        for edge in edges
+        if edge.get("type") == "progression" and edge.get("from_exercise_id") in dropped
+    }
+    for exercise in exercises:
+        exercise["progressed_from"] = (
+            progressed_to.get(exercise.get("exercise_id")) if exercise.get("is_new") else None
+        )
+
+
 class AnalysisRepository:
     """Reads the Supabase data needed to summarize one workout session, and
     persists the generated summary to session_analysis.
@@ -269,13 +323,15 @@ class AnalysisRepository:
 
         profile_rows = (
             self.client.table("user_profiles")
-            .select("profile, name")
+            .select("profile, name, gender")
             .eq("user_id", user_id)
             .execute()
             .data
         )
         profile = profile_rows[0]["profile"] if profile_rows else None
         client_name = profile_rows[0].get("name") if profile_rows else None
+        # female / male / other, or None — picks the greeting ("Hi ma" / "Hi pa").
+        gender = profile_rows[0].get("gender") if profile_rows else None
 
         joint_pain_rows = (
             self.client.table("user_joint_pain")
@@ -291,6 +347,7 @@ class AnalysisRepository:
             "day_number": day_number,
             "user_id": user_id,
             "client_name": client_name,
+            "gender": gender,
             "plan_type": plan["plan_type"],
             "is_period": bool(session.get("is_period")),
             "feedback_audio_path": session.get("feedback_audio_path"),
@@ -315,6 +372,12 @@ class AnalysisRepository:
         # Everything is new in a client's first plan.
         for exercise in context["exercises"]:
             exercise["is_new"] = previous_session is None or exercise["compared_to_last_time"] is None
+        previous_exercises = previous_session["exercises"] if previous_session else []
+        _mark_felt_easier(context["exercises"], previous_exercises)
+        _mark_progressed(
+            context["exercises"], previous_exercises,
+            self._fetch_progression_edges([e["exercise_id"] for e in previous_exercises if e.get("exercise_id")]),
+        )
         # session_exercise_id -> its voice note's storage path, for the
         # caller to transcribe (not something to send to the LLM).
         context["exercise_feedback_audio_paths"] = {
@@ -331,6 +394,9 @@ class AnalysisRepository:
                 "rounds": session.get("cardio_rounds"),
                 "seconds_per_exercise": _cardio_work_seconds(session),
                 "rating": session.get("cardio_rating"),
+                # Last time's rating on this day, so "it felt easier than last
+                # time" can be called out (None when there's no last time).
+                "previous_rating": previous_session.get("cardio_rating") if previous_session else None,
                 # Total time on each exercise against the last cardio session
                 # on this day of the week, worked out here rather than by the LLM.
                 "compared_to_last_time": _compare(
@@ -344,6 +410,19 @@ class AnalysisRepository:
             }
 
         return context
+
+    def _fetch_progression_edges(self, from_exercise_ids: List[int]) -> List[Dict[str, Any]]:
+        """`progression` edges out of the given exercises (exercise_relationships)."""
+        if not from_exercise_ids:
+            return []
+        return (
+            self.client.table("exercise_relationships")
+            .select("from_exercise_id, to_exercise_id, type")
+            .in_("from_exercise_id", from_exercise_ids)
+            .eq("type", "progression")
+            .execute()
+            .data
+        )
 
     def _fetch_cardio_logs(self, session_id: int) -> List[Dict[str, Any]]:
         return (

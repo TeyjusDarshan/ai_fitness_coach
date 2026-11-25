@@ -384,7 +384,7 @@ export function restoreSkippedExercise(
 // ---------- AI costs ----------
 
 export interface FeatureCost {
-  provider: 'anthropic' | 'sarvam'
+  provider: 'anthropic' | 'sarvam' | 'elevenlabs'
   feature: string
   calls: number
   inr: number
@@ -396,6 +396,7 @@ export interface ClientCost {
   total_inr: number
   claude_inr: number
   sarvam_inr: number
+  elevenlabs_inr: number
   calls: number
   // Workouts with any AI spend, and the average spend on each.
   workouts: number
@@ -438,6 +439,7 @@ export interface CostSummary {
   total_inr: number
   claude_inr: number
   sarvam_inr: number
+  elevenlabs_inr: number
   calls: number
   active_clients: number
   per_client_inr: number | null
@@ -447,7 +449,7 @@ export interface CostSummary {
   food: FoodUsage & { clients: ClientFoodUsage[] }
 }
 
-// AI spend (Claude + Sarvam, in rupees) per client over the last `days` days.
+// AI spend (Claude + Sarvam + ElevenLabs, in rupees) per client over the last `days` days.
 export function fetchCosts(adminKey: string, days: number, includeDryRuns: boolean): Promise<CostSummary> {
   const query = `days=${days}${includeDryRuns ? '&include_dry_runs=1' : ''}`
   return adminRequest(adminKey, `/admin/costs?${query}`)

@@ -6,10 +6,10 @@ is generated and nothing is sent on WhatsApp or Kafka.
 Run (from the repo root):
     .venv/bin/python -m voice_processor.dry_run --user-id 9715424567
     .venv/bin/python -m voice_processor.dry_run --session-id 81
-    ... --voice-out /path/to/summary.mp3   # also run Sarvam TTS, saved locally only
+    ... --voice-out /path/to/summary.mp3   # also run ElevenLabs TTS (cloned voice), saved locally only
 
 Costs real money: a Sarvam STT job per voice note and two Claude calls (and
-one TTS call with --voice-out). The voice note is never uploaded or sent.
+one ElevenLabs TTS call with --voice-out). The voice note is never uploaded or sent.
 """
 import argparse
 import json
@@ -131,22 +131,28 @@ def run(session_id: int, voice_out: Optional[str] = None) -> None:
         print(f"    {question['text']}")
         print(f"    intent: {question['intent']}")
 
+    text = spoken_text(summary, questions)
     _section("SPOKEN TEXT (would go to TTS — NOT generated)")
-    print(spoken_text(summary, questions))
-    print(f"\n({len(spoken_text(summary, questions))} characters)")
+    print(text)
+    print(f"\n({len(text)} characters)")
 
     if voice_out:
-        # Same TTS as voice_processor.voice, minus the ogg
-        # transcode and the upload: an mp3 plays anywhere.
-        from tts import SarvamTTSClient
-        tts_client = SarvamTTSClient()
-        audio = tts_client.convert(spoken_text(summary, questions))
-        record_tts(spoken_text(summary, questions), tts_client._model, "summary_tts",
+        # Same TTS as voice_processor.voice (the coach's cloned ElevenLabs
+        # voice), minus the Sarvam fallback, the ogg transcode and the
+        # upload: an mp3 plays anywhere.
+        from ai_usage.prices import tts_cost_usd, usd_inr_rate
+        from tts import ElevenLabsTTSClient
+        tts_client = ElevenLabsTTSClient()
+        audio = tts_client.convert(text)
+        record_tts(text, tts_client._model, "summary_tts", provider=tts_client.provider,
                    user_id=context["user_id"], session_id=session_id)
         with open(voice_out, "wb") as f:
             f.write(audio)
+        cost = tts_cost_usd(tts_client._model, len(text))
         _section("VOICE NOTE (local only — not uploaded or sent)")
         print(f"{voice_out} ({len(audio)} bytes)")
+        if cost is not None:
+            print(f"{tts_client._model}: {len(text)} characters ≈ ${cost:.4f} ≈ ₹{cost * usd_inr_rate():.2f}")
 
 
 def _main() -> None:

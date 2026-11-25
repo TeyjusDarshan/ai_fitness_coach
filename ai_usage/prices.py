@@ -5,6 +5,9 @@ the time of the call, so past rows keep what they cost then.
 Claude: USD per million tokens (https://platform.claude.com pricing).
 Sarvam: INR, pay-as-you-go, excluding GST
 (https://docs.sarvam.ai/api/getting-started/pricing).
+ElevenLabs: USD per 1,000 characters, the API rate (same on every plan;
+https://elevenlabs.io/pricing/api). A subscription's included characters are
+bought at this rate too, so this is the real cost of each call.
 """
 import os
 
@@ -23,6 +26,16 @@ CLAUDE_PRICES_USD_PER_MTOK = {
 SARVAM_STT_INR_PER_MINUTE = 0.49
 # Text to speech, bulbul:v3: per 1,000 characters.
 SARVAM_TTS_INR_PER_1K_CHARS = {"bulbul:v3": 3.00, "bulbul:v4-flash": 1.00}
+
+# ElevenLabs text to speech: USD per 1,000 characters, by model.
+ELEVENLABS_TTS_USD_PER_1K_CHARS = {
+    "eleven_v4_turbo": 0.04,
+    "eleven_v4": 0.08,
+    "eleven_v3": 0.08,
+    "eleven_v3_conversational": 0.04,
+    "eleven_multilingual_v2": 0.08,
+    "eleven_flash_v2_5": 0.04,
+}
 
 DEFAULT_USD_INR_RATE = 94.0
 
@@ -58,6 +71,14 @@ def stt_cost_inr(seconds):
 
 def tts_cost_inr(model, characters):
     price = SARVAM_TTS_INR_PER_1K_CHARS.get(model)
+    if price is None or characters is None:
+        return None
+    return characters * price / 1000
+
+
+def tts_cost_usd(model, characters):
+    """USD for one ElevenLabs text-to-speech call, or None for an unknown model."""
+    price = ELEVENLABS_TTS_USD_PER_1K_CHARS.get(model)
     if price is None or characters is None:
         return None
     return characters * price / 1000

@@ -1,5 +1,5 @@
 """Records the cost of every paid AI call (Claude, Sarvam speech-to-text and
-text-to-speech) as one ai_usage row, against the client and session it was
+text-to-speech, ElevenLabs text-to-speech) as one ai_usage row, against the client and session it was
 for. Shared by the backend and voice_processor (a root package,
 like stt/ and tts/).
 
@@ -12,7 +12,7 @@ import re
 import subprocess
 from typing import Any, Dict, Iterable, Optional
 
-from ai_usage.prices import claude_cost_usd, stt_cost_inr, tts_cost_inr, usd_inr_rate
+from ai_usage.prices import claude_cost_usd, stt_cost_inr, tts_cost_inr, tts_cost_usd, usd_inr_rate
 
 logger = logging.getLogger(__name__)
 
@@ -129,13 +129,20 @@ def record_stt(
 
 
 def record_tts(
-    text: str, model: str, feature: str, user_id: Optional[str] = None, session_id: Optional[int] = None
+    text: str, model: str, feature: str, user_id: Optional[str] = None, session_id: Optional[int] = None,
+    provider: str = "sarvam",
 ) -> None:
-    """One Sarvam text-to-speech call: billed per character."""
+    """One text-to-speech call, billed per character: Sarvam in INR,
+    ElevenLabs in USD."""
     characters = len(text or "")
+    cost = (
+        {"cost_usd": tts_cost_usd(model, characters)}
+        if provider == "elevenlabs"
+        else {"cost_inr": tts_cost_inr(model, characters)}
+    )
     _record({
-        "user_id": user_id, "session_id": session_id, "provider": "sarvam", "feature": feature,
-        "model": model, "characters": characters, "cost_inr": tts_cost_inr(model, characters),
+        "user_id": user_id, "session_id": session_id, "provider": provider, "feature": feature,
+        "model": model, "characters": characters, **cost,
     })
 
 
