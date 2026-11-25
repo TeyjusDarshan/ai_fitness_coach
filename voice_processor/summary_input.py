@@ -98,7 +98,9 @@ def history_threads(history: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     Nothing is filtered and no answer is judged."""
     threads: Dict[tuple, Dict[str, Any]] = {}
     for session in history:
-        for question in session.get("questions") or []:
+        # A session lists its round-1 questions before the follow-ups asked
+        # after them; read them newest first like the sessions.
+        for question in reversed(session.get("questions") or []):
             exercise, joint = question.get("exercise"), question.get("joint")
             general = not exercise and not joint
             key = ("general", session.get("workout_type"), (question.get("intent") or "")[:40]) if general \
@@ -140,6 +142,19 @@ def _thread_line(thread: Dict[str, Any]) -> str:
     return line
 
 
+def exercise_lines(exercises: Iterable[Any]) -> List[str]:
+    """One line per exercise (plus its voice note), led by its session_exercise_id."""
+    lines: List[str] = []
+    for exercise in exercises:
+        lines += _exercise_line(exercise)
+    return lines
+
+
+def history_lines(history: Iterable[Dict[str, Any]]) -> List[str]:
+    """previous_questions_and_answers as one line per topic thread."""
+    return [_thread_line(thread) for thread in history_threads(history)]
+
+
 def render_context(context: Dict[str, Any]) -> str:
     """The summary prompt's user message for one session."""
     lines: List[str] = []
@@ -167,9 +182,7 @@ def render_context(context: Dict[str, Any]) -> str:
         lines += [f"- {_value(note)}" for note in context["client_feedback_notes"]]
 
     if context.get("exercises"):
-        lines += ["", "exercises:"]
-        for exercise in context["exercises"]:
-            lines += _exercise_line(exercise)
+        lines += ["", "exercises:"] + exercise_lines(context["exercises"])
     previous: Optional[Dict[str, Any]] = context.get("previous_session")
     if isinstance(previous, dict):
         if previous.get("exercises"):
@@ -184,5 +197,5 @@ def render_context(context: Dict[str, Any]) -> str:
     history = context.get("previous_questions_and_answers")
     if history:
         lines += ["", "previous_questions_and_answers (one line per topic, newest first):"]
-        lines += [_thread_line(thread) for thread in history_threads(history)]
+        lines += history_lines(history)
     return "\n".join(lines).strip()

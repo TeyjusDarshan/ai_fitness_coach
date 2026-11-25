@@ -111,3 +111,13 @@ def test_history_is_rendered_as_lines_without_the_tamil_wording():
             "leg feels stronger. (newest ask unanswered) | earlier (2026-11-18): Osteoarthritis; "
             "mild pain all day when walking.") in text
     assert "முட்டி" not in text
+
+
+def test_a_follow_up_answered_the_same_day_counts_as_the_newest_ask():
+    [thread] = history_threads([{"date": "2026-11-24", "workout_type": "cardio", "questions": [
+        {"intent": "Did cardio bother the knee?", "exercise": None, "joint": "knee", "answer": None, "follow_up": False},
+        {"intent": "How does the knee feel now?", "exercise": None, "joint": "knee", "answer": "No pain.",
+         "follow_up": True},
+    ]}])
+    assert thread["asked"] == "How does the knee feel now?"
+    assert thread["newest_ask_unanswered"] is False and thread["last_answer"] == "No pain."
