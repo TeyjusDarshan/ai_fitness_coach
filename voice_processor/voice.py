@@ -8,8 +8,8 @@ from tts import ElevenLabsTTSClient, SarvamTTSClient, TTSClient, mp3_to_whatsapp
 
 logger = logging.getLogger(__name__)
 
-# Sarvam speaks the meal feedback and meal reminders, and is the fallback
-# for the workout notes. ElevenLabs (the coach's cloned voice) speaks the
+# Sarvam is the fallback for the workout notes (meal feedback and meal
+# reminders are plain texts now, with no voice note). ElevenLabs (the coach's cloned voice) speaks the
 # workout summary and follow-up questions; it's created on first use, so a
 # missing ELEVENLABS_* setting only sends those notes to the fallback.
 _sarvam_client: TTSClient = SarvamTTSClient()
