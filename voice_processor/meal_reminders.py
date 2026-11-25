@@ -1,6 +1,6 @@
 """Meal reminders: three times a day, at 11:00, 15:00 and 20:00 in each
-client's own time zone (user_profiles.timezone), a short Tamil voice note
-on WhatsApp to each diet-tracking client who hasn't logged the meals due so
+client's own time zone (user_profiles.timezone), a short text (at most 10
+words, Tanglish) on WhatsApp to each diet-tracking client who hasn't logged the meals due so
 far.
 
 A systemd timer on the VM (voice_processor/deploy/) runs this every 15
@@ -24,7 +24,7 @@ For each client with diet tracking on and the diet setup done, for the due slot:
    never messaged -> `skipped_window_closed` (only paid templates could be
    sent then).
 4. Otherwise the row is saved first (`pending`, so a crash can't lead to a
-   second send), the voice note is spoken by Sarvam and sent -> `sent`, or
+   second send), the text is sent -> `sent`, or
    `failed` with the error; the run carries on with the next client.
 
 Her answer comes back through the router (voice_processor/router.py), which
@@ -53,14 +53,8 @@ SLOT_TIMES = {"breakfast": time(11, 0), "lunch": time(15, 0), "dinner": time(20,
 # worse than none).
 DUE_WINDOW_MINUTES = 45
 
-# How a meal is said in the voice note.
-MEAL_WORDS_TA = {
-    "breakfast": "காலை டிபன்",
-    "lunch": "மதிய சாப்பாடு",
-    "snack": "ஸ்னாக்ஸ்",
-    "dinner": "இரவு சாப்பாடு",
-}
-TTS_FEATURE = "meal_reminder_tts"
+# How a meal is said in the text.
+MEAL_WORDS = {"breakfast": "breakfast", "lunch": "lunch", "snack": "snacks", "dinner": "dinner"}
 
 SENT, SKIPPED_LOGGED, SKIPPED_WINDOW_CLOSED, FAILED, PENDING = (
     "sent", "skipped_logged", "skipped_window_closed", "failed", "pending",
@@ -110,38 +104,24 @@ def missing_meals(slot: str, logged: Set[str]) -> List[str]:
     return [meal for meal in SLOT_MEALS[slot] if meal not in logged]
 
 
-def _join_ta(words: List[str]) -> str:
-    if len(words) == 1:
-        return words[0]
-    return ", ".join(words[:-1]) + " அப்புறம் " + words[-1]
-
-
 def reminder_text(name: Optional[str], missing: List[str]) -> str:
-    greeting = f"வணக்கம் {name.strip()}!" if name and name.strip() else "வணக்கம்!"
-    meals = _join_ta([MEAL_WORDS_TA[meal] for meal in missing])
-    return (
-        f"{greeting} இன்னைக்கு {meals} என்ன சாப்பிட்டீங்கன்னு இன்னும் சொல்லலையே. "
-        "என்ன சாப்பிட்டீங்கன்னு ஒரு voice note அனுப்புங்க."
-    )
+    """'Priya, breakfast, lunch innum log pannala 🙂': at most 10 words
+    (name + up to four meals + three)."""
+    meals = ", ".join(MEAL_WORDS[meal] for meal in missing)
+    greeting = f"{name.strip()}, " if name and name.strip() else ""
+    return f"{greeting}{meals} innum log pannala 🙂"
 
 
 class Sender:
-    """Speaks and sends one reminder. Built lazily, so a dry run or a run
-    where nobody needs a reminder never connects to Sarvam or WhatsApp."""
+    """Sends one reminder text. Built lazily, so a dry run or a run where
+    nobody needs a reminder never connects to WhatsApp."""
 
     def __init__(self):
-        from voice_processor.voice import generate_voice_note_at
         from whatsapp_client import WhatsAppClient
-        self._generate = generate_voice_note_at
         self._whatsapp = WhatsAppClient()
 
-    def send(self, user_id: str, phone: str, text: str, day: date, slot: str) -> str:
-        audio_url = self._generate(
-            text, f"reminders/{user_id}/{day.isoformat()}_{slot}.ogg",
-            {"feature": TTS_FEATURE, "user_id": user_id, "session_id": None},
-        )
-        self._whatsapp.send_audio(phone, audio_url)
-        return audio_url
+    def send(self, phone: str, text: str) -> None:
+        self._whatsapp.send_text(phone, text)
 
 
 def remind_client(
@@ -183,12 +163,12 @@ def remind_client(
     if row is None:
         return "already_handled"
     try:
-        audio_url = get_sender().send(user_id, phone, text, day, slot)
+        get_sender().send(phone, text)
     except Exception as error:
         logger.exception("Failed to send the %s reminder to user_id=%s", slot, user_id)
         repo.update_meal_reminder(row["id"], {"status": FAILED, "error": str(error)[:500]})
         return FAILED
-    repo.update_meal_reminder(row["id"], {"status": SENT, "audio_url": audio_url, "sent_at": _now()})
+    repo.update_meal_reminder(row["id"], {"status": SENT, "sent_at": _now()})
     logger.info("Sent the %s reminder to user_id=%s (missing %s)", slot, user_id, missing)
     return SENT
 
