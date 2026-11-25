@@ -42,14 +42,9 @@ def test_shortfalls_are_flagged_for_every_macro():
     assert verdict["flags"] == {m: mf.SHORT for m in TARGETS}
 
 
-def test_more_protein_or_fibre_is_never_called_out():
-    [verdict] = _judge(_log(_item(protein_g=60, fibre_g=30)))
-    assert verdict["status"] == mf.ON_TRACK
-
-
-def test_over_and_well_over():
-    [verdict] = _judge(_log(_item(energy_kcal=720, carbs_g=130, fat_g=30)))
-    assert verdict["flags"] == {"energy_kcal": mf.OVER, "carbs_g": mf.BIG, "fat_g": mf.OVER}
+def test_over_is_flagged_for_every_macro():
+    [verdict] = _judge(_log(_item(energy_kcal=720, protein_g=25, carbs_g=130, fat_g=30, fibre_g=14)))
+    assert verdict["flags"] == {m: mf.OVER for m in TARGETS}
 
 
 def test_calories_over_are_allowed_more_room_when_gaining():
@@ -94,83 +89,58 @@ def test_coach_targets_are_used_with_defaults_for_the_rest():
     assert verdicts[0]["flags"] == {"energy_kcal": mf.SHORT}
 
 
-def test_on_track_reply_is_a_free_text_with_no_tip():
-    tip = MagicMock()
-    feedback = mf.build_feedback(_log(_item()), [_log(_item())], TARGETS, "lose", get_tip=tip)
-    assert feedback["voice"] is False and feedback["tip"] is None
-    assert "Lunch correct-a irukku, you are on track" in feedback["text"]
-    tip.assert_not_called()
+def test_reply_shows_numbers_against_the_meals_share_with_emoji():
+    log = _log(_item(protein_g=5, carbs_g=130))
+    text = mf.build_feedback(log, [log], TARGETS, "maintain", name="Priya")["text"]
+    assert text.startswith("Priya, lunch")
+    assert "Kcal 630 / 630 ✅" in text
+    assert "Protein 5 / 18 g 🔻" in text
+    assert "Carbs 130 / 79 g 🔺" in text
+    assert "romba" not in text and "kammi" not in text and "adhigam" not in text
 
 
-def test_off_reply_names_macros_without_numbers_and_adds_the_tip():
-    log = _log(_item(protein_g=5, carbs_g=130), _item(meal="breakfast", energy_kcal=450, protein_g=12.5,
-                                                    fibre_g=6.25, carbs_g=56.25, fat_g=15))
-    tip = MagicMock(return_value="Next time konjam sundal add pannunga.")
-    feedback = mf.build_feedback(log, [log], TARGETS, "maintain", get_tip=tip)
-
-    assert feedback["voice"] is True
-    text = feedback["text"]
-    assert "Lunch-la protein konjam kammi, carbs romba adhigam." in text
-    assert "Breakfast correct-a irukku." in text
-    assert "sundal" in text and mf.APP_POINTER in text
-    assert not any(ch.isdigit() for ch in text)
-    off_meals, goal = tip.call_args.args
-    assert [v["meal"] for v in off_meals] == ["lunch"] and goal == "maintain"
+def test_a_block_per_meal_and_unlogged_meals_listed():
+    log = _log(_item(), _item(meal="breakfast", energy_kcal=450, protein_g=12.5, fibre_g=6.25,
+                              carbs_g=56.25, fat_g=15))
+    text = mf.build_feedback(log, [log], TARGETS, "maintain", name="Priya")["text"]
+    assert "Breakfast\nKcal" in text and "Lunch\nKcal" in text
+    assert text.endswith("Innum log pannala: Snacks & Dinner")
+    assert mf.ALL_GOOD in text
 
 
-def test_a_failed_tip_still_sends_the_template():
+def test_all_good_line_only_when_nothing_is_off():
     log = _log(_item(protein_g=5))
-    feedback = mf.build_feedback(log, [log], TARGETS, None, get_tip=MagicMock(side_effect=RuntimeError("boom")))
-    assert feedback["tip"] is None and "protein konjam kammi" in feedback["text"]
+    assert mf.ALL_GOOD not in mf.build_feedback(log, [log], TARGETS, None)["text"]
 
 
-def test_spoken_text_drops_emoji():
-    assert mf.spoken("Noted 👍 Keep it up 💪") == "Noted Keep it up"
+def test_no_name_falls_back_to_noted():
+    log = _log(_item())
+    assert mf.build_feedback(log, [log], TARGETS, None)["text"].startswith(mf.TOOK_NOTE)
+
+
+def test_skipped_meal_is_not_listed_as_unlogged():
+    log = _log(skipped=["breakfast"])
+    text = mf.build_feedback(log, [log], TARGETS, None, name="Priya")["text"]
+    assert "skip pannirukeenga" in text and "Innum log pannala: Lunch, Snacks & Dinner" in text
 
 
 @pytest.fixture
 def diet_repo():
     repo = MagicMock()
-    repo.get_profile_basics.return_value = {"diet_setup": {"goal": "lose"}}
+    repo.get_profile_basics.return_value = {"name": "Priya", "diet_setup": {"goal": "lose"}}
     repo.get_targets.return_value = None
     return repo
 
 
-def test_send_on_track_stores_then_texts(diet_repo, monkeypatch):
-    log = _log(_item(), id=9)
-    diet_repo.get_meal_log_detail.return_value = log
-    diet_repo.list_meal_logs.return_value = [log]
-    whatsapp = MagicMock()
-    voice = MagicMock()
-    monkeypatch.setattr(mf, "_voice_note", voice)
-
-    result = mf.send_feedback(diet_repo, whatsapp, 9, "u1", "9199", "Asia/Kolkata")
-
-    assert result["sent_as"] == "text"
-    whatsapp.send_text.assert_called_once_with("9199", result["text"])
-    voice.assert_not_called()
-    stored = diet_repo.update_meal_log.call_args_list[0].args[1]
-    assert stored["feedback"] == result["text"]
-    assert stored["feedback_flags"]["verdicts"] == [{"meal": "lunch", "status": "on_track", "flags": {}}]
-    assert "feedback_sent_at" in diet_repo.update_meal_log.call_args_list[1].args[1]
-
-
-def test_send_off_is_a_voice_note_and_falls_back_to_text(diet_repo, monkeypatch):
+def test_send_texts_the_reply_and_stores_only_the_send_time(diet_repo):
     log = _log(_item(fat_g=40), id=9)
     diet_repo.get_meal_log_detail.return_value = log
     diet_repo.list_meal_logs.return_value = [log]
-    monkeypatch.setattr(mf.meal_feedback_agent, "write_tip", MagicMock(return_value="Ennai konjam kammi pannunga."))
-    monkeypatch.setattr(mf, "_voice_note", MagicMock(return_value="https://x/meal_9.ogg"))
     whatsapp = MagicMock()
 
-    result = mf.send_feedback(diet_repo, whatsapp, 9, "u1", "9199")
-    assert result["sent_as"] == "audio"
-    whatsapp.send_audio.assert_called_once_with("9199", "https://x/meal_9.ogg")
-    whatsapp.send_text.assert_not_called()
-    assert diet_repo.update_meal_log.call_args_list[1].args[1]["feedback_audio_url"] == "https://x/meal_9.ogg"
+    result = mf.send_feedback(diet_repo, whatsapp, 9, "u1", "9199", "Asia/Kolkata")
 
-    whatsapp = MagicMock()
-    monkeypatch.setattr(mf, "_voice_note", MagicMock(side_effect=RuntimeError("sarvam down")))
-    result = mf.send_feedback(diet_repo, whatsapp, 9, "u1", "9199")
-    assert result["sent_as"] == "text"
-    whatsapp.send_text.assert_called_once()
+    whatsapp.send_text.assert_called_once_with("9199", result["text"])
+    whatsapp.send_audio.assert_not_called()
+    [call] = diet_repo.update_meal_log.call_args_list
+    assert list(call.args[1]) == ["feedback_sent_at"]

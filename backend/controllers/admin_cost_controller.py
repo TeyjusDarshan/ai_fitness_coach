@@ -83,12 +83,12 @@ def summarize_costs(
     rows: List[Dict[str, Any]], names: Dict[str, Optional[str]], days: int
 ) -> Dict[str, Any]:
     """ai_usage rows -> overall totals, per-feature totals and one entry per
-    client (highest spend first) with their Claude/Sarvam split, workouts
+    client (highest spend first) with their Claude/Sarvam/ElevenLabs split, workouts
     with spend, cost per workout and per-feature breakdown."""
     zero = lambda: {"inr": 0.0, "calls": 0}  # noqa: E731
     users: Dict[str, Dict[str, Any]] = {}
     overall_features: Dict[tuple, Dict[str, float]] = defaultdict(zero)
-    overall = {"inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "calls": 0}
+    overall = {"inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "elevenlabs": 0.0, "calls": 0}
 
     for row in rows:
         inr = float(row.get("cost_inr_total") or 0)
@@ -103,7 +103,7 @@ def summarize_costs(
         overall_features[(provider, feature)]["calls"] += calls
 
         user = users.setdefault(user_id, {
-            "inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "calls": 0, "sessions": set(),
+            "inr": 0.0, "anthropic": 0.0, "sarvam": 0.0, "elevenlabs": 0.0, "calls": 0, "sessions": set(),
             "session_inr": 0.0, "last_at": None, "features": defaultdict(zero),
         })
         user["inr"] += inr
@@ -126,6 +126,7 @@ def summarize_costs(
             "total_inr": _money(user["inr"]),
             "claude_inr": _money(user["anthropic"]),
             "sarvam_inr": _money(user["sarvam"]),
+            "elevenlabs_inr": _money(user["elevenlabs"]),
             "calls": user["calls"],
             "workouts": workouts,
             "per_workout_inr": _money(user["session_inr"] / workouts) if workouts else None,
@@ -141,6 +142,7 @@ def summarize_costs(
         "total_inr": _money(overall["inr"]),
         "claude_inr": _money(overall.get("anthropic", 0.0)),
         "sarvam_inr": _money(overall.get("sarvam", 0.0)),
+        "elevenlabs_inr": _money(overall.get("elevenlabs", 0.0)),
         "calls": overall["calls"],
         "active_clients": len(attributed),
         "per_client_inr": _money(sum(c["total_inr"] for c in attributed) / len(attributed)) if attributed else None,

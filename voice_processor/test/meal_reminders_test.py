@@ -36,7 +36,6 @@ def repo():
 @pytest.fixture
 def sender(monkeypatch):
     sender = MagicMock()
-    sender.send.return_value = "https://audio/reminder.ogg?v=1"
     monkeypatch.setattr(mr, "Sender", lambda: sender)
     # Every client's "now" is 23 Nov 12:00 in her own zone unless a test says otherwise.
     monkeypatch.setattr(mr, "now_in", lambda tz=None: datetime(2026, 11, 23, 12, 0, tzinfo=ZoneInfo(tz or "Asia/Kolkata")))
@@ -68,11 +67,12 @@ def test_a_dish_with_no_meal_counts_by_when_it_was_logged_in_her_zone():
     assert mr.logged_meals([_log("2026-11-23T12:00:00+00:00", None)], "Europe/London") == {"lunch"}
 
 
-def test_the_text_names_only_the_missing_meals():
-    assert mr.reminder_text("Priya", ["lunch"]).startswith("வணக்கம் Priya! இன்னைக்கு மதிய சாப்பாடு என்ன")
+def test_the_text_names_only_the_missing_meals_in_ten_words_or_fewer():
+    assert mr.reminder_text("Priya", ["lunch"]) == "Priya, lunch innum log pannala 🙂"
     text = mr.reminder_text(None, ["snack", "dinner"])
-    assert text.startswith("வணக்கம்! இன்னைக்கு ஸ்னாக்ஸ் அப்புறம் இரவு சாப்பாடு என்ன")
-    assert "காலை" not in text
+    assert text == "snacks, dinner innum log pannala 🙂" and "breakfast" not in text
+    everything = mr.reminder_text("Priya", ["breakfast", "lunch", "snack", "dinner"])
+    assert len([word for word in everything.split() if word != "🙂"]) <= 10
 
 
 def test_a_skipped_meal_counts_as_answered():
@@ -121,7 +121,7 @@ def test_dubai_gets_breakfast_at_11_her_time(repo, sender, monkeypatch):
 
     assert _created(repo)["slot"] == "breakfast"
     repo.reply_window.assert_called_once_with("971501234567")
-    assert sender.send.call_args.args[1] == "971501234567"
+    assert sender.send.call_args.args[0] == "971501234567"
 
 
 def test_the_reminder_date_is_her_local_date(repo, sender, monkeypatch):
@@ -148,12 +148,12 @@ def test_a_missing_meal_with_an_open_window_is_sent(repo, sender):
     repo.reply_window.assert_called_once_with(PHONE)
     assert _created(repo) == {"user_id": USER, "reminder_date": "2026-11-23", "slot": "lunch",
                               "missing_meals": ["lunch"], "status": "pending"}
-    user_id, phone, text, day, slot = sender.send.call_args.args
-    assert (user_id, phone, day, slot) == (USER, PHONE, DAY, "lunch")
-    assert "மதிய சாப்பாடு" in text and "காலை டிபன்" not in text
+    phone, text = sender.send.call_args.args
+    assert phone == PHONE
+    assert "lunch" in text and "breakfast" not in text
     fields = repo.update_meal_reminder.call_args.args[1]
     assert repo.update_meal_reminder.call_args.args[0] == 77
-    assert (fields["status"], fields["audio_url"]) == ("sent", "https://audio/reminder.ogg?v=1") and fields["sent_at"]
+    assert fields["status"] == "sent" and fields["sent_at"] and "audio_url" not in fields
 
 
 def test_everything_logged_sends_nothing(repo, sender):
@@ -205,7 +205,7 @@ def test_losing_the_insert_race_does_not_send(repo, sender):
 
 def test_a_failed_send_is_recorded_and_the_next_client_still_gets_hers(repo, sender):
     repo.list_reminder_recipients.return_value = [_client("1111111111", "A", "911111111111"), _client(name="B")]
-    sender.send.side_effect = [RuntimeError("tts down"), "https://audio/b.ogg"]
+    sender.send.side_effect = [RuntimeError("tts down"), None]
 
     assert mr.run(repo, slot="breakfast") == {"failed": 1, "sent": 1}
 
@@ -220,7 +220,7 @@ def test_a_dry_run_stores_and_sends_nothing(repo, sender, capsys):
     repo.create_meal_reminder.assert_not_called()
     sender.send.assert_not_called()
     out = capsys.readouterr().out
-    assert "missing=['breakfast', 'lunch']" in out and "வணக்கம் Priya" in out
+    assert "missing=['breakfast', 'lunch']" in out and "Priya, breakfast, lunch innum log pannala" in out
 
 
 def test_recipients_can_be_limited_to_one_client(repo, sender):

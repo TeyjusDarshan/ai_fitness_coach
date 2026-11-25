@@ -90,3 +90,17 @@ def test_a_failed_write_never_raises(_no_ai_usage_writes):
 
 def test_dated_model_names_are_priced_like_the_base_model():
     assert prices.claude_cost_usd("claude-opus-5-5-20261101", 1_000_000, 0) == 4.0
+
+
+def test_elevenlabs_tts_is_billed_in_usd_per_character(_no_ai_usage_writes):
+    set_feature_prefix("")
+    record_tts("x" * 500, "eleven_v4_turbo", "summary_tts", user_id="usr_1", provider="elevenlabs")
+    row = _row(_no_ai_usage_writes)
+    assert (row["provider"], row["characters"], row["cost_inr"]) == ("elevenlabs", 500, None)
+    assert row["cost_usd"] == pytest.approx(0.02)                     # $0.04 per 1K characters
+    assert row["cost_inr_total"] == pytest.approx(0.02 * row["usd_inr_rate"])
+
+
+def test_unknown_elevenlabs_model_is_recorded_without_a_cost(_no_ai_usage_writes):
+    record_tts("hi", "eleven_future", "summary_tts", provider="elevenlabs")
+    assert _row(_no_ai_usage_writes)["cost_usd"] is None

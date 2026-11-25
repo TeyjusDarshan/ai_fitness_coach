@@ -28,6 +28,10 @@ def env(app_module, monkeypatch):
 
     monkeypatch.setenv("ADMIN_API_KEY", ADMIN_KEY)
     monkeypatch.setenv("APP_BASE_URL", "https://coach.example.com")
+    # Local defaults, whatever the developer's .env says (it may name the
+    # production domain): the tests expect rp id "localhost".
+    monkeypatch.delenv("WEBAUTHN_RP_ID", raising=False)
+    monkeypatch.delenv("VERCEL_ENV", raising=False)
     for name in (
         "get_user_auth_row", "get_or_create_user_handle", "create_challenge", "consume_challenge",
         "delete_expired_challenges", "create_session", "get_active_session", "touch_session",

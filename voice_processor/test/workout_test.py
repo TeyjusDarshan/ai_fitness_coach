@@ -4,9 +4,11 @@ Only the Claude summary call and the outbound WhatsApp send are mocked
 (workout.generate_workout_summary, workout.whatsapp_client.send_audio), so the
 test gets a fixed analysis text without paying for an LLM call, and since
 sending a real WhatsApp message has no test recipient. Everything else - the Supabase context fetch,
-Sarvam TTS, the mp3->ogg conversion, the Supabase Storage upload, and the
+the voice note (ElevenLabs, falling back to Sarvam), the mp3->ogg conversion, the Supabase Storage upload, and the
 session_analysis upsert - runs for real, same as
-backend/tests/kafka_producer/client_test.py does for Kafka.
+backend/tests/kafka_producer/client_test.py does for Kafka. To see a real
+Claude summary and voice note without writing anything, use
+`python -m voice_processor.dry_run --session-id N --voice-out x.mp3`.
 
 It writes a real session_analysis row, so it only runs against the sessions
 row named by ANALYSIS_IT_SESSION_ID (one with logged exercises, ideally a
@@ -18,11 +20,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from voice_processor.workout import _process_message
-from voice_processor.feedback import transcribe_feedback
 from voice_processor.repository import AnalysisRepository
 from voice_processor.summarizer import WorkoutSummary
 
-SESSION_ID = 55
+# Opt-in: a real sessions row (ideally a throwaway test user's). Unset, the
+# test is skipped, so a normal test run writes nothing and spends nothing.
+SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 PHONE_NUMBER = "7339284889"
 
 CONSTANT_ANALYSIS_TEXT = (
@@ -37,7 +40,7 @@ def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     monkeypatch.setattr(
         "voice_processor.workout.generate_workout_summary",
         MagicMock(return_value=WorkoutSummary(
-            summary=CONSTANT_ANALYSIS_TEXT, questions_intro="", questions=[], closing="",
+            summary=CONSTANT_ANALYSIS_TEXT, questions=[],
         )),
     )
 
@@ -59,45 +62,3 @@ def test_process_message_stores_analysis_and_voice_note(monkeypatch):
     assert saved[0]["analysis"] == CONSTANT_ANALYSIS_TEXT
     assert saved[0]["audio_url"]
     mock_send_audio.assert_called_once_with(PHONE_NUMBER, saved[0]["audio_url"])
-
-
-@pytest.mark.integration
-@pytest.mark.skipif(not SESSION_ID, reason="set ANALYSIS_IT_SESSION_ID to a test sessions row")
-def test_process_message_generates_prints_and_stores_real_analysis(monkeypatch):
-    """No mocking of the analysis itself: transcribes the session's voice
-    feedback with Sarvam, generates the summary with Claude, makes the voice
-    note, and upserts session_analysis, printing the transcript and analysis
-    (run with -s to see them). Only the outbound side effects are mocked —
-    the WhatsApp send and the workout-analysis-complete Kafka event — so
-    nothing reaches the client or downstream consumers.
-    """
-    transcripts = []
-
-    def spy_transcribe_feedback(path):
-        transcript = transcribe_feedback(path)
-        transcripts.append(transcript)
-        return transcript
-
-    monkeypatch.setattr("voice_processor.workout.transcribe_feedback", spy_transcribe_feedback)
-    monkeypatch.setattr("voice_processor.workout.whatsapp_client.send_audio", MagicMock())
-    monkeypatch.setattr("voice_processor.workout.producer", MagicMock())
-
-    repo = AnalysisRepository()
-    _process_message(repo, SESSION_ID, PHONE_NUMBER)
-
-    saved = (
-        repo.client.table("session_analysis")
-        .select("analysis, audio_url")
-        .eq("session_id", SESSION_ID)
-        .execute()
-        .data
-    )
-
-    print(f"\n--- voice feedback transcript (session {SESSION_ID}) ---")
-    print(transcripts[0] if transcripts else "(no voice feedback recorded)")
-    print(f"--- analysis (session {SESSION_ID}) ---")
-    print(saved[0]["analysis"] if saved else "(nothing stored)")
-    print(f"--- audio_url ---\n{saved[0]['audio_url'] if saved else None}")
-
-    assert saved
-    assert saved[0]["analysis"].strip()

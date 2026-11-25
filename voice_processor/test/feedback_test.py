@@ -23,12 +23,10 @@ SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
 def _summary(questions=()):
     return WorkoutSummary(
         summary="analysis text",
-        questions_intro="Oru sila kelvigal:",
         questions=[
             Question(text=text, intent="why", topic="too_hard", session_exercise_id=seid, joint=None)
             for text, seid in questions
         ],
-        closing="Bye!",
     )
 
 
@@ -133,7 +131,7 @@ def test_a_failed_extraction_still_generates_the_analysis(mocks):
     workout._process_message(repo, 48, "919876543210")
 
     repo.replace_voice_note_comments.assert_not_called()
-    repo.save_analysis.assert_called_once_with(48, "analysis text Bye!", None)
+    repo.save_analysis.assert_called_once_with(48, "analysis text", None)
 
 
 def test_no_transcripts_skips_extraction(mocks):
@@ -166,7 +164,7 @@ def test_questions_are_spoken_and_saved_before_the_voice_note_is_sent(mocks):
 
     workout._process_message(repo, 48, "919876543210")
 
-    spoken = "analysis text Oru sila kelvigal: Squat yen kashtam? Vera edhavadhu? Bye!"
+    spoken = "analysis text Squat yen kashtam? Vera edhavadhu?"
     mocks["generate_voice_note"].assert_called_once_with(
         spoken, 7, 1, usage={"feature": "summary_tts", "user_id": "usr_1", "session_id": 48}
     )
@@ -186,7 +184,7 @@ def test_questions_fall_back_to_text_when_there_is_no_voice_note(mocks):
     workout._process_message(_repo(None), 48, "919876543210")
 
     mocks["whatsapp_client"].send_text.assert_called_once_with(
-        "919876543210", "Oru sila kelvigal:\n\n1. Squat yen kashtam?\n\nBye!"
+        "919876543210", "analysis text\n\n1. Squat yen kashtam?"
     )
 
 

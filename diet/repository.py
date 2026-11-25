@@ -180,9 +180,9 @@ class DietRepository:
     # --- one-time setup --------------------------------------------------
 
     def get_profile_basics(self, user_id: str) -> Optional[Dict[str, Any]]:
-        """Her gender and stored setup (None if there's no such user)."""
+        """Her name, gender and stored setup (None if there's no such user)."""
         rows = (
-            self.client.table("user_profiles").select("gender, diet_setup")
+            self.client.table("user_profiles").select("name, gender, diet_setup")
             .eq("user_id", user_id).limit(1).execute().data
         )
         return rows[0] if rows else None
