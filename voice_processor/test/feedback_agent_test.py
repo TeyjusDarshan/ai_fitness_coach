@@ -288,3 +288,20 @@ def test_map_reply_never_returns_follow_ups_when_not_allowed(monkeypatch):
 def test_map_reply_caps_follow_ups(monkeypatch):
     _mock_client(monkeypatch, ReplyMapping(answers=[], notes=[], follow_ups=[_question(f"Q{i}?") for i in range(4)]))
     assert len(map_reply(QUESTIONS, [], "seri", CONTEXT, JOINTS, True)["follow_ups"]) == 2
+
+
+def test_map_reply_sends_plain_text_with_threaded_history_and_the_reply_last(monkeypatch):
+    mock = _mock_client(monkeypatch, ReplyMapping(answers=[], notes=[], follow_ups=[]))
+    history = [{"date": "2026-11-20", "workout_type": "strength", "questions": [
+        {"question": "முட்டி?", "intent": "How is the knee?", "exercise": None, "joint": "knee",
+         "answer": "Comes and goes."}]}]
+
+    map_reply(QUESTIONS, ["munnadi reply"], "knee romba valichudhu", CONTEXT, JOINTS, True, history)
+
+    text = mock.beta.messages.parse.call_args.kwargs["messages"][0]["content"]
+    assert text.startswith("questions:\n- id q1")
+    assert "earlier_replies (already processed, context only):\n- munnadi reply" in text
+    assert "follow_ups_allowed: yes" in text
+    assert "- [knee] asked 1x, last 2026-11-20: How is the knee? -> answer: Comes and goes." in text
+    assert "முட்டி" not in text                        # the Tamil wording of old questions is dropped
+    assert text.endswith("new_reply:\nknee romba valichudhu")  # verbatim, last

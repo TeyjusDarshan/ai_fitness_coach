@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 from typing import Any, Dict, List
@@ -10,6 +9,7 @@ from pydantic import BaseModel
 
 from voice_processor.feedback_agent import Question
 from voice_processor.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT
+from voice_processor.summary_input import render_context
 
 load_dotenv()
 
@@ -48,7 +48,9 @@ def spoken_text(summary: WorkoutSummary, questions: List[Dict[str, Any]]) -> str
 def generate_workout_summary(context: Dict[str, Any]) -> WorkoutSummary:
     """Turn one day's workout context into a Tanglish coach summary and the
     clarifying questions to ask after it."""
-    user_content = json.dumps(context, indent=2, default=str, ensure_ascii=False)
+    # Plain text, not JSON: same facts in about a third fewer input tokens
+    # (see summary_input).
+    user_content = render_context(context)
     logger.info(
         "Workout analysis prompt for session_id=%s\n--- system ---\n%s\n--- user ---\n%s",
         context.get("session_id"), WORKOUT_ANALYSIS_SYSTEM_PROMPT, user_content,

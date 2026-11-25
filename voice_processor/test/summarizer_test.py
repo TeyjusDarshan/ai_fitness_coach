@@ -8,7 +8,6 @@ Two kinds of coverage here:
   real call to claude-sonnet-5-5 - no mocking - same convention as
   backend/tests/kafka_producer/client_test.py does for Kafka.
 """
-import json
 import os
 from datetime import datetime
 from types import SimpleNamespace
@@ -25,6 +24,7 @@ from voice_processor.summarizer import (
     generate_workout_summary,
     spoken_text,
 )
+from voice_processor.summary_input import render_context
 
 # A real sessions row with prescribed exercises (see main_test.py).
 SESSION_ID = int(os.environ.get("ANALYSIS_IT_SESSION_ID", "0"))
@@ -61,11 +61,13 @@ def test_generate_workout_summary_returns_the_structured_output(monkeypatch):
     assert generate_workout_summary({"session_id": 1, "day_number": 1}) is summary
 
 
-def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypatch):
+def test_generate_workout_summary_sends_system_prompt_and_plain_text_context(monkeypatch):
     mock_client = _mock_client(_summary())
     monkeypatch.setattr("voice_processor.summarizer.client", mock_client)
 
-    context = {"session_id": 5, "day_number": 2, "exercises": ["squat", "row"]}
+    context = {"session_id": 5, "day_number": 2, "exercises": [
+        {"session_exercise_id": 7, "name": "Wall Push up", "unit": "reps", "prescribed_sets": 2,
+         "set_logs": [{"set_number": 1, "completed_reps": 10}, {"set_number": 2, "completed_reps": 9}]}]}
     generate_workout_summary(context)
 
     kwargs = _parse_kwargs(mock_client)
@@ -75,7 +77,8 @@ def test_generate_workout_summary_sends_system_prompt_and_json_context(monkeypat
     assert kwargs["fallbacks"] == "default"
     assert len(kwargs["messages"]) == 1
     assert kwargs["messages"][0]["role"] == "user"
-    assert json.loads(kwargs["messages"][0]["content"]) == context
+    assert kwargs["messages"][0]["content"] == render_context(context)
+    assert "session_exercise_id 7: Wall Push up" in kwargs["messages"][0]["content"]
 
 
 def test_generate_workout_summary_logs_the_whole_prompt(monkeypatch, caplog):
@@ -91,11 +94,9 @@ def test_generate_workout_summary_logs_the_whole_prompt(monkeypatch, caplog):
     assert "இன்னைக்கு romba kashtam" in record.getMessage()
 
 
-def test_generate_workout_summary_serializes_non_json_native_values(monkeypatch):
-    """context can carry values json.dumps can't natively serialize (e.g. a
-    datetime from a DB row) - the default=str fallback should stringify
-    rather than raise.
-    """
+def test_generate_workout_summary_renders_non_text_values(monkeypatch):
+    """context can carry values like a datetime from a DB row; they're
+    rendered as text rather than raising."""
     mock_client = _mock_client(_summary())
     monkeypatch.setattr("voice_processor.summarizer.client", mock_client)
 

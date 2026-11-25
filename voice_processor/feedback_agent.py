@@ -13,7 +13,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 import anthropic
 from ai_usage import record_claude
@@ -24,6 +24,7 @@ from voice_processor.feedback_prompts import (
     EXTRACTION_SYSTEM_PROMPT,
     REPLY_MAPPING_SYSTEM_PROMPT,
 )
+from voice_processor.summary_input import exercise_lines, history_lines
 
 load_dotenv()
 
@@ -114,8 +115,13 @@ class ReplyMapping(BaseModel):
 
 # --- Claude call ------------------------------------------------------------
 
-def _parse(system: str, payload: Dict[str, Any], output_format, log_label: str, usage: Dict[str, Any]):
-    user_content = json.dumps(payload, indent=2, default=str, ensure_ascii=False)
+def _parse(
+    system: str, payload: Dict[str, Any], output_format, log_label: str, usage: Dict[str, Any],
+    render: Optional[Callable[[Dict[str, Any]], str]] = None,
+):
+    """`render` turns the payload into the user message (plain text);
+    without it the payload is sent as JSON."""
+    user_content = render(payload) if render else json.dumps(payload, indent=2, default=str, ensure_ascii=False)
     logger.info("%s prompt\n--- user ---\n%s", log_label, user_content)
     response = client.beta.messages.parse(
         model=MODEL,
@@ -208,6 +214,34 @@ def extract_feedback(
     return rows
 
 
+def render_reply_input(payload: Dict[str, Any]) -> str:
+    """map_reply's user message as plain text instead of JSON (same idea as
+    the workout summary's, summary_input.py): one line per question,
+    exercise and history topic, the question history grouped into topic
+    threads, and her reply last, verbatim, since note quotes are checked
+    against it character for character."""
+    lines = ["questions:"]
+    for q in payload["questions"]:
+        about = " | ".join(f"{key} {q[key]}" for key in ("session_exercise_id", "joint") if q.get(key) is not None)
+        lines.append(f"- id {q.get('id')}" + (f" | {about}" if about else "") + f": {q.get('text')}")
+        lines.append(f"  intent: {q.get('intent')}")
+    if payload["earlier_replies"]:
+        lines += ["", "earlier_replies (already processed, context only):"]
+        lines += [f"- {reply}" for reply in payload["earlier_replies"]]
+    if payload["exercises"]:
+        lines += ["", "exercises:"] + exercise_lines(payload["exercises"])
+    lines += ["", "joints: " + ", ".join(payload["joints"])]
+    pain = payload["current_joint_pain"]
+    lines.append("current_joint_pain: " + (", ".join(
+        f"{p.get('joint')} ({p.get('pain_level')})" for p in pain) if pain else "none"))
+    lines.append(f"follow_ups_allowed: {'yes' if payload['follow_ups_allowed'] else 'no'}")
+    if payload["previous_questions_and_answers"]:
+        lines += ["", "previous_questions_and_answers (one line per topic, newest first):"]
+        lines += history_lines(payload["previous_questions_and_answers"])
+    lines += ["", "new_reply:", payload["new_reply"]]
+    return "\n".join(lines)
+
+
 def map_reply(
     questions: List[Dict[str, Any]],
     earlier_replies: List[str],
@@ -241,6 +275,7 @@ def map_reply(
         ReplyMapping,
         f"Reply mapping for session_id={context.get('session_id')}",
         _usage(context, "reply_mapping"),
+        render=render_reply_input,
     )
     question_ids = {q["id"] for q in questions}
     questions_by_id = {q["id"]: q for q in questions}

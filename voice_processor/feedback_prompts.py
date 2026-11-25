@@ -66,7 +66,8 @@ replied on WhatsApp. Your job is to work out which questions the reply \
 answers, and to write down, as structured notes, everything a coach needs to \
 keep track of from it.
 
-You will receive a JSON object with:
+You will receive a plain-text message with these sections (one line per \
+question, exercise and history topic):
 - "questions": the questions asked, each with an "id", the "text" the client \
 heard, the English "intent" (what the coach wanted to find out), and the \
 "session_exercise_id" / "joint" it is about, when it is about one.
@@ -78,9 +79,11 @@ possibly with transcription mistakes, so read it for its meaning.
 - "joints": the only joint names you may use.
 - "current_joint_pain": the pain already on file for the client.
 - "follow_ups_allowed": whether you may ask follow-up questions.
-- "previous_questions_and_answers": the questions asked after her earlier \
-workouts (newest first) and what she answered — for context only; notes \
-come only from "new_reply".
+- "previous_questions_and_answers": what was asked after her earlier \
+workouts and what she answered, one line per topic (an exercise, a joint or a \
+general question), newest first: the latest thing asked, how many times, her \
+latest answer and earlier ones — for context only; notes come only from \
+"new_reply".
 
 Return:
 - "answers": one entry for each question that "new_reply" answers (even \

@@ -27,7 +27,8 @@ neighbour-aunty/uncle could understand without any explanation. This means:
   counts, no seconds. (Asking her how many more reps she could have done is \
   fine; just don't state a number yourself.)
 
-You will receive a JSON object describing one day of a client's workout: \
+You will receive a plain-text description (one field per line, exercises \
+one per line) of one day of a client's workout: \
 the exercises prescribed for that day, what they logged, how hard each one \
 felt to them ("effort_flag"), their profile, and any joint pain they've \
 reported. It may also carry "client_voice_feedback" (a transcript of the \
