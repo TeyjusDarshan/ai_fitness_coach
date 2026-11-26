@@ -781,11 +781,12 @@ class AnalysisRepository:
         return rows[0] if rows else None
 
     def get_profile_for_routing(self, whatsapp_number: str) -> Optional[Dict[str, Any]]:
-        """{user_id, name, diet_enabled, timezone} of the client with this
-        WhatsApp number (user_profiles.whatsapp_number), or None if unknown."""
+        """{user_id, name, diet_enabled, diet_setup, timezone} of the client
+        with this WhatsApp number (user_profiles.whatsapp_number), or None if
+        unknown. Weight check-ins need the diet setup done."""
         rows = (
             self.client.table("user_profiles")
-            .select("user_id, name, diet_enabled, timezone")
+            .select("user_id, name, diet_enabled, diet_setup, timezone")
             .eq("whatsapp_number", whatsapp_number)
             .limit(1)
             .execute()

@@ -2,8 +2,9 @@
 message from a client (voice_processor/router.py).
 
 Claude Haiku returns a label from `allowed_labels` only (the label is an
-enum built per call), plus the day the food was eaten and a short reason.
-It only decides; the router's code acts on the decision.
+enum built per call), plus the day the food was eaten, the weight she gave
+(for `weight_checkin`) and a short reason. It only decides; the router's
+code acts on the decision.
 """
 import json
 import logging
@@ -26,8 +27,8 @@ logger = logging.getLogger(__name__)
 ROUTER_MODEL = "claude-haiku-5-5"
 FEATURE = "message_routing"
 
-DIET_CHECKIN, QUESTION_REPLY, OTHER = "diet_checkin", "question_reply", "other"
-LABELS = (DIET_CHECKIN, QUESTION_REPLY, OTHER)
+DIET_CHECKIN, QUESTION_REPLY, WEIGHT_CHECKIN, OTHER = "diet_checkin", "question_reply", "weight_checkin", "other"
+LABELS = (DIET_CHECKIN, QUESTION_REPLY, WEIGHT_CHECKIN, OTHER)
 
 client = anthropic.Anthropic(timeout=float(os.getenv("ROUTER_TIMEOUT_SECONDS", "30")))
 
@@ -43,6 +44,7 @@ def route_schema(labels: Tuple[str, ...]) -> type:
         "RouteDecision",
         label=(Literal[labels], ...),
         day=(Literal["today", "yesterday"], ...),
+        weight_kg=(Optional[float], ...),
         reason=(str, ...),
         __base__=BaseModel,
     )
@@ -56,6 +58,7 @@ def build_payload(
     open_questions: Optional[List[Dict[str, Any]]] = None,
     minutes_since_asked: Optional[int] = None,
     meal_reminder: Optional[Dict[str, Any]] = None,
+    weigh_in_nudge: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "message": message,
@@ -68,11 +71,13 @@ def build_payload(
         payload["minutes_since_asked"] = minutes_since_asked
     if meal_reminder:
         payload["meal_reminder"] = meal_reminder
+    if weigh_in_nudge:
+        payload["weigh_in_nudge"] = weigh_in_nudge
     return payload
 
 
 def classify_message(payload: Dict[str, Any], user_id: Optional[str] = None) -> Any:
-    """{label, day, reason} for one message (see build_payload)."""
+    """{label, day, weight_kg, reason} for one message (see build_payload)."""
     labels = tuple(label for label in LABELS if label in payload["allowed_labels"])
     user_content = json.dumps(payload, ensure_ascii=False, indent=2)
     response = client.beta.messages.parse(

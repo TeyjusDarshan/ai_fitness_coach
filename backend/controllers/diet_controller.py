@@ -34,12 +34,14 @@ from diet.dates import today_in
 from diet.setup import GOALS, INPUT_RANGES, SetupError, assess, calculate_goals
 from diet.nutrition import DEFAULT_TARGETS, TARGET_RANGES, rounded, targets_for
 from diet.repository import DietRepository
+from diet.weight.repository import WeightRepository
 
 logger = logging.getLogger(__name__)
 
 diet_bp = Blueprint("diet", __name__)
 
 diet_repo = DietRepository(plan_repo.client)
+weight_repo = WeightRepository(plan_repo.client)
 
 # How far back she can open a day, and the coach's default / longest window.
 MAX_DAYS_BACK = 60
@@ -361,6 +363,11 @@ def complete_diet_setup(user_id):
     }
     if not diet_repo.save_setup(user_id, setup, result["targets"]):
         return jsonify({"error": "Diet setup is already done.", "setup_done": True}), 409
+    try:
+        # Her setup weight is her first weight reading (diet/weight/).
+        weight_repo.add_setup_reading(user_id, _user_today(user_id), weight_kg)
+    except Exception:
+        logger.exception("Failed to store the setup weight reading for user_id=%s", user_id)
     return jsonify({**result, "targets": targets_for(result["targets"])}), 200
 
 
@@ -438,6 +445,19 @@ def edit_nutrition_targets(user_id):
         if value is None or not low <= value <= high:
             return jsonify({"error": f"'{key}' must be between {low} and {high}."}), 400
         targets[key] = round(value)
+    previous = diet_repo.get_targets(user_id)
     if not diet_repo.set_targets(user_id, targets or None):
         return jsonify({"error": f"No client with id {user_id}."}), 404
+    try:
+        # Recorded like an accepted weekly change: it starts the weight
+        # rules' cool-down and marks her chart. Any pending suggestion is
+        # out of date now.
+        weight_repo.supersede_pending(user_id)
+        weight_repo.create_change({
+            "user_id": user_id, "source": "coach_manual", "from_targets": targets_for(previous),
+            "to_targets": targets_for(targets), "status": "accepted",
+            "decided_at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception:
+        logger.exception("Failed to record the coach's target change for user_id=%s", user_id)
     return jsonify({"targets": targets_for(targets)}), 200

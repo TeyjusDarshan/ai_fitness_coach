@@ -18,7 +18,10 @@ without a "Session ID" line) -> the processor that should handle it.
    diet pipeline, then feedback on today's meals (meal_feedback.py: "on
    track", or what's off as a voice note with a tip), "Noted" for food from
    yesterday, or a Tamil "please send it again" when no food could be
-   worked out; `other` -> nothing.
+   worked out; `weight_checkin` (only while diet tracking is on and her
+   diet setup is done) -> today's weight reading from the number Haiku read
+   out of the text or transcript (weight_checkin.py), and "Noted"; `other`
+   -> nothing.
 
 The Sarvam cost is recorded once the route is known, under the feature the
 rest of that flow uses (`meal_stt` / `reply_stt`), or `inbound_stt`.
@@ -32,10 +35,11 @@ from diet.dates import now_in, parse_timestamp, today_in
 from diet.pipeline import process_meal_log
 from diet.repository import DietRepository
 from diet.transcription import transcribe_audio_unrecorded
-from voice_processor import meal_feedback, router_agent, workout
+from diet.weight.repository import WeightRepository
+from voice_processor import meal_feedback, router_agent, weight_checkin, workout
 from voice_processor.feedback import audio_extension, store_reply_audio
 from voice_processor.repository import AnalysisRepository
-from voice_processor.router_agent import DIET_CHECKIN, OTHER, QUESTION_REPLY
+from voice_processor.router_agent import DIET_CHECKIN, OTHER, QUESTION_REPLY, WEIGHT_CHECKIN
 
 logger = logging.getLogger(__name__)
 
@@ -46,17 +50,23 @@ DIET_RETRY_MESSAGE = "மன்னிக்கவும், நீங்க ச�
 # A meal reminder sent this recently is shown to the router.
 REMINDER_HINT_HOURS = 3
 
-STT_FEATURES = {DIET_CHECKIN: "meal_stt", QUESTION_REPLY: "reply_stt", OTHER: "inbound_stt"}
+# A weigh-in nudge sent this recently is shown to the router.
+NUDGE_HINT_HOURS = 3
+
+STT_FEATURES = {DIET_CHECKIN: "meal_stt", QUESTION_REPLY: "reply_stt", WEIGHT_CHECKIN: "weight_stt",
+                OTHER: "inbound_stt"}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def allowed_labels(has_open_questions: bool, diet_enabled: bool) -> List[str]:
+def allowed_labels(has_open_questions: bool, diet_enabled: bool, weight_enabled: bool = False) -> List[str]:
     labels = []
     if diet_enabled:
         labels.append(DIET_CHECKIN)
+    if weight_enabled:
+        labels.append(WEIGHT_CHECKIN)
     if has_open_questions:
         labels.append(QUESTION_REPLY)
     return labels + [OTHER]
@@ -74,23 +84,28 @@ def _minutes_since(asked_at: Optional[str]) -> Optional[int]:
 def decide(
     message: str, message_type: str, labels: List[str], clarification: Optional[Dict[str, Any]], user_id: str,
     meal_reminder: Optional[Dict[str, Any]] = None, timezone_name: Optional[str] = None,
+    weigh_in_nudge: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """{label, day, reason, model} for one message."""
+    """{label, day, weight_kg, reason, model} for one message."""
     if labels == [OTHER]:
-        return {"label": OTHER, "day": "today", "reason": "No open questions and diet tracking is off.", "model": None}
+        return {"label": OTHER, "day": "today", "weight_kg": None,
+                "reason": "No open questions and diet tracking is off.", "model": None}
     payload = router_agent.build_payload(
         message, message_type, labels, now_in(timezone_name),
         open_questions=(clarification or {}).get("questions") if clarification else None,
         minutes_since_asked=_minutes_since((clarification or {}).get("asked_at")),
         meal_reminder=meal_reminder if DIET_CHECKIN in labels else None,
+        weigh_in_nudge=weigh_in_nudge if WEIGHT_CHECKIN in labels else None,
     )
     try:
         decision = router_agent.classify_message(payload, user_id=user_id)
     except Exception as error:
         logger.exception("Routing failed for user_id=%s; treating the message as other", user_id)
-        return {"label": OTHER, "day": "today", "reason": f"Routing failed: {error}", "model": router_agent.ROUTER_MODEL}
+        return {"label": OTHER, "day": "today", "weight_kg": None, "reason": f"Routing failed: {error}",
+                "model": router_agent.ROUTER_MODEL}
     label = decision.label if decision.label in labels else OTHER
-    return {"label": label, "day": decision.day, "reason": decision.reason, "model": router_agent.ROUTER_MODEL}
+    return {"label": label, "day": decision.day, "weight_kg": getattr(decision, "weight_kg", None),
+            "reason": decision.reason, "model": router_agent.ROUTER_MODEL}
 
 
 def _recent_reminder(repo: AnalysisRepository, user_id: str) -> Optional[Dict[str, Any]]:
@@ -106,6 +121,17 @@ def _recent_reminder(repo: AnalysisRepository, user_id: str) -> Optional[Dict[st
     if not reminder:
         return None
     return {"asked_about": reminder.get("missing_meals") or [], "minutes_ago": _minutes_since(reminder.get("sent_at"))}
+
+
+def _recent_nudge(weight_repo: WeightRepository, user_id: str) -> Optional[Dict[str, Any]]:
+    """{minutes_ago} of a weigh-in message (weight_jobs.py) sent to her in
+    the last NUDGE_HINT_HOURS, or None. Best-effort."""
+    try:
+        nudge = weight_repo.recent_nudge(user_id, datetime.now(timezone.utc) - timedelta(hours=NUDGE_HINT_HOURS))
+    except Exception:
+        logger.exception("Failed to look up a recent weigh-in nudge for user_id=%s", user_id)
+        return None
+    return {"minutes_ago": _minutes_since(nudge.get("sent_at"))} if nudge else None
 
 
 def _transcribe(repo: AnalysisRepository, inbound: Dict[str, Any], media_id: Optional[str]):
@@ -163,7 +189,8 @@ def log_meal(
     return log["id"]
 
 
-def handle_inbound(workout_repo: AnalysisRepository, diet_repo: DietRepository, payload: Dict[str, Any]) -> None:
+def handle_inbound(workout_repo: AnalysisRepository, diet_repo: DietRepository, payload: Dict[str, Any],
+                   weight_repo: Optional[WeightRepository] = None) -> None:
     phone_number = payload["phone_number"]
     message_type = payload.get("type", "text")
     profile = workout_repo.get_profile_for_routing(phone_number)
@@ -207,11 +234,16 @@ def handle_inbound(workout_repo: AnalysisRepository, diet_repo: DietRepository, 
         return finish(OTHER, "Nothing was said.")
 
     clarification = workout_repo.find_open_clarification(phone_number)
-    labels = allowed_labels(clarification is not None, bool(profile.get("diet_enabled")))
+    diet_enabled = bool(profile.get("diet_enabled"))
+    weight_enabled = diet_enabled and bool(profile.get("diet_setup"))
+    labels = allowed_labels(clarification is not None, diet_enabled, weight_enabled)
     timezone_name = profile.get("timezone")
+    if weight_enabled and weight_repo is None:
+        weight_repo = WeightRepository(workout_repo.client)
     decision = decide(
         message, message_type, labels, clarification, user_id,
         _recent_reminder(workout_repo, user_id), timezone_name,
+        _recent_nudge(weight_repo, user_id) if weight_enabled else None,
     )
     route = decision["label"]
     record_transcription(route)
@@ -231,5 +263,10 @@ def handle_inbound(workout_repo: AnalysisRepository, diet_repo: DietRepository, 
     elif route == DIET_CHECKIN:
         fields["meal_log_id"] = log_meal(
             diet_repo, user_id, phone_number, message, inbound.get("audio_path"), decision["day"], timezone_name,
+        )
+    elif route == WEIGHT_CHECKIN:
+        fields["weight_log_id"] = weight_checkin.handle(
+            weight_repo, workout.whatsapp_client, user_id, phone_number, decision.get("weight_kg"),
+            message_type, message, inbound["id"], timezone_name,
         )
     workout_repo.update_inbound(inbound["id"], {"handled_at": _now(), **fields})

@@ -16,6 +16,7 @@ _APP_MODULES = (
     "backend.controllers.admin_client_summary_controller",
     "backend.controllers.admin_cost_controller",
     "backend.controllers.diet_controller",
+    "backend.controllers.weight_controller",
 )
 
 TEST_SESSION_TOKEN = "test-session-token"

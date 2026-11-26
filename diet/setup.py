@@ -154,14 +154,8 @@ def calculate_goals(height_cm: float, weight_kg: float, age: float, gender: Opti
         kcal = max(kcal, bmr, MIN_KCAL.get(gender or "", MIN_KCAL["female"]))
     else:
         kcal = tdee
-    kcal = round(kcal / 10) * 10
-    energy = _clamp("energy_kcal", kcal)
-
-    reference_kg = min(weight_kg, weight_at(HEALTHY_TOP_BMI, height_cm))
-    protein = _clamp("protein_g", PROTEIN_G_PER_KG * reference_kg)
-    fat = _clamp("fat_g", energy * FAT_SHARE / 9)
-    fibre = _clamp("fibre_g", max(MIN_FIBRE_G, energy / 1000 * FIBRE_G_PER_1000_KCAL))
-    carbs = _clamp("carbs_g", (energy - protein * 4 - fat * 9) / 4)
+    targets = macros_for(kcal, weight_kg, height_cm)
+    energy = targets["energy_kcal"]
 
     weekly = weeks = target_date = None
     change_kcal = abs(energy - tdee)
@@ -180,6 +174,19 @@ def calculate_goals(height_cm: float, weight_kg: float, age: float, gender: Opti
         "weekly_change_kg": weekly,
         "weeks": weeks,
         "target_date": target_date,
-        "targets": {"energy_kcal": energy, "protein_g": protein, "carbs_g": carbs, "fat_g": fat,
-                    "fibre_g": fibre},
+        "targets": targets,
     }
+
+
+def macros_for(kcal: float, weight_kg: float, height_cm: float) -> Dict[str, int]:
+    """Her daily targets for a calorie number (rounded to 10): protein from
+    her weight (capped at the BMI 24.9 weight), fat a share of calories,
+    fibre per 1000 kcal, carbs the rest. Shared by the setup and the weekly
+    weight rules (diet/weight/)."""
+    energy = _clamp("energy_kcal", round(kcal / 10) * 10)
+    reference_kg = min(weight_kg, weight_at(HEALTHY_TOP_BMI, height_cm))
+    protein = _clamp("protein_g", PROTEIN_G_PER_KG * reference_kg)
+    fat = _clamp("fat_g", energy * FAT_SHARE / 9)
+    fibre = _clamp("fibre_g", max(MIN_FIBRE_G, energy / 1000 * FIBRE_G_PER_1000_KCAL))
+    carbs = _clamp("carbs_g", (energy - protein * 4 - fat * 9) / 4)
+    return {"energy_kcal": energy, "protein_g": protein, "carbs_g": carbs, "fat_g": fat, "fibre_g": fibre}

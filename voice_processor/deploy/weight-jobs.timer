@@ -1,0 +1,13 @@
+# Starts weight-jobs.service every 15 minutes (:00, :15, :30, :45).
+[Unit]
+Description=Weight tracking, every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Unit=weight-jobs.service
+# A missed week is closed by the next pass (stored, but not sent if more
+# than a day late), so nothing needs to run on boot.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

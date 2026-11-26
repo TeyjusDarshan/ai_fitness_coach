@@ -1,0 +1,20 @@
+# One weight-tracking pass, started every 15 minutes by weight-jobs.timer:
+# closes each client's Mon–Sun week once her Sunday 19:00 has passed, and
+# (with WEIGHT_NUDGES_ENABLED=1) sends the weigh-in how-to and 10:00 nudges.
+# Runs once and exits. See voice_processor/weight_jobs.py.
+#
+# Set WorkingDirectory, EnvironmentFile, User and the python path to the same
+# values as the voice processor's own service (the Kafka consumer) on the VM.
+[Unit]
+Description=Weight tracking: weekly close and weigh-in nudges
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=REPLACE_WITH_SERVICE_USER
+WorkingDirectory=/REPLACE/WITH/REPO/ROOT
+EnvironmentFile=/REPLACE/WITH/REPO/ROOT/.env
+ExecStart=/REPLACE/WITH/REPO/ROOT/.venv/bin/python -m voice_processor.weight_jobs --due
+# Shorter than the timer's interval, so passes never overlap.
+TimeoutStartSec=840

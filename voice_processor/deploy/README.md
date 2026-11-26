@@ -38,3 +38,26 @@ journalctl -u meal-reminders.service --since today                              
 Each reminder writes one `meal_reminders` row per client, local date and
 slot (sent, skipped_logged, skipped_window_closed, failed), so a slot is never
 sent twice on the same day.
+
+# Weight tracking timer (VM)
+
+`weight-jobs.timer` runs `python -m voice_processor.weight_jobs --due` every
+15 minutes (see `voice_processor/weight_jobs.py`): it closes each client's
+Mon–Sun week once her own Sunday 19:00 has passed (one `weight_weeks` row per
+client and week) and, with `WEIGHT_NUDGES_ENABLED=1`, sends the weigh-in
+how-to and the 10:00 nudge while her WhatsApp window is open.
+
+Environment (in the same `.env`):
+
+- `WEIGHT_WEEKLY_MODE` — `shadow` (default: weeks are stored for the coach,
+  nothing is sent, no calorie suggestions) or `live`.
+- `WEIGHT_NUDGES_ENABLED` — `1` to send the how-to and morning nudges; off by default.
+
+Install exactly like the meal reminders, with `weight-jobs.service` /
+`weight-jobs.timer`. Try it:
+
+```sh
+.venv/bin/python -m voice_processor.weight_jobs --due --dry-run               # every client's decision, nothing stored or sent
+.venv/bin/python -m voice_processor.weight_jobs --due --dry-run --user-id <id>
+journalctl -u weight-jobs.service --since today
+```

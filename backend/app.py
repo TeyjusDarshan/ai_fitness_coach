@@ -34,6 +34,7 @@ from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
 from backend.controllers.auth_controller import auth_bp, signed_in_user
 from backend.controllers.diet_controller import diet_bp
+from backend.controllers.weight_controller import weight_bp
 from backend.controllers.whatsapp_webhook_controller import whatsapp_webhook_bp
 from backend.repository.workout_plan_repository import (
     CardioLogError,
@@ -67,6 +68,7 @@ app.register_blueprint(admin_coach_agent_bp)
 app.register_blueprint(admin_client_summary_bp)
 app.register_blueprint(admin_cost_bp)
 app.register_blueprint(diet_bp)
+app.register_blueprint(weight_bp)
 plan_repo = WorkoutPlanRepository()
 
 

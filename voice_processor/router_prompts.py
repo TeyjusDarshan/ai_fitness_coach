@@ -17,6 +17,8 @@ Absent when there are none.
 - "meal_reminder": when the coach sent her a voice note in the last few \
 hours asking what she ate, the meals it asked about ("asked_about") and \
 "minutes_ago". Absent otherwise.
+- "weigh_in_nudge": when the coach sent her a message in the last few \
+hours asking for this morning's weight, "minutes_ago". Absent otherwise.
 - "allowed_labels": the only labels you may choose.
 
 Pick exactly one label:
@@ -30,6 +32,11 @@ la rice, keerai", "oru coffee"), or that she skipped or didn't eat a meal \
 ("breakfast skip pannitten", "lunch saapdala"). Food mentioned only to explain how a \
 workout felt ("saaptutu workout pannaen, heavy-a irundhuchu") is NOT a \
 diet check-in.
+- "weight_checkin": she is reporting her body weight from the scale - \
+usually just a number ("72.4", "72,4", "72 kilo", "inniki weight 71 point \
+8", "எழுபத்தி ரெண்டு கிலோ"). A bare number between 30 and 200 is almost \
+always her weight. A number that is clearly a food amount, a time, reps \
+or money is not.
 - "other": anything else - greetings, thanks, "ok", questions to the coach \
 about something else, or nothing meaningful.
 
@@ -39,6 +46,17 @@ most likely her answer to it: a "diet_checkin".
 If a message both answers the questions and reports food, pick the part \
 that is most of the message. Prefer "question_reply" over "diet_checkin" \
 only when the food is clearly part of answering a question.
+
+After a "weigh_in_nudge", a number on its own is her weight: a \
+"weight_checkin".
+
+If a message gives her weight and also reports food or answers questions, \
+pick "weight_checkin" only when the weight is most of the message.
+
+"weight_kg": for "weight_checkin", the weight she gave in kilograms as a \
+number (72.4 for "72 point 4" or "72,4"; spoken Tamil or English numbers \
+written as digits). null when she gave no clear number, and always null for \
+other labels. Never guess a number she didn't say.
 
 "day" says which day the food was eaten: "yesterday" only when she clearly \
 says it was yesterday or last night ("nethu", "nethu night", "yesterday"); \
