@@ -33,7 +33,7 @@ def _session(**overrides):
     return session
 
 
-FACTS = {"user_id": "usr_1", "client_texts": [], "exercises": {1: {
+FACTS = {"user_id": "usr_1", "sections": {"last_7_days": "done 12, 12, 12; felt too easy"}, "exercises": {1: {
     "session_exercise_id": 1, "exercise_id": 10, "name": "Squat", "is_time_based": False, "sets": 3,
     "reps": [10, 10, 10], "reps_stored": "10", "min": 6, "max": 12, "actionable": True,
     "options": {"progression": {}, "regression": {}},
@@ -57,11 +57,11 @@ def test_endpoints_require_the_admin_key(ctl):
 def test_create_runs_the_agent_validates_and_stores(ctl, monkeypatch):
     client, controller = ctl
     controller.coach_repo.get_session.return_value = _session()
-    monkeypatch.setattr(controller, "build_context", MagicMock(return_value=({"ctx": 1}, FACTS)))
+    monkeypatch.setattr(controller, "build_context", MagicMock(return_value=("CTX", FACTS)))
     from backend.coach_agent.agent import Evidence, ExerciseSuggestion, SessionSuggestions
     result = SessionSuggestions(overview=" Looks fine. ", exercises=[ExerciseSuggestion(
         session_exercise_id=1, action="adjust", sets=3, reps=[11, 11, 11], to_exercise_id=None, reason="Easy.",
-        evidence=[Evidence(source="rpe", quote="RPE 6", session_id=79)],
+        evidence=[Evidence(source="last_7_days", quote="done 12, 12, 12; felt too easy", date="2026-11-23")],
     )])
     monkeypatch.setattr(controller.agent, "suggest", MagicMock(return_value=result))
     controller.coach_repo.save_run.side_effect = lambda sid, uid, overview, model, rows: {
@@ -78,7 +78,7 @@ def test_create_runs_the_agent_validates_and_stores(ctl, monkeypatch):
     assert suggestion["current"] == {"exercise_id": 10, "name": "Squat", "sets": 3, "reps": "10",
                                      "rep_range": "6-12", "is_time_based": False}
     assert (suggestion["proposed"]["sets"], suggestion["proposed"]["reps"]) == (3, "11")
-    controller.agent.suggest.assert_called_once_with({"ctx": 1}, user_id="usr_1")
+    controller.agent.suggest.assert_called_once_with("CTX", user_id="usr_1", session_id=88)
 
 
 @pytest.mark.parametrize("session, status", [
@@ -95,7 +95,7 @@ def test_create_refuses_what_it_cannot_review(ctl, session, status):
 def test_create_reports_an_agent_failure(ctl, monkeypatch):
     client, controller = ctl
     controller.coach_repo.get_session.return_value = _session()
-    monkeypatch.setattr(controller, "build_context", MagicMock(return_value=({}, FACTS)))
+    monkeypatch.setattr(controller, "build_context", MagicMock(return_value=("", FACTS)))
     monkeypatch.setattr(controller.agent, "suggest", MagicMock(side_effect=TimeoutError()))
 
     assert client.post("/api/admin/sessions/88/suggestions", headers=ADMIN).status_code == 502
@@ -193,3 +193,16 @@ def test_patch_restores_a_skipped_exercise(ctl):
 
     assert response.get_json() == {"id": 1, "skipped": False, "skip_reason": None}
     controller.plan_repo.set_session_exercise_skipped.assert_called_once_with(1, False)
+
+
+def test_create_asks_for_a_summary_first(ctl, monkeypatch):
+    client, controller = ctl
+    from backend.coach_agent.context import SummaryNeededError
+
+    controller.coach_repo.get_session.return_value = _session()
+    monkeypatch.setattr(controller, "build_context", MagicMock(side_effect=SummaryNeededError("Summarize first.")))
+    monkeypatch.setattr(controller.agent, "suggest", MagicMock())
+    response = client.post("/api/admin/sessions/88/suggestions", headers=ADMIN)
+    assert response.status_code == 409
+    assert response.get_json() == {"error": "Summarize first.", "needs_summary": True}
+    controller.agent.suggest.assert_not_called()

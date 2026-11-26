@@ -28,6 +28,7 @@ from backend.feedback_storage import (
     read_audio_upload,
 )
 from backend.controllers.admin_coach_agent_controller import admin_coach_agent_bp
+from backend.controllers.admin_client_summary_controller import admin_client_summary_bp
 from backend.controllers.admin_cost_controller import admin_cost_bp
 from backend.controllers.admin_monitor_controller import admin_monitor_bp
 from backend.controllers.admin_plan_controller import admin_plan_bp
@@ -63,6 +64,7 @@ app.register_blueprint(auth_bp)
 app.register_blueprint(admin_plan_bp)
 app.register_blueprint(admin_monitor_bp)
 app.register_blueprint(admin_coach_agent_bp)
+app.register_blueprint(admin_client_summary_bp)
 app.register_blueprint(admin_cost_bp)
 app.register_blueprint(diet_bp)
 plan_repo = WorkoutPlanRepository()

@@ -5,19 +5,15 @@ stores (coach_suggestion_runs / exercise_suggestions).
 Built on an existing Supabase client (the backend's WorkoutPlanRepository
 one), so it never opens a connection of its own.
 """
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from supabase import Client
 
-# How many earlier sessions' clarifying questions/answers, and how many
-# earlier same-day sessions ("the last two weeks of this day"), it reads.
-MAX_QUESTION_HISTORY_SESSIONS = 8
+# How many earlier same-day sessions ("the last two weeks of this day") it reads.
 SAME_DAY_WEEKS = 2
 # Plans walked up parent_plan_id looking for those same-day sessions.
 MAX_PLAN_HOPS = 6
-MAX_RECENT_COMMENTS = 40
-RECENT_PERIOD_DAYS = 45
 
 EXERCISE_FIELDS = (
     "id, name, min_reps, max_reps, is_time_based, avoid_if, orientation, dominant, "
@@ -32,50 +28,6 @@ HISTORY_EXERCISE_SELECT = (
     "id, exercise_id, sets, reps, skipped, exercises(name, is_time_based), "
     "session_exercise_set_logs(set_number, completed_reps), session_exercise_rpe(rpe)"
 )
-
-
-def _shape_question_history(
-    rows: List[Dict[str, Any]], exercise_names: Dict[int, str], max_sessions: int
-) -> List[Dict[str, Any]]:
-    """session_clarifications rows (newest first, joined with their sessions)
-    -> one entry per session, newest first, at most max_sessions, with every
-    question asked across its rounds and the answer's summary (None if never
-    answered). Mirrors voice_processor.repository's copy (the two
-    packages deploy separately)."""
-    by_session: Dict[int, Dict[str, Any]] = {}
-    for row in rows:
-        session_id = row["session_id"]
-        if session_id not in by_session:
-            if len(by_session) == max_sessions:
-                continue
-            session = row.get("sessions") or {}
-            by_session[session_id] = {
-                "session_id": session_id,
-                "date": (session.get("completed_at") or "")[:10] or session.get("scheduled_date"),
-                "day_number": session.get("day_number"),
-                "rounds": [],
-            }
-        answers = row.get("answers") or {}
-        by_session[session_id]["rounds"].append((row.get("round") or 1, [
-            {
-                "question": question.get("text"),
-                "intent": question.get("intent"),
-                "exercise": exercise_names.get(question.get("session_exercise_id")),
-                "joint": question.get("joint"),
-                "answer": (answers.get(question.get("id")) or {}).get("summary"),
-            }
-            for question in row.get("questions") or []
-        ]))
-    history = []
-    for entry in by_session.values():
-        rounds = sorted(entry.pop("rounds"), key=lambda pair: pair[0])
-        entry["questions"] = [
-            {**question, "follow_up": round_number > 1}
-            for round_number, questions in rounds
-            for question in questions
-        ]
-        history.append(entry)
-    return history
 
 
 class CoachAgentRepository:
@@ -149,109 +101,6 @@ class CoachAgentRepository:
                 plan_parent = plan_rows[0]["parent_plan_id"] if plan_rows else None
             plan_id = plan_parent
         return sessions
-
-    def get_client(self, user_id: str) -> Dict[str, Any]:
-        """Profile row, joint pain and recent period days."""
-        profile_rows = (
-            self.client.table("user_profiles")
-            .select("user_id, name, gender, profile")
-            .eq("user_id", user_id)
-            .execute()
-            .data
-        )
-        pain_rows = (
-            self.client.table("user_joint_pain")
-            .select("pain_level, updated_at, joints(name)")
-            .eq("user_id", user_id)
-            .execute()
-            .data
-        )
-        since = (date.today() - timedelta(days=RECENT_PERIOD_DAYS)).isoformat()
-        period_rows = (
-            self.client.table("user_period_logs")
-            .select("logged_on")
-            .eq("user_id", user_id)
-            .gte("logged_on", since)
-            .order("logged_on", desc=True)
-            .execute()
-            .data
-        )
-        return {
-            "profile_row": profile_rows[0] if profile_rows else {},
-            "joint_pain": [
-                {"joint": row["joints"]["name"], "pain_level": row["pain_level"],
-                 "updated_at": (row.get("updated_at") or "")[:10] or None}
-                for row in pain_rows if row.get("joints")
-            ],
-            "period_days": [row["logged_on"] for row in period_rows],
-        }
-
-    def get_question_history(
-        self, user_id: str, current_session_id: int, max_sessions: int = MAX_QUESTION_HISTORY_SESSIONS
-    ) -> List[Dict[str, Any]]:
-        rows = (
-            self.client.table("session_clarifications")
-            .select(
-                "session_id, round, questions, answers, asked_at, "
-                "sessions(day_number, scheduled_date, completed_at)"
-            )
-            .eq("user_id", user_id)
-            .neq("session_id", current_session_id)
-            .order("asked_at", desc=True)
-            .limit(max_sessions * 2)
-            .execute()
-            .data
-        )
-        ids = sorted({
-            q["session_exercise_id"]
-            for row in rows for q in row.get("questions") or [] if q.get("session_exercise_id")
-        })
-        names: Dict[int, str] = {}
-        if ids:
-            names = {
-                row["id"]: (row.get("exercises") or {}).get("name")
-                for row in (
-                    self.client.table("session_exercises")
-                    .select("id, exercises(name)")
-                    .in_("id", ids)
-                    .execute()
-                    .data
-                )
-            }
-        return _shape_question_history(rows, names, max_sessions)
-
-    def get_recent_comments(self, user_id: str, limit: int = MAX_RECENT_COMMENTS) -> List[Dict[str, Any]]:
-        """Her most recent workout_comments (from voice notes and replies),
-        newest first, with the exercise named and the session's date."""
-        rows = (
-            self.client.table("workout_comments")
-            .select(
-                "session_id, category, difficulty, pain_level, urgent, comment, quote, source, created_at, "
-                "exercises(name), joints(name), sessions(scheduled_date, completed_at)"
-            )
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-            .data
-        )
-        return [
-            {
-                "session_id": row["session_id"],
-                "date": ((row.get("sessions") or {}).get("completed_at") or "")[:10]
-                or (row.get("sessions") or {}).get("scheduled_date"),
-                "exercise": (row.get("exercises") or {}).get("name"),
-                "category": row.get("category"),
-                "difficulty": row.get("difficulty"),
-                "joint": (row.get("joints") or {}).get("name"),
-                "pain_level": row.get("pain_level"),
-                "urgent": row.get("urgent"),
-                "comment": row.get("comment"),
-                "quote": row.get("quote"),
-                "source": row.get("source"),
-            }
-            for row in rows
-        ]
 
     # ---------- suggestion runs ----------
 

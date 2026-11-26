@@ -12,7 +12,8 @@ import sys
 
 from ai_usage import set_feature_prefix
 from backend.coach_agent import agent
-from backend.coach_agent.context import build_context
+from backend.client_summary.repository import ClientSummaryRepository
+from backend.coach_agent.context import SummaryNeededError, build_context
 from backend.coach_agent.prompts import COACH_AGENT_SYSTEM_PROMPT
 from backend.coach_agent.repository import CoachAgentRepository
 from backend.coach_agent.validate import validate_suggestions
@@ -50,7 +51,9 @@ def main() -> None:
 
     # Recorded in ai_usage like any call, but tagged as a dry run.
     set_feature_prefix("dry_run_")
-    repo = CoachAgentRepository(WorkoutPlanRepository().client)
+    plan_repo = WorkoutPlanRepository()
+    repo = CoachAgentRepository(plan_repo.client)
+    summary_repo = ClientSummaryRepository(plan_repo.client)
     session_id = args.session_id or _next_scheduled_session(repo, args.user_id)
     if session_id is None:
         sys.exit(f"No upcoming strength workout for user {args.user_id}")
@@ -58,14 +61,17 @@ def main() -> None:
     if session is None:
         sys.exit(f"No session {session_id}")
 
-    context, facts = build_context(repo, session)
+    try:
+        context, facts = build_context(repo, summary_repo, plan_repo, session)
+    except SummaryNeededError as exc:
+        sys.exit(exc.message)
     _section(f"PROMPT — session {session_id} (model={agent.MODEL}, effort={agent.EFFORT})")
     print("--- system ---")
     print(COACH_AGENT_SYSTEM_PROMPT)
     print("--- user ---")
-    print(agent.user_content(context))
+    print(context)
 
-    result = agent.suggest(context, user_id=facts["user_id"])
+    result = agent.suggest(context, user_id=facts["user_id"], session_id=session_id)
     _section("RESPONSE (raw structured output)")
     print(json.dumps(result.model_dump(), indent=2, ensure_ascii=False))
 
@@ -84,8 +90,7 @@ def main() -> None:
             print(f"   -> {name}: {row['proposed_sets']} x {row['proposed_reps']}")
         print(f"   reason: {row['reason']}")
         for item in row["evidence"]:
-            mark = "✓" if item["verified"] else "data"
-            print(f"   evidence [{item['source']}, {mark}, session {item['session_id']}]: {item['quote']}")
+            print(f"   evidence [{item['source']}, {item.get('date') or 'no date'}]: {item['quote']}")
 
 
 if __name__ == "__main__":

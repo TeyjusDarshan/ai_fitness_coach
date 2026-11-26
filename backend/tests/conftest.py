@@ -13,6 +13,7 @@ _APP_MODULES = (
     "backend.controllers.admin_plan_controller",
     "backend.controllers.admin_monitor_controller",
     "backend.controllers.admin_coach_agent_controller",
+    "backend.controllers.admin_client_summary_controller",
     "backend.controllers.admin_cost_controller",
     "backend.controllers.diet_controller",
 )

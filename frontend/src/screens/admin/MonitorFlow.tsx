@@ -26,6 +26,7 @@ import { allTimezones, cleanWhatsAppNumber, isValidWhatsAppNumber } from '../../
 import { humanize } from './planDraft'
 import { CoachSuggestions } from './CoachSuggestions'
 import { ClientFood } from './ClientFood'
+import { ClientSummaryPanel } from './ClientSummaryPanel'
 
 // Coach-only, read-only view of one client at a time: profile basics, joint
 // pain, period days, app sign-in, then every scheduled and past workout with
@@ -198,6 +199,7 @@ function ClientDetail({
         )}
       </div>
 
+      <ClientSummaryPanel key={`summary-${client.user_id}`} adminKey={adminKey} userId={client.user_id} onUnauthorized={onUnauthorized} />
       {monitor.current_plan && (
         <CoachNotes
           // Remount when the week changes (e.g. after "Create progression").
