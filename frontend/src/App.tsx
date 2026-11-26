@@ -20,6 +20,7 @@ import { DietSetupScreen } from './screens/DietSetupScreen'
 import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
+import { WeightScreen } from './screens/WeightScreen'
 import { BottomNav } from './components/BottomNav'
 import { TimezoneCheck } from './components/TimezoneCheck'
 
@@ -222,6 +223,14 @@ function App() {
           element={
             <RequireDiet>
               <MealItemScreen />
+            </RequireDiet>
+          }
+        />
+        <Route
+          path="/food/weight"
+          element={
+            <RequireDiet>
+              <WeightScreen />
             </RequireDiet>
           }
         />

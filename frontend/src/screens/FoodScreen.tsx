@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Icon, type IconName } from '../components/Icon'
-import { createMealLog, deleteMealLog, fetchDietDay, fetchRecentDiet } from '../api'
+import { createMealLog, deleteMealLog, fetchDietDay, fetchRecentDiet, fetchWeight } from '../api'
+import { WeightCard } from '../components/Weight'
 import { dishName, MEAL_LABELS, MEAL_ORDER, portionLabel } from '../food'
 import { formatTamilDay, TA } from '../foodText'
 import { useAppState } from '../state/AppStateContext'
 import { useVoiceRecorder } from '../state/useVoiceRecorder'
-import type { DietDay, DietDaySummary, DietGoals, MealItem, RecentDiet } from '../types'
+import type { DietDay, DietDaySummary, DietGoals, MealItem, RecentDiet, WeightOverview } from '../types'
 import { formatClock, todayIsoIn } from '../utils'
 
 const PAST_DAYS = 10
@@ -295,6 +296,7 @@ export function FoodScreen() {
   const [tab, setTab] = useState<Tab>('today')
   const [day, setDay] = useState<DietDay | null>(null)
   const [recent, setRecent] = useState<RecentDiet | null>(null)
+  const [weight, setWeight] = useState<WeightOverview | null>(null)
   // The past day opened from the list, if any.
   const [pastDate, setPastDate] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -321,6 +323,15 @@ export function FoodScreen() {
     setDay(null)
     loadDay()
   }, [loadDay])
+
+  // Her weight, for the card at the top of Today. Best-effort: the card is
+  // simply left out if it can't be loaded.
+  useEffect(() => {
+    if (!userId) return
+    fetchWeight(userId, todayIsoIn(timezone))
+      .then(setWeight)
+      .catch(() => setWeight(null))
+  }, [userId, timezone])
 
   useEffect(() => {
     if (tab !== 'past' || !userId) return
@@ -417,6 +428,7 @@ export function FoodScreen() {
       {shownDate && (
         <>
           {pastDate && <p className="food-screen__date">{formatTamilDay(pastDate)}</p>}
+          {tab === 'today' && weight && <WeightCard weight={weight} onOpen={() => navigate('/food/weight')} />}
           {day ? (
             <>
               <GoalCard totals={day.totals} targets={day.targets} />

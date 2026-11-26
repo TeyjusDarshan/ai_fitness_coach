@@ -4834,3 +4834,437 @@ body.with-bottom-nav .corner-leaves--page {
     opacity: 0;
   }
 }
+
+/* ---------- Weight (Food card + /food/weight) ---------- */
+.weight-card {
+  margin-bottom: 12px;
+  padding: 16px 18px 18px;
+}
+.weight-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.weight-card__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.weight-card__title svg {
+  color: var(--success);
+}
+.weight-card__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.weight-card__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+}
+.weight-card__main {
+  min-width: 0;
+  padding-right: 16px;
+  border-right: 1px solid var(--hairline);
+}
+.weight-card__today,
+.weight-top__today {
+  margin: 0;
+  font-size: 38px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.weight-card__today span,
+.weight-top__today span {
+  font-size: 22px;
+  font-weight: 700;
+}
+.weight-card__prompt {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--accent);
+}
+.weight-card__prompt svg {
+  flex: none;
+  margin-top: 1px;
+}
+.weight-card__avg {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.weight-card__avg strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.weight-card__side {
+  min-width: 0;
+}
+
+/* vs last week: green toward her goal, grey away (never red) */
+.weight-change {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  color: var(--ink-secondary);
+}
+.weight-change__value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.weight-change__label {
+  font-size: 13px;
+}
+.weight-change--toward .weight-change__value {
+  color: var(--success);
+}
+.weight-change--large {
+  margin-top: 0;
+  align-items: flex-end;
+  text-align: right;
+}
+.weight-change--large .weight-change__value {
+  font-size: 24px;
+}
+
+/* Start → target bar */
+.weight-progress__pin-row {
+  position: relative;
+  height: 40px;
+  margin: 0 28px;
+}
+.weight-progress__pin {
+  position: absolute;
+  bottom: 8px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.weight-progress__pin::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: var(--success);
+  border-bottom: none;
+}
+.weight-progress__track {
+  position: relative;
+  height: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+}
+.weight-progress--compact .weight-progress__track {
+  height: 12px;
+}
+.weight-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), #5aa77c);
+  transition: width 0.5s ease;
+}
+.weight-progress__marker {
+  position: absolute;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 3px solid var(--surface);
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+.weight-progress__ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.weight-progress__ends span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.weight-progress__ends small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-secondary);
+}
+.weight-progress__end--target {
+  align-items: flex-end;
+  text-align: right;
+}
+
+/* Maintain gauge */
+.weight-gauge {
+  position: relative;
+}
+.weight-gauge svg {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+}
+.weight-gauge--compact svg {
+  max-width: 150px;
+}
+.weight-gauge__needle {
+  stroke: var(--heading);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.weight-gauge__hub {
+  fill: var(--heading);
+}
+.weight-gauge__dot {
+  fill: var(--surface);
+  stroke: var(--heading);
+  stroke-width: 4;
+}
+.weight-gauge__center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 6px;
+  text-align: center;
+}
+.weight-gauge__center strong {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.weight-gauge__center span {
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.weight-gauge__limits {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--ink-secondary);
+}
+.weight-gauge__limits span {
+  display: flex;
+  flex-direction: column;
+}
+.weight-gauge__limits span:last-child {
+  text-align: right;
+}
+.weight-gauge__limits strong {
+  font-size: 16px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.weight-gauge__keep {
+  margin: 10px 0 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+
+/* Weight Trend screen */
+.weight-range {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+}
+.weight-range__option {
+  padding: 10px 4px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--ink-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.weight-range__option--on {
+  background: var(--accent);
+  color: #fff;
+}
+.weight-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 18px;
+}
+.weight-top__main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.weight-top__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--success);
+}
+.weight-top__label {
+  margin: 2px 0 0;
+  font-size: 14px;
+  color: var(--ink-secondary);
+}
+.weight-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--heading);
+}
+.weight-section-title svg {
+  color: var(--success);
+}
+.weight-trend,
+.weight-status-card {
+  margin-bottom: 14px;
+  padding: 16px 16px 18px;
+}
+.weight-trend__empty {
+  margin: 12px 0 4px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink-secondary);
+}
+.weight-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.weight-chart__grid {
+  stroke: var(--hairline);
+  stroke-width: 1;
+}
+.weight-chart__tick {
+  fill: var(--ink-secondary);
+  font-size: 11px;
+}
+.weight-chart__line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.weight-chart__point {
+  fill: var(--surface);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.weight-chart__halo {
+  fill: var(--accent-soft);
+}
+.weight-chart__latest {
+  fill: var(--accent);
+}
+.weight-chart__bubble rect {
+  fill: var(--accent-soft);
+}
+.weight-chart__bubble text {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+.weight-chart__marker line {
+  stroke: var(--warning);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+.weight-chart__marker text {
+  fill: #a66d14;
+  font-size: 10px;
+  font-weight: 700;
+}
+.weight-status-card__chip {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+.weight-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-alt);
+  color: var(--ink-secondary);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+.weight-status--good {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+@media (max-width: 380px) {
+  .weight-card__today,
+  .weight-top__today {
+    font-size: 32px;
+  }
+  .weight-card__body {
+    gap: 12px;
+  }
+  .weight-card__main {
+    padding-right: 12px;
+  }
+  .weight-range__option {
+    font-size: 13px;
+  }
+}

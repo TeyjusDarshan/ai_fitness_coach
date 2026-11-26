@@ -10,6 +10,7 @@ import { DietSetupScreen } from './screens/DietSetupScreen'
 import { FoodScreen } from './screens/FoodScreen'
 import { MealReviewScreen } from './screens/MealReviewScreen'
 import { MealItemScreen } from './screens/MealItemScreen'
+import { WeightScreen } from './screens/WeightScreen'
 import { appTodayIso } from './utils'
 import { BottomNav } from './components/BottomNav'
 
@@ -144,6 +145,9 @@ const counted = (date: string) => logs.filter((l) => l.date === date && ['ready'
 
 function handle(method: string, path: string, body: Record<string, number>): unknown {
   let m
+  if (path === '/api/app/start') {
+    return { me: { user_id: 'u1', name: 'Test client', gender: 'female', diet_enabled: true, diet_setup_done: setupDone, timezone: 'Asia/Kolkata' }, dashboard: null, dashboard_error: { status: 404, error: 'No plan (mock)' } }
+  }
   if (path === '/api/auth/me') return { user_id: 'u1', name: 'Test client', gender: 'female', diet_enabled: true, diet_setup_done: setupDone }
   if (method === 'POST' && path === '/api/users/u1/diet/setup/assess') return assessSetup(body)
   if (method === 'POST' && path === '/api/users/u1/diet/setup') return completeSetup(body, (body as unknown as { goal: string }).goal, body.target_weight_kg ?? null)
@@ -219,6 +223,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/food/setup" element={<Gate setup><DietSetupScreen /></Gate>} />
         <Route path="/food/log/:logId" element={<Gate><MealReviewScreen /></Gate>} />
         <Route path="/food/item/:itemId" element={<Gate><MealItemScreen /></Gate>} />
+        <Route path="/food/weight" element={<Gate><WeightScreen /></Gate>} />
       </Routes>
       <BottomNav />
     </AppStateProvider>

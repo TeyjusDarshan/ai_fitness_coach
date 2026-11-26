@@ -12,7 +12,9 @@ import type {
   MealLog,
   PastWorkoutsPage,
   SetLog,
+  WeightOverview,
 } from './types'
+import { demoWeight } from './weightDemo'
 
 class ApiError extends Error {
   status: number
@@ -155,6 +157,13 @@ export function fetchDietDay(userId: string, date: string): Promise<DietDay> {
 // Her last `days` days, newest first, with each day's totals.
 export function fetchRecentDiet(userId: string, days = 10): Promise<RecentDiet> {
   return request(`/users/${encodeURIComponent(userId)}/diet/days?days=${days}`)
+}
+
+// Her weight: today's reading, this week so far, closed weekly averages and
+// calorie changes. TODO: GET /users/<id>/weight once the backend exists;
+// dummy data until then (weightDemo.ts).
+export function fetchWeight(_userId: string, today: string): Promise<WeightOverview> {
+  return Promise.resolve(demoWeight(today))
 }
 
 // Her one-time diet setup: what we recommend for her height, weight and

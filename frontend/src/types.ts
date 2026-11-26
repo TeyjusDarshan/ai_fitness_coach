@@ -336,3 +336,65 @@ export interface DietSetupResult extends DietSetupAssessment {
   target_date: string | null
   targets: DietGoals
 }
+
+// Weekly weight tracking (GET /api/users/<id>/weight, not built yet: the
+// app reads dummy data from weightDemo.ts until it is). Readings come only
+// from WhatsApp; weeks run Mon–Sun in her time zone.
+export type WeightGoal = 'lose' | 'gain' | 'maintain'
+
+// Last Sunday's decision from the weekly calorie rules, so the app's label
+// always matches the WhatsApp summary.
+export type WeightStatus =
+  | 'baseline'
+  | 'on_track'
+  | 'slow'
+  | 'stalled'
+  | 'too_fast'
+  | 'period_week'
+  | 'not_enough_data'
+  | 'logs_not_trusted'
+  | 'change_pending'
+  | 'cool_down'
+  | 'target_reached'
+  | 'in_range'
+  | 'drifting_up'
+  | 'drifting_down'
+
+export interface WeightReading {
+  date: string
+  weight_kg: number
+}
+
+// One closed Mon–Sun week with at least 4 readings.
+export interface WeightWeek {
+  week_start: string
+  avg_kg: number
+  readings: number
+  period_week: boolean
+}
+
+// An accepted calorie change, shown as a marker on the chart.
+export interface CalorieChange {
+  date: string
+  from_kcal: number
+  to_kcal: number
+}
+
+export interface WeightOverview {
+  goal: WeightGoal
+  // Today's reading in her time zone, null until she sends one.
+  today: WeightReading | null
+  // This (unfinished) week so far.
+  this_week: { week_start: string; avg_kg: number | null; readings: number }
+  last_week_avg_kg: number | null
+  // Weight at setup; lose/gain aim for target_kg, maintain keeps keep_kg.
+  start_kg: number
+  target_kg: number | null
+  keep_kg: number | null
+  // Closed weeks, oldest first.
+  weeks: WeightWeek[]
+  calorie_changes: CalorieChange[]
+  status: WeightStatus | null
+  // Readings still needed before her first week closes (0 once it has).
+  readings_needed: number
+}
