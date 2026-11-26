@@ -1,10 +1,13 @@
 """AI Coach suggestions for the PWA's /admin "Monitor clients" tab.
 
 The coach asks for suggestions on one scheduled strength workout; the AI
-Coach agent (backend/coach_agent) reviews everything known about the client
-and proposes, per exercise, to keep it, adjust its sets/reps, move it to its
+Coach agent (backend/coach_agent) reads her latest client summary, the last
+7 days in detail and this training day's previous two weeks, and proposes,
+per exercise, to keep it, adjust its sets/reps, move it to its
 progression or regression, or skip it for that workout — each with a reason
-and quoted evidence. The coach accepts or rejects each suggestion; accepting
+and evidence quoted word for word from that input. Without a summary that
+reaches into the last 7 days it refuses (409, needs_summary) and the coach
+summarizes the client first. The coach accepts or rejects each suggestion; accepting
 applies it the same way the coach's own prescription edit does.
 """
 import logging
@@ -13,7 +16,8 @@ from typing import Any, Dict, List
 from flask import Blueprint, jsonify
 
 from backend.auth import require_admin
-from backend.coach_agent.context import build_context
+from backend.client_summary.repository import ClientSummaryRepository
+from backend.coach_agent.context import SummaryNeededError, build_context
 from backend.coach_agent.repository import CoachAgentRepository
 from backend.coach_agent.validate import validate_suggestions
 from backend.controllers.admin_monitor_controller import _swapped_exercise, exercise_repo, plan_repo
@@ -37,6 +41,7 @@ logger = logging.getLogger(__name__)
 admin_coach_agent_bp = Blueprint("admin_coach_agent", __name__)
 
 coach_repo = CoachAgentRepository(plan_repo.client)
+summary_repo = ClientSummaryRepository(plan_repo.client)
 
 
 def _range(exercise: Dict[str, Any]) -> Any:
@@ -113,7 +118,10 @@ def create_suggestions(session_id):
         return jsonify({"error": f"Only upcoming workouts can be reviewed (this one is {status})."}), 409
 
     try:
-        context, facts = build_context(coach_repo, session)
+        context, facts = build_context(coach_repo, summary_repo, plan_repo, session)
+    except SummaryNeededError as exc:
+        # The agent reads her summary for everything older than 7 days.
+        return jsonify({"error": exc.message, "needs_summary": True}), 409
     except Exception:
         logger.exception("Failed to build AI coach context for session_id=%s", session_id)
         return jsonify({"error": "Failed to load this workout's details."}), 500
@@ -121,7 +129,7 @@ def create_suggestions(session_id):
         return jsonify({"error": "Nothing in this workout can be changed."}), 409
 
     try:
-        result = agent.suggest(context, user_id=facts["user_id"])
+        result = agent.suggest(context, user_id=facts["user_id"], session_id=session_id)
     except Exception:
         logger.exception("AI coach failed for session_id=%s", session_id)
         return jsonify({"error": "The AI coach couldn't finish. Try again."}), 502

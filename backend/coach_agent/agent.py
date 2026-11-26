@@ -1,8 +1,9 @@
 """The AI Coach agent: one structured-output Claude call over a scheduled
-session's context, returning one suggestion per exercise. The output is only
-a proposal — validate.validate_suggestions checks it before it's stored, and
-the coach accepts or rejects each one."""
-import json
+session's plain-text context (context.build_context: the client summary,
+the last 7 days, the same day in the previous two weeks, and the workout),
+returning one suggestion per exercise. The output is only a proposal —
+validate.validate_suggestions checks it before it's stored, and the coach
+accepts or rejects each one."""
 import logging
 import os
 from typing import List, Literal, Optional
@@ -18,7 +19,9 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-MODEL = "claude-opus-5-5"
+# Was claude-opus-5-5 until 2026-11-26; quality is held by the
+# validator and the coach accepting each suggestion. Overridable to roll back.
+MODEL = os.getenv("COACH_AGENT_MODEL", "claude-sonnet-5-5")
 EFFORT = "medium"
 
 # Runs inside an admin request, so it must finish well within the
@@ -29,16 +32,14 @@ client = anthropic.Anthropic(
 )
 
 Action = Literal["keep", "adjust", "progress", "regress", "skip"]
-EvidenceSource = Literal[
-    "client_answer", "client_comment", "set_logs", "rpe",
-    "joint_pain", "profile", "coach_note", "progression_rule",
-]
+# The input sections (context.SOURCES) a quote can come from.
+EvidenceSource = Literal["workout", "summary", "last_7_days", "same_day_history"]
 
 
 class Evidence(BaseModel):
     source: EvidenceSource
     quote: str
-    session_id: Optional[int]
+    date: Optional[str]
 
 
 class ExerciseSuggestion(BaseModel):
@@ -60,16 +61,14 @@ class CoachAgentRefusedError(RuntimeError):
     """Claude declined (and no fallback model took the request)."""
 
 
-def user_content(context: dict) -> str:
-    return json.dumps(context, indent=2, default=str, ensure_ascii=False)
-
-
-def suggest(context: dict, user_id: Optional[str] = None) -> SessionSuggestions:
+def suggest(
+    context: str, user_id: Optional[str] = None, session_id: Optional[int] = None
+) -> SessionSuggestions:
     response = client.beta.messages.parse(
         model=MODEL,
         max_tokens=16000,
         system=COACH_AGENT_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content(context)}],
+        messages=[{"role": "user", "content": context}],
         output_format=SessionSuggestions,
         output_config={"effort": EFFORT},
         # On a policy decline, the API re-runs the request on Anthropic's
@@ -78,9 +77,7 @@ def suggest(context: dict, user_id: Optional[str] = None) -> SessionSuggestions:
         fallbacks="default",
     )
     # Billed even when it refuses, so recorded first.
-    record_claude(
-        response, "coach_suggestions", user_id=user_id, session_id=(context.get("session") or {}).get("session_id")
-    )
+    record_claude(response, "coach_suggestions", user_id=user_id, session_id=session_id)
     if response.stop_reason == "refusal":
         category = response.stop_details.category if response.stop_details else None
         raise CoachAgentRefusedError(f"Claude declined (category: {category})")

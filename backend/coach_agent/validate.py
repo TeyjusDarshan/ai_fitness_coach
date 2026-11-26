@@ -12,10 +12,10 @@ from typing import Any, Dict, List, Optional
 MIN_SETS, MAX_SETS = 1, 6
 MAX_TARGET = 600
 
-CLIENT_SOURCES = {"client_answer", "client_comment"}
 DIRECTIONS = {"progress": "progression", "regress": "regression"}
+MIN_QUOTE_WORDS = 3
 
-_PUNCTUATION_RE = re.compile(r"[\s.,!?;:\"'“”‘’…\-()\[\]]+")
+_PUNCTUATION_RE = re.compile(r"[\s.,!?;:\"'“”‘’…\-()\[\]·→>/]+")
 
 
 def _normalize(text: str) -> str:
@@ -41,22 +41,21 @@ def _within(reps: List[int], low: Optional[int], high: Optional[int]) -> bool:
     return all(isinstance(r, int) and low <= r <= high for r in reps)
 
 
-def _evidence(items, client_texts: List[str]) -> List[Dict[str, Any]]:
-    """Keep data evidence (labelled unverified, it's a statement about the
-    data), and client quotes only when they really appear in her answers or
-    comments."""
+def _evidence(items, sections: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Keep only quotes that really appear in the input: in the section they
+    name, or else in another one (then relabelled with where it was found).
+    Every kept quote is verified; the rest are dropped."""
     kept = []
     for item in items or []:
         quote = (item.quote or "").strip()
-        if not quote:
+        # A two-word fragment ("too easy") matches almost anywhere and proves nothing.
+        if len(_normalize(quote).split()) < MIN_QUOTE_WORDS:
             continue
-        if item.source in CLIENT_SOURCES:
-            if not quote_found(quote, client_texts):
-                continue
-            verified = True
-        else:
-            verified = False
-        kept.append({"source": item.source, "quote": quote, "session_id": item.session_id, "verified": verified})
+        order =[item.source] + [name for name in sections if name != item.source]
+        source = next((name for name in order if name in sections and quote_found(quote, [sections[name]])), None)
+        if source is None:
+            continue
+        kept.append({"source": source, "quote": quote, "date": item.date, "verified": True})
     return kept
 
 
@@ -101,13 +100,13 @@ def validate_suggestions(suggestions, facts: Dict[str, Any]) -> List[Dict[str, A
         if suggestion is None:
             rows.append(_keep(ex, "No suggestion from the AI coach for this exercise."))
             continue
-        rows.append(_validate_one(suggestion, ex, facts["client_texts"]))
+        rows.append(_validate_one(suggestion, ex, facts["sections"]))
     return rows
 
 
-def _validate_one(suggestion, ex: Dict[str, Any], client_texts: List[str]) -> Dict[str, Any]:
+def _validate_one(suggestion, ex: Dict[str, Any], sections: Dict[str, str]) -> Dict[str, Any]:
     reason = (suggestion.reason or "").strip()
-    evidence = _evidence(suggestion.evidence, client_texts)
+    evidence = _evidence(suggestion.evidence, sections)
     action = suggestion.action
 
     def rejected(why: str) -> Dict[str, Any]:

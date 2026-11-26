@@ -308,8 +308,10 @@ export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'no_change'
 export interface SuggestionEvidence {
   source: string
   quote: string
-  session_id: number | null
-  // A quote checked against her own answers/comments (data evidence isn't).
+  // Runs before 2026-11-26 carry session_id; newer ones the date the quote is about.
+  session_id?: number | null
+  date?: string | null
+  // Checked word for word against the agent's input (all newer quotes are).
   verified: boolean
 }
 
@@ -347,6 +349,35 @@ export interface AppliedExerciseChange {
   skipped?: boolean
   skip_reason?: string | null
   exercise?: SwappedExercise
+}
+
+// One version of a client's ≤500-word summary (backend/client_summary).
+export interface ClientSummary {
+  version: number
+  text: string
+  created_at: string
+  covers_from: string | null
+  covers_until: string
+  word_count: number | null
+  model: string | null
+  rebuilt: boolean
+}
+
+export function fetchClientSummary(adminKey: string, userId: string): Promise<{ summary: ClientSummary | null }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/summary`)
+}
+
+// Update the summary from the previous version plus what arrived since
+// (rebuild: start again from her whole history). Takes 10–30 s.
+export function requestClientSummary(
+  adminKey: string,
+  userId: string,
+  rebuild = false,
+): Promise<{ summary: ClientSummary; nothing_new: boolean }> {
+  return adminRequest(adminKey, `/admin/users/${encodeURIComponent(userId)}/summary`, {
+    method: 'POST',
+    body: JSON.stringify({ rebuild }),
+  })
 }
 
 // The latest AI Coach suggestions for a workout (run is null if never asked).

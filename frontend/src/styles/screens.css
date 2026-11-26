@@ -2743,6 +2743,40 @@
 }
 
 /* ---------- AI coach suggestions (admin monitor) ---------- */
+.client-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.client-summary .admin__muted {
+  margin: 0;
+}
+.client-summary__text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: var(--ink);
+  max-height: 32rem;
+  overflow-y: auto;
+}
+.client-summary__rebuild {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-secondary);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.client-summary__rebuild:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .coach-ai {
   display: flex;
   flex-direction: column;

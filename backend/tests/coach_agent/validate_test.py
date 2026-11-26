@@ -23,13 +23,19 @@ def _facts(**overrides):
     facts = {
         "user_id": "usr_1",
         "exercises": {1: squat, 2: row},
-        "client_texts": ["Knee hurt a little on the way down.", "முட்டி கொஞ்சம் வலிக்குது"],
+        "sections": {
+            "workout": "[session_exercise_id 1] Squat · open · reps, allowed 6-12 per set",
+            "summary": "- Knee: mild, comes and goes (2026-11-19)",
+            "last_7_days": "- Squat: planned 3 x 10 reps; done 10, 10, 10; felt too easy\n"
+                           "- About Squat / knee: Check her knee -> Answer: Knee hurt a little on the way down.",
+            "same_day_history": "1 week before: 2026-11-16 · completed",
+        },
     }
     facts.update(overrides)
     return facts
 
 
-DATA = [Evidence(source="set_logs", quote="Nov 9: 10, 10, 10", session_id=79)]
+DATA = [Evidence(source="last_7_days", quote="done 10, 10, 10; felt too easy", date="2026-11-23")]
 
 
 def _s(seid=1, action="adjust", sets=None, reps=None, to=None, reason="Because.", evidence=DATA):
@@ -89,20 +95,24 @@ def test_skip_is_pending_and_needs_no_numbers():
     assert (row["action"], row["status"], row["proposed_sets"]) == ("skip", "pending", None)
 
 
-def test_a_fabricated_client_quote_is_dropped_and_a_real_one_kept():
+def test_only_quotes_found_in_the_input_are_kept_and_relabelled():
     evidence = [
-        Evidence(source="client_answer", quote="My knee is totally fine", session_id=79),
-        Evidence(source="client_comment", quote="knee hurt a little", session_id=79),
-        Evidence(source="client_comment", quote="முட்டி கொஞ்சம் வலிக்குது", session_id=80),
+        Evidence(source="last_7_days", quote="My knee is totally fine", date=None),
+        Evidence(source="last_7_days", quote="knee hurt a little on the way", date="2026-11-24"),
+        # Right words, wrong section: kept, with the section it was found in.
+        Evidence(source="last_7_days", quote="Knee: mild, comes and goes", date="2026-11-19"),
+        # Too short to prove anything.
+        Evidence(source="last_7_days", quote="too easy", date=None),
     ]
     row = _one(_s(action="skip", evidence=evidence))
-    assert [(e["quote"], e["verified"]) for e in row["evidence"]] == [
-        ("knee hurt a little", True), ("முட்டி கொஞ்சம் வலிக்குது", True),
+    assert [(e["source"], e["quote"], e["date"], e["verified"]) for e in row["evidence"]] == [
+        ("last_7_days", "knee hurt a little on the way", "2026-11-24", True),
+        ("summary", "Knee: mild, comes and goes", "2026-11-19", True),
     ]
 
 
 def test_a_change_with_only_fabricated_evidence_is_not_suggested():
-    evidence = [Evidence(source="client_answer", quote="never said this", session_id=1)]
+    evidence = [Evidence(source="summary", quote="she never said this at all", date=None)]
     row = _one(_s(action="skip", evidence=evidence))
     assert row["status"] == "no_change"
     assert "no verifiable evidence" in row["reason"]
@@ -134,4 +144,5 @@ def test_helpers():
     assert stored_reps([10, 10]) == "10"
     assert stored_reps([12, 10]) == "12,10"
     assert quote_found("KNEE hurt, a little", ["Knee hurt a little on the way down."])
+    assert quote_found("Squat · open", ["[session_exercise_id 1] Squat · open · reps"])
     assert not quote_found("", ["anything"])

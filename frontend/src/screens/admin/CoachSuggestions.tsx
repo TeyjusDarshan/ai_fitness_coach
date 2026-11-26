@@ -21,6 +21,11 @@ const ACTION_LABELS: Record<SuggestionAction, string> = {
 }
 
 const SOURCE_LABELS: Record<string, string> = {
+  summary: 'Client summary',
+  last_7_days: 'Last 7 days',
+  same_day_history: 'Same day, earlier weeks',
+  workout: 'This workout',
+  // Runs from before 2026-11-26 (Opus, JSON input):
   client_answer: 'Her answer',
   client_comment: 'Her words',
   set_logs: 'Set logs',
@@ -201,7 +206,10 @@ function SuggestionRow({
               <span className={`coach-ai__source${e.verified ? ' coach-ai__source--verified' : ''}`}>
                 {SOURCE_LABELS[e.source] ?? e.source}
               </span>
-              <span className="coach-ai__quote">{e.verified ? `“${e.quote}”` : e.quote}</span>
+              <span className="coach-ai__quote">
+                {e.verified ? `“${e.quote}”` : e.quote}
+                {e.date ? <span className="admin__muted"> · {e.date}</span> : null}
+              </span>
             </li>
           ))}
         </ul>
