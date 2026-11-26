@@ -35,7 +35,7 @@ import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set
 
-from diet.dates import now_in, zone
+from diet.dates import now_in, parse_timestamp, zone
 from voice_processor.repository import AnalysisRepository
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,7 @@ def meal_by_time(created_at: str, timezone_name: Optional[str] = None) -> str:
     """The meal a dish with no meal tag counts as, by when it was logged in
     her time zone: before 11:00 breakfast, before 16:00 lunch, before 19:00
     snack, else dinner."""
-    hour = datetime.fromisoformat(created_at).astimezone(zone(timezone_name)).hour
+    hour = parse_timestamp(created_at).astimezone(zone(timezone_name)).hour
     if hour < 11:
         return "breakfast"
     if hour < 16:

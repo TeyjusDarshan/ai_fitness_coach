@@ -48,6 +48,29 @@ def test_an_implausible_estimate_is_kept_for_review_without_ingredients():
     assert [(d["needs_review"], d["ingredients"]) for d in kept] == [(True, [])] * 4
 
 
+def test_a_watery_dish_keeps_its_ingredients_however_light_they_are():
+    """Water is left out of the ingredients, so ragi koozh (about 20 g of
+    flour in a 200 g cup) or a shake (30 g of whey in water) weighs a small
+    fraction of the portion. Meal log 28 (2026-11-26) lost its koozh to the
+    old 0.15x floor."""
+    kept = _validate(
+        dish("oru karandi sadam", "Kanji", 1, "karandi", 200, [("Raw white rice", 20), ("Sesame (gingelly) oil", 1)]),
+        dish("oru karandi sadam", "Thin kanji", 1, "karandi", 300, [("Raw white rice", 2)]),
+    )
+
+    assert [d["needs_review"] for d in kept] == [False, False]
+    assert [sum(line["grams"] for line in d["ingredients"]) for d in kept] == [21, 2]
+
+
+def test_ingredients_over_two_and_a_half_times_the_portion_are_still_flagged():
+    kept = _validate(
+        dish("oru karandi sadam", "Rice", 1, "karandi", 60, [("Raw white rice", 150)]),   # exactly 2.5x
+        dish("oru karandi sadam", "Rice", 1, "karandi", 60, [("Raw white rice", 151)]),   # a whole pot's worth
+    )
+
+    assert [d["needs_review"] for d in kept] == [False, True]
+
+
 def test_quantities_are_kept_in_range_and_a_missing_amount_is_assumed():
     kept = _validate(
         dish("moonu idli", "Idli", 300, "piece", 120, IDLI),
