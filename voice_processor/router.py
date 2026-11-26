@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from ai_usage import record_stt
-from diet.dates import now_in, today_in
+from diet.dates import now_in, parse_timestamp, today_in
 from diet.pipeline import process_meal_log
 from diet.repository import DietRepository
 from diet.transcription import transcribe_audio_unrecorded
@@ -66,7 +66,7 @@ def _minutes_since(asked_at: Optional[str]) -> Optional[int]:
     if not asked_at:
         return None
     try:
-        return max(0, int((datetime.now(timezone.utc) - datetime.fromisoformat(asked_at)).total_seconds() // 60))
+        return max(0, int((datetime.now(timezone.utc) - parse_timestamp(asked_at)).total_seconds() // 60))
     except (TypeError, ValueError):
         return None
 

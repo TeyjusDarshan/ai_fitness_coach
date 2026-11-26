@@ -13,9 +13,12 @@ MIN_QUANTITY, MAX_QUANTITY = 0.25, 20
 MAX_GRAMS = 2000  # one dish said in grams / ml, or one portion's weight
 MAX_INGREDIENT_GRAMS = 1500
 MAX_INGREDIENTS = 25
-# Raw ingredients against the cooked portion: rice and dal swell, dry fries
-# shrink, but outside this the estimate can't be right.
-MIN_RAW_RATIO, MAX_RAW_RATIO = 0.15, 2.5
+# Raw ingredients against the cooked portion: rice and dal swell and dry
+# fries shrink, but ingredients weighing far more than the food she ate (a
+# whole pot's ingredients for one plate) can't be right. There is no lower
+# bound: water is left out of the ingredients, so a watery dish (ragi koozh,
+# kanji, a protein shake in water) is rightly a small fraction of its weight.
+MAX_RAW_RATIO = 2.5
 
 _PUNCTUATION_RE = re.compile(r"[^\w]+", re.UNICODE)
 _TAMIL_RE = re.compile(r"[\u0B80-\u0BFF]")
@@ -98,7 +101,7 @@ def validate_meal(dishes: Iterable[Any], transcript: str,
         lines = _ingredients(dish.ingredients or [], reference_by_key) if portion else None
         if lines is not None:
             raw = sum(line["grams"] for line in lines)
-            if not MIN_RAW_RATIO * portion <= raw <= MAX_RAW_RATIO * portion:
+            if raw > MAX_RAW_RATIO * portion:
                 lines = None
 
         kept.append({

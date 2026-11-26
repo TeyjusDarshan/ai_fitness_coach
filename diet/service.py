@@ -5,6 +5,7 @@ item's stored nutrients from its ingredient rows."""
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from diet.dates import parse_timestamp
 from diet.nutrition import (
     DEFAULT_TARGETS, WEIGHT_UNITS, add_totals, display_unit, empty_totals, nutrients_of, rounded, targets_for,
 )
@@ -22,7 +23,7 @@ MAX_INGREDIENT_GRAMS = 2000
 
 def log_status(log: Dict[str, Any], now: Optional[datetime] = None) -> str:
     if log["status"] == "processing":
-        created = datetime.fromisoformat(log["created_at"].replace("Z", "+00:00"))
+        created = parse_timestamp(log["created_at"])
         if (now or datetime.now(timezone.utc)) - created > PROCESSING_TIMEOUT:
             return "failed"
     return log["status"]

@@ -48,6 +48,8 @@ def test_unlogged_sets_count_as_nothing_done():
 
 # ---------- cardio sessions ----------
 
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
 from voice_processor.prompts import WORKOUT_ANALYSIS_SYSTEM_PROMPT  # noqa: E402
 from voice_processor.repository import AnalysisRepository  # noqa: E402
 
@@ -261,3 +263,20 @@ def test_progressed_from_names_last_weeks_exercise_with_a_progression_edge():
     _mark_progressed(exercises, previous, edges)
 
     assert [e["progressed_from"] for e in exercises] == ["Wall push-up", None, None]
+
+
+# ---------- open clarification rounds ----------
+
+def test_an_open_round_with_a_five_digit_fraction_is_found():
+    """Session clarification 19 (2026-11-26): Postgres returned
+    expires_at "…30.24048+00:00" and the VM's Python couldn't parse it, so
+    the router crashed on her reply."""
+    expires = (datetime.now(timezone.utc) + timedelta(hours=20)).replace(microsecond=240480)
+    row = {
+        "id": 19, "phone_number": "919715424567", "status": "open",
+        "asked_at": "2026-11-26T04:10:30.24048+00:00",
+        "expires_at": expires.isoformat().replace(".240480", ".24048"),
+    }
+    repo = AnalysisRepository(client=_Client({"session_clarifications": [row]}))
+
+    assert repo.find_open_clarification("919715424567")["id"] == 19

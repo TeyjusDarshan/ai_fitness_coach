@@ -2,6 +2,7 @@ import os
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+from diet.dates import parse_timestamp
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
@@ -639,7 +640,7 @@ class AnalysisRepository:
         now = datetime.now(timezone.utc)
         current = None
         for row in rows:
-            if datetime.fromisoformat(row["expires_at"]) <= now:
+            if parse_timestamp(row["expires_at"]) <= now:
                 self.update_clarification(row["id"], {"status": "expired", "closed_at": now.isoformat()})
             elif current is None:
                 current = row
